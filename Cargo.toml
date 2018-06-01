@@ -1,0 +1,23 @@
+[package]
+name = "declarative_server"
+version = "0.1.0"
+authors = ["Frank McSherry <fmcsherry@me.com>", "Nikolas Göbel <me@nikolasgoebel.com>"]
+
+[dependencies]
+differential-dataflow = { git = "https://github.com/frankmcsherry/differential-dataflow" }
+timely_communication = { git = "https://github.com/frankmcsherry/timely-dataflow" }
+timely = { git = "https://github.com/frankmcsherry/timely-dataflow" }
+abomonation = "0.5"
+abomonation_derive = "0.3"
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+ws = "*"
+
+[profile.release]
+opt-level = 3
+debug = true
+debug-assertions = false
+rpath = false
+lto = false
+codegen-units = 4
