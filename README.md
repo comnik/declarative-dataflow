@@ -1,4 +1,4 @@
-# Declarative Server
+# Declarative Differential Dataflows
 
 This server exposes a Datalog-inspired, declarative interface on top
 of differential dataflow. It allows for the dynamic creation of
