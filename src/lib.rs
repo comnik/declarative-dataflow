@@ -51,7 +51,7 @@ pub struct Datom(pub Entity, pub Attribute, pub Value);
 pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
 
 #[derive(Serialize, Debug)]
-pub struct Out(Vec<Value>, isize);
+pub struct Out(pub Vec<Value>, pub isize);
 
 type ProbeHandle<T> = Handle<Product<RootTimestamp, T>>;
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
@@ -359,8 +359,6 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
             let tuples = left.tuples_by_symbols(join_vars.clone())
                 .arrange_by_key()
                 .join_core(&right.tuples_by_symbols(join_vars.clone()).arrange_by_key(), |key, v1, v2| {
-                    // @TODO can haz array here?
-                    // @TODO avoid allocation, if capacity available in v1
                     let mut vstar = Vec::with_capacity(key.len() + v1.len() + v2.len());
 
                     vstar.extend(key.iter().cloned());
@@ -496,7 +494,7 @@ pub fn setup_db<A: timely::Allocate, T: Timestamp+Lattice> (scope: &mut Child<Ro
 pub fn register<A: timely::Allocate, T: Timestamp+Lattice>
 (scope: &mut Child<Root<A>, T>, ctx: &mut Context<T>, name: String, plan: Plan) -> HashMap<String, RelationHandles<T>> {
     
-    let mut result_map = implement(&name, plan, scope, ctx);
+    let result_map = implement(&name, plan, scope, ctx);
 
     // @TODO store trace somewhere for re-use from other queries later
     // queries.insert(name.clone(), output_collection.arrange_by_self().trace);
