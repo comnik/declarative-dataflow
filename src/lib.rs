@@ -108,7 +108,7 @@ pub enum Plan {
     Entity(Entity, Var, Var),
     HasAttr(Var, Attribute, Var),
     Filter(Var, Attribute, Value),
-    Recur(Vec<Var>),
+    Rule(String, Vec<Var>),
 }
 
 type Var = u32;
@@ -233,12 +233,12 @@ fn implement<A: timely::Allocate, T: Timestamp+Lattice> (name: &String, plan: Pl
         let output_trace = output_relation.variable.as_ref().unwrap().leave().arrange_by_self().trace;
         result_map.insert(name.clone(), RelationHandles { input: source_handle, trace: output_trace });
         
-        relation_map.insert("self".to_string(), output_relation);
+        relation_map.insert(name.clone(), output_relation);
 
         let execution = implement_plan(&plan, &impl_ctx, nested, &relation_map, queries);
         
         relation_map
-            .get_mut(&"self".to_string()).unwrap() // @TODO try without to_string
+            .get_mut(name).unwrap()
             .add_execution(&execution.tuples());
 
         result_map
@@ -291,7 +291,7 @@ fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>
             inputs.insert((None, Some(a), Some(v.clone())), scope.new_collection_from(vec![vec![Value::Attribute(a), v.clone()]]).1.arrange_by_self());
             inputs
         },
-        &Plan::Recur(_) => { HashMap::new() }
+        &Plan::Rule(_, _) => { HashMap::new() }
     }
 }
 
@@ -388,7 +388,6 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
             }
         },
         &Plan::Lookup(e, a, sym1) => {
-            // let ea_in = scope.new_collection_from(vec![(e, a)]).1.enter(nested).arrange_by_self();
             let ea_in = db.input_map.get(&(Some(e), Some(a), None)).unwrap().enter(nested);
             let tuples = db.ea_v.enter(nested)
                 .join_core(&ea_in, |_, tuple, _| { Some(tuple.clone()) });
@@ -396,7 +395,6 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
             SimpleRelation { symbols: vec![sym1], tuples }
         },
         &Plan::Entity(e, sym1, sym2) => {
-            // let e_in = scope.new_collection_from(vec![e]).1.enter(nested).arrange_by_self();
             let e_in = db.input_map.get(&(Some(e), None, None)).unwrap().enter(nested);
             let tuples = db.e_av.enter(nested)
                 .join_core(&e_in, |_, tuple, _| { Some(tuple.clone()) });
@@ -404,7 +402,6 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
             SimpleRelation { symbols: vec![sym1, sym2], tuples }
         },
         &Plan::HasAttr(sym1, a, sym2) => {
-            // let a_in = scope.new_collection_from(vec![a]).1.enter(nested).arrange_by_self();
             let a_in = db.input_map.get(&(None, Some(a), None)).unwrap().enter(nested);
             let tuples = db.a_ev.enter(nested)
                 .join_core(&a_in, |_, tuple, _| { Some(tuple.clone()) });
@@ -412,16 +409,15 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
             SimpleRelation { symbols: vec![sym1, sym2], tuples }
         },
         &Plan::Filter(sym1, a, ref v) => {
-            // let av_in = scope.new_collection_from(vec![(a, v.clone())]).1.enter(nested).arrange_by_self();
             let av_in = db.input_map.get(&(None, Some(a), Some(v.clone()))).unwrap().enter(nested);
             let tuples = db.av_e.enter(nested)
                 .join_core(&av_in, |_, tuple, _| { Some(tuple.clone()) });
             
             SimpleRelation { symbols: vec![sym1], tuples }
         }
-        &Plan::Recur(ref syms) => {
-            match relation_map.get(&"self".to_string()) {
-                None => panic!("'self' not in relation map"),
+        &Plan::Rule(ref name, ref syms) => {
+            match relation_map.get(name) {
+                None => panic!("{:?} not in relation map", name),
                 Some(named) => {
                     SimpleRelation {
                         symbols: syms.clone(),
@@ -492,9 +488,9 @@ pub fn setup_db<A: timely::Allocate, T: Timestamp+Lattice> (scope: &mut Child<Ro
 }
 
 pub fn register<A: timely::Allocate, T: Timestamp+Lattice>
-(scope: &mut Child<Root<A>, T>, ctx: &mut Context<T>, name: String, plan: Plan) -> HashMap<String, RelationHandles<T>> {
+(scope: &mut Child<Root<A>, T>, ctx: &mut Context<T>, name: &String, plan: Plan) -> HashMap<String, RelationHandles<T>> {
     
-    let result_map = implement(&name, plan, scope, ctx);
+    let result_map = implement(name, plan, scope, ctx);
 
     // @TODO store trace somewhere for re-use from other queries later
     // queries.insert(name.clone(), output_collection.arrange_by_self().trace);

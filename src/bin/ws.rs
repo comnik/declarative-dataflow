@@ -53,7 +53,6 @@ fn main () {
     
     let guards = timely::execute_from_args(std::env::args(), move |worker| {
         // setup interpreter context
-        println!("Setting-up interpreter context");
         let mut ctx = worker.dataflow(|scope| {
             let (input_handle, db) = setup_db(scope);
             
@@ -99,8 +98,9 @@ fn main () {
                                         Err(msg) => { println!("{:?}", msg); },
                                         Ok(plan) => {
                                             worker.dataflow::<usize, _, _>(|scope| {
-                                                let mut rel_map = register(scope, &mut ctx, "test".to_string(), plan);
-                                                let probe = rel_map.get_mut("test").unwrap().trace.import(scope)
+                                                let query_name = "recur".to_string();
+                                                let mut rel_map = register(scope, &mut ctx, &query_name, plan);
+                                                let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
                                                 // .as_collection(|tuple, _| tuple.clone())
                                                     .as_collection(|_,_| ())
                                                     .consolidate()
