@@ -91,14 +91,14 @@ fn main () {
                         let operation = command.remove(0);
                         match operation.as_str() {
                             "register" => {
-                                if command.len() > 0 {
+                                if command.len() > 1 {
+                                    let query_name = command.remove(0);
                                     let plan_json = command.remove(0);
 
                                     match serde_json::from_str::<Plan>(&plan_json) {
                                         Err(msg) => { println!("{:?}", msg); },
                                         Ok(plan) => {
                                             worker.dataflow::<usize, _, _>(|scope| {
-                                                let query_name = "recur".to_string();
                                                 let mut rel_map = register(scope, &mut ctx, &query_name, plan);
                                                 let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
                                                 // .as_collection(|tuple, _| tuple.clone())
@@ -120,7 +120,7 @@ fn main () {
                                         }
                                     }
                                 } else {
-                                    println!("No plan provided");
+                                    println!("Command does not conform to register?<name>?<plan>");
                                 }
                             },
                             "transact" => {
