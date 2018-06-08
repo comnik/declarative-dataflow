@@ -108,7 +108,13 @@ pub enum Plan {
     Entity(Entity, Var, Var),
     HasAttr(Var, Attribute, Var),
     Filter(Var, Attribute, Value),
-    Rule(String, Vec<Var>),
+    RuleExpr(String, Vec<Var>),
+}
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Rule {
+    pub name: String,
+    pub plan: Plan,
 }
 
 type Var = u32;
@@ -207,11 +213,28 @@ impl<'a, G: Scope> Drop for NamedRelation<'a, G> where G::Timestamp : Lattice {
 /// Takes a query plan and turns it into a differential dataflow. The
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
-fn implement<A: timely::Allocate, T: Timestamp+Lattice> (name: &String, plan: Plan, scope: &mut Child<Root<A>, T>, ctx: &mut Context<T>) -> HashMap<String, RelationHandles<T>> {
+fn implement<A: timely::Allocate, T: Timestamp+Lattice> (
+    name: &String,
+    plan: Plan,
+    rules: Vec<Rule>,
+    scope: &mut Child<Root<A>, T>,
+    ctx: &mut Context<T>
+) -> HashMap<String, RelationHandles<T>> {
         
     let db = &mut ctx.db;
     let queries = &mut ctx.queries;
-        
+
+    // query input
+    let mut input_map = create_inputs(&plan, scope);
+
+    // rule inputs
+    for rule in rules.iter() {
+        let mut rule_inputs = create_inputs(&rule.plan, scope);
+        for (k, v) in rule_inputs.drain() {
+            input_map.insert(k, v);
+        }
+    }
+    
     // @TODO Only import those we need for the query?
     let impl_ctx: ImplContext<Child<Root<A>, T>> = ImplContext {
         e_av: db.e_av.import(scope),
@@ -219,34 +242,60 @@ fn implement<A: timely::Allocate, T: Timestamp+Lattice> (name: &String, plan: Pl
         ea_v: db.ea_v.import(scope),
         av_e: db.av_e.import(scope),
 
-        input_map: create_inputs(&plan, scope)
+        input_map
     };
 
+    // query source
     let (source_handle, source) = scope.new_collection();
+
+    // rule sources
+    let mut source_map = HashMap::new();
+    for rule in rules.iter() {
+        source_map.entry(rule.name.clone()).or_insert_with(|| scope.new_collection());
+    }
     
     scope.scoped(|nested| {
 
         let mut relation_map = HashMap::new();
         let mut result_map = HashMap::new();
-        
+
+        for (rule_name, (_handle, collection)) in source_map.drain() {
+            println!("Registering {:?}", rule_name);
+            let rel = NamedRelation::from(&collection.enter(nested));
+            relation_map.insert(rule_name.clone(), rel);
+            // @TODO add handle and trace to result_map?
+        }
+
         let output_relation = NamedRelation::from(&source.enter(nested));
         let output_trace = output_relation.variable.as_ref().unwrap().leave().arrange_by_self().trace;
+        relation_map.insert(name.clone(), output_relation);
+        
         result_map.insert(name.clone(), RelationHandles { input: source_handle, trace: output_trace });
         
-        relation_map.insert(name.clone(), output_relation);
+        for rule in rules.iter() {
+            println!("Planning {:?}", rule.name);
+            let execution = implement_plan(&rule.plan, &impl_ctx, nested, &relation_map, queries);
 
+            relation_map.get_mut(&rule.name).expect("Rule should be in relation_map, but isn't")
+                .add_execution(&execution.tuples());
+        } 
+
+        println!("Planning query");
         let execution = implement_plan(&plan, &impl_ctx, nested, &relation_map, queries);
         
         relation_map
             .get_mut(name).unwrap()
             .add_execution(&execution.tuples());
 
+        println!("Done");
         result_map
     })
 }
 
-fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>
-(plan: &Plan, scope: &mut Child<'a, Root<A>, T>) -> InputMap<Child<'a, Root<A>, T>> {
+fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>(
+    plan: &Plan,
+    scope: &mut Child<'a, Root<A>, T>
+) -> InputMap<Child<'a, Root<A>, T>> {
 
     match plan {
         &Plan::Project(ref plan, _) => { create_inputs(plan.deref(), scope) },
@@ -291,7 +340,7 @@ fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>
             inputs.insert((None, Some(a), Some(v.clone())), scope.new_collection_from(vec![vec![Value::Attribute(a), v.clone()]]).1.arrange_by_self());
             inputs
         },
-        &Plan::Rule(_, _) => { HashMap::new() }
+        &Plan::RuleExpr(_, _) => { HashMap::new() }
     }
 }
 
@@ -415,7 +464,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
             
             SimpleRelation { symbols: vec![sym1], tuples }
         }
-        &Plan::Rule(ref name, ref syms) => {
+        &Plan::RuleExpr(ref name, ref syms) => {
             match relation_map.get(name) {
                 None => panic!("{:?} not in relation map", name),
                 Some(named) => {
@@ -487,10 +536,15 @@ pub fn setup_db<A: timely::Allocate, T: Timestamp+Lattice> (scope: &mut Child<Ro
     (input_handle, db)
 }
 
-pub fn register<A: timely::Allocate, T: Timestamp+Lattice>
-(scope: &mut Child<Root<A>, T>, ctx: &mut Context<T>, name: &String, plan: Plan) -> HashMap<String, RelationHandles<T>> {
+pub fn register<A: timely::Allocate, T: Timestamp+Lattice> (
+    scope: &mut Child<Root<A>, T>,
+    ctx: &mut Context<T>,
+    name: &String,
+    plan: Plan,
+    rules: Vec<Rule>
+) -> HashMap<String, RelationHandles<T>> {
     
-    let result_map = implement(name, plan, scope, ctx);
+    let result_map = implement(name, plan, rules, scope, ctx);
 
     // @TODO store trace somewhere for re-use from other queries later
     // queries.insert(name.clone(), output_collection.arrange_by_self().trace);

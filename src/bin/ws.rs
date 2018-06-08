@@ -26,7 +26,7 @@ use differential_dataflow::operators::consolidate::Consolidate;
 
 use ws::{Message, CloseCode};
 
-use declarative_server::{Context, Plan, TxData, Datom, Attribute, Value, setup_db, register};
+use declarative_server::{Context, Plan, Rule, TxData, Datom, Attribute, Value, setup_db, register};
 
 const ATTR_NODE: Attribute = 100;
 const ATTR_EDGE: Attribute = 200;
@@ -91,15 +91,23 @@ fn main () {
                         let operation = command.remove(0);
                         match operation.as_str() {
                             "register" => {
-                                if command.len() > 1 {
+                                if command.len() > 2 {
                                     let query_name = command.remove(0);
                                     let plan_json = command.remove(0);
+                                    let rules_json = command.remove(0);
 
                                     match serde_json::from_str::<Plan>(&plan_json) {
                                         Err(msg) => { println!("{:?}", msg); },
                                         Ok(plan) => {
+                                            let rules = serde_json::from_str::<Vec<Rule>>(&rules_json).unwrap();
+                                            
                                             worker.dataflow::<usize, _, _>(|scope| {
-                                                let mut rel_map = register(scope, &mut ctx, &query_name, plan);
+                                                let mut rel_map = register(scope,
+                                                                           &mut ctx,
+                                                                           &query_name,
+                                                                           plan,
+                                                                           rules);
+
                                                 let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
                                                 // .as_collection(|tuple, _| tuple.clone())
                                                     .as_collection(|_,_| ())
@@ -120,7 +128,7 @@ fn main () {
                                         }
                                     }
                                 } else {
-                                    println!("Command does not conform to register?<name>?<plan>");
+                                    println!("Command does not conform to register?<name>?<plan>?<rules>");
                                 }
                             },
                             "transact" => {
