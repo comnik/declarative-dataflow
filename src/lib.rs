@@ -42,6 +42,7 @@ pub enum Value {
     Attribute(Attribute),
     Number(i64),
     String(String),
+    Bool(bool),
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
