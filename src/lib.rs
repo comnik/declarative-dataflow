@@ -101,7 +101,7 @@ pub struct Context<T: Timestamp+Lattice> {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Plan {
     Project(Box<Plan>, Vec<Var>),
-    Union(Box<Plan>, Box<Plan>, Vec<Var>),
+    Union(Vec<Var>, Vec<Box<Plan>>),
     Join(Box<Plan>, Box<Plan>, Var),
     Not(Box<Plan>),
     Lookup(Entity, Attribute, Var),
@@ -299,15 +299,18 @@ fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>(
 
     match plan {
         &Plan::Project(ref plan, _) => { create_inputs(plan.deref(), scope) },
-        &Plan::Union(ref left_plan, ref right_plan, _) => {
-            let mut left_inputs = create_inputs(left_plan.deref(), scope);
-            let mut right_inputs = create_inputs(right_plan.deref(), scope);
+        &Plan::Union(_, ref plans) => {
+            let mut inputs = HashMap::new();
             
-            for (k, v) in right_inputs.drain() {
-                left_inputs.insert(k, v);
-            }
+            for plan in plans.iter() {
+                let mut plan_inputs = create_inputs(plan.deref(), scope);
 
-            left_inputs
+                for (k, v) in plan_inputs.drain() {
+                    inputs.insert(k, v);
+                }
+            }
+            
+            inputs
         },
         &Plan::Join(ref left_plan, ref right_plan, _) => {
             let mut left_inputs = create_inputs(left_plan.deref(), scope);
@@ -361,33 +364,31 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
             // @TODO distinct? or just before negation?
             SimpleRelation { symbols: symbols.to_vec(), tuples }
         },
-        &Plan::Union(ref left_plan, ref right_plan, ref symbols) => {
-            // @TODO can just concat more than two + a single distinct
-            // @TODO or move out distinct, except for negation
-            let mut left = implement_plan(left_plan.deref(), db, nested, relation_map, queries);
-            let mut right = implement_plan(right_plan.deref(), db, nested, relation_map, queries);
-
-            let mut left_tuples;
-            if left.symbols() == symbols {
-               left_tuples = left.tuples();
+        &Plan::Union(ref symbols, ref plans) => {
+            let first = plans.get(0).expect("Union requires at least one plan");
+            let mut first_rel = implement_plan(first.deref(), db, nested, relation_map, queries);
+            let mut tuples = if first_rel.symbols() == symbols {
+                first_rel.tuples()
             } else {
-                left_tuples = left
-                    .tuples_by_symbols(symbols.clone())
-                    .map(|(key, _tuple)| key);                
-            }
+                first_rel.tuples_by_symbols(symbols.clone())
+                    .map(|(key, _tuple)| key)
+            };
 
-            let mut right_tuples;
-            if right.symbols() == symbols {
-                right_tuples = right.tuples();
-            } else {
-                right_tuples = right
-                    .tuples_by_symbols(symbols.clone())
-                    .map(|(key, _tuple)| key);
+            for plan in plans.iter() {
+                let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
+                let mut plan_tuples = if rel.symbols() == symbols {
+                    rel.tuples()
+                } else {
+                    rel.tuples_by_symbols(symbols.clone())
+                        .map(|(key, _tuple)| key)
+                };
+
+                tuples = tuples.concat(&plan_tuples);
             }
 
             SimpleRelation {
                 symbols: symbols.to_vec(),
-                tuples: left_tuples.concat(&right_tuples).distinct()
+                tuples: tuples.distinct()
             }
         },
         &Plan::Join(ref left_plan, ref right_plan, join_var) => {
