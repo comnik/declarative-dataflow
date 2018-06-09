@@ -26,7 +26,7 @@ use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::implementations::ord::{OrdValSpine, OrdKeySpine};
 use differential_dataflow::operators::arrange::{ArrangeByKey, ArrangeBySelf, TraceAgent, Arranged};
 use differential_dataflow::operators::group::Threshold;
-use differential_dataflow::operators::join::{JoinCore};
+use differential_dataflow::operators::join::{Join, JoinCore};
 use differential_dataflow::operators::iterate::Variable;
 
 //
@@ -348,12 +348,13 @@ fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>(
     }
 }
 
-fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
-    (plan: &Plan,
-     db: &ImplContext<Child<'a, Root<A>, T>>,
-     nested: &mut Child<'b, Child<'a, Root<A>, T>, u64>,
-     relation_map: &RelationMap<'b, Child<'a, Root<A>, T>>,
-     queries: &QueryMap<T, isize>) -> SimpleRelation<'b, Child<'a, Root<A>, T>> {
+fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
+    plan: &Plan,
+    db: &ImplContext<Child<'a, Root<A>, T>>,
+    nested: &mut Child<'b, Child<'a, Root<A>, T>, u64>,
+    relation_map: &RelationMap<'b, Child<'a, Root<A>, T>>,
+    queries: &QueryMap<T, isize>
+) -> SimpleRelation<'b, Child<'a, Root<A>, T>> {
         
     match plan {
         &Plan::Project(ref plan, ref symbols) => {
@@ -430,13 +431,13 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
             SimpleRelation { symbols, tuples }
         },
         &Plan::Not(ref plan) => {
-            // implement_negation(plan.deref(), db)
+            implement_negation(plan.deref(), db, nested, relation_map, queries)
             
-            let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
-            SimpleRelation {
-                symbols: rel.symbols().clone(),
-                tuples: rel.tuples().negate()
-            }
+            // let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
+            // SimpleRelation {
+            //     symbols: rel.symbols().clone(),
+            //     tuples: rel.tuples().negate()
+            // }
         },
         &Plan::Lookup(e, a, sym1) => {
             let ea_in = db.input_map.get(&(Some(e), Some(a), None)).unwrap().enter(nested);
@@ -480,47 +481,53 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice>
     }
 }
 
-// fn implement_negation<'a>(plan: &Plan, db: &mut DB, scope: &mut Scope<'a>) -> SimpleRelation<'a> {
-//     match plan {
-//         &Plan::Lookup(e, a, sym1) => {
-//             let ea_in = scope.new_collection_from(vec![(e, a)]).1;
-//             let tuples = db.ea_v.import(scope)
-//                 .antijoin(&ea_in)
-//                 .distinct()
-//                 .map(|(_, v)| { vec![v] });
+fn implement_negation<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
+    plan: &Plan,
+    db: &ImplContext<Child<'a, Root<A>, T>>,
+    nested: &mut Child<'b, Child<'a, Root<A>, T>, u64>,
+    relation_map: &RelationMap<'b, Child<'a, Root<A>, T>>,
+    queries: &QueryMap<T, isize>
+) -> SimpleRelation<'b, Child<'a, Root<A>, T>> {
+
+    match plan {
+        &Plan::Lookup(e, a, sym1) => {
+            let ea_in = db.input_map.get(&(Some(e), Some(a), None)).unwrap().enter(nested);
+            let tuples = db.ea_v.enter(nested)
+                .antijoin(&ea_in.as_collection(|k,_| k.clone()))
+            // .distinct()
+                .map(|(_, tuple)| { tuple.clone() });
             
-//             SimpleRelation { symbols: vec![sym1], tuples }
-//         },
-//         &Plan::Entity(e, sym1, sym2) => {
-//             let e_in = scope.new_collection_from(vec![e]).1;
-//             let tuples = db.e_av.import(scope)
-//                 .antijoin(&e_in)
-//                 .distinct()
-//                 .map(|(_, (a, v))| { vec![Value::Attribute(a), v] });
+            SimpleRelation { symbols: vec![sym1], tuples }
+        },
+        &Plan::Entity(e, sym1, sym2) => {
+            let e_in = db.input_map.get(&(Some(e), None, None)).unwrap().enter(nested);
+            let tuples = db.e_av.enter(nested)
+                .antijoin(&e_in.as_collection(|k,_| k.clone()))
+                // .distinct()
+                .map(|(_, tuple)| { tuple.clone() });
             
-//             SimpleRelation { symbols: vec![sym1, sym2], tuples }
-//         },
-//         &Plan::HasAttr(sym1, a, sym2) => {
-//             let a_in = scope.new_collection_from(vec![a]).1;
-//             let tuples = db.a_ev.import(scope)
-//                 .antijoin(&a_in)
-//                 .distinct()
-//                 .map(|(_, (e, v))| { vec![Value::Eid(e), v] });
+            SimpleRelation { symbols: vec![sym1, sym2], tuples }
+        },
+        &Plan::HasAttr(sym1, a, sym2) => {
+            let a_in = db.input_map.get(&(None, Some(a), None)).unwrap().enter(nested);
+            let tuples = db.a_ev.enter(nested)
+                .antijoin(&a_in.as_collection(|k,_| k.clone()))
+            // .distinct()
+                .map(|(_, tuple)| { tuple.clone() });
             
-//             SimpleRelation { symbols: vec![sym1, sym2], tuples }
-//         },
-//         &Plan::Filter(sym1, a, ref v) => {
-//             let av_in = scope.new_collection_from(vec![(a, v.clone())]).1;
-//             let tuples = db.av_e.import(scope)
-//                 .antijoin(&av_in)
-//                 .distinct()
-//                 .map(|(_, e)| { vec![Value::Eid(e)] });
-                
-//             SimpleRelation { symbols: vec![sym1], tuples }
-//         },
-//         _ => panic!("Negation not supported for this plan.")
-//     }
-// }
+            SimpleRelation { symbols: vec![sym1, sym2], tuples }
+        },
+        &Plan::Filter(sym1, a, ref v) => {
+            let av_in = db.input_map.get(&(None, Some(a), Some(v.clone()))).unwrap().enter(nested);
+            let tuples = db.av_e.enter(nested)
+                .antijoin(&av_in.as_collection(|k,_| k.clone()))
+                .map(|(_, tuple)| { tuple.clone() });
+            
+            SimpleRelation { symbols: vec![sym1], tuples }
+        },
+        _ => panic!("Negation not supported for this plan.")
+    }
+}
 
 //
 // PUBLIC API
