@@ -1,14 +1,16 @@
 extern crate timely;
+extern crate differential_dataflow;
 extern crate declarative_server;
 extern crate serde_json;
+extern crate ws;
 
-use std::io::{Write, Read, BufRead, BufReader};
-use std::net::{TcpListener};
+use std::io::{Write, BufRead, BufReader};
 use std::sync::{Arc, Weak, Mutex};
 use std::sync::mpsc::Receiver;
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::cell::RefCell;
+use std::fs::File;
 
 use timely::PartialOrder;
 use timely::progress::timestamp::RootTimestamp;
@@ -20,18 +22,37 @@ use timely::dataflow::operators::Probe;
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
 use timely::dataflow::operators::generic::source;
 
-use declarative_server::{Context, Plan, TxData, Datom, setup_db, register};
+use differential_dataflow::operators::consolidate::Consolidate;
+
+use ws::{Message, CloseCode};
+
+use declarative_server::{Context, Plan, Rule, TxData, Datom, Attribute, Value, setup_db, register};
+
+const ATTR_NODE: Attribute = 100;
+const ATTR_EDGE: Attribute = 200;
+
+enum Interface { CLI, WS, }
 
 fn main () {
-
+    
     // shared queue of commands to serialize (in the "put in an order" sense).
     let (send, recv) = std::sync::mpsc::channel();
     let recv = Arc::new(Mutex::new(recv));
     let weak = Arc::downgrade(&recv);
+
+    let interface: Interface = match std::env::args().nth(1) {
+        None => Interface::CLI,
+        Some(name) => {
+            match name.as_ref() {
+                "cli" => Interface::CLI,
+                "ws" => Interface::WS,
+                _ => panic!("Unknown interface {}", name)
+            }
+        }
+    };
     
     let guards = timely::execute_from_args(std::env::args(), move |worker| {
         // setup interpreter context
-        println!("Setting-up interpreter context");
         let mut ctx = worker.dataflow(|scope| {
             let (input_handle, db) = setup_db(scope);
             
@@ -47,7 +68,7 @@ fn main () {
         let mut next_tx: usize = 0;
         
         let timer = ::std::time::Instant::now();
-
+        
         // common probe used by all dataflows to express progress information.
         let mut probe = timely::dataflow::operators::probe::Handle::new();
         
@@ -70,20 +91,44 @@ fn main () {
                         let operation = command.remove(0);
                         match operation.as_str() {
                             "register" => {
-                                if command.len() > 0 {
+                                if command.len() > 2 {
+                                    let query_name = command.remove(0);
                                     let plan_json = command.remove(0);
+                                    let rules_json = command.remove(0);
 
                                     match serde_json::from_str::<Plan>(&plan_json) {
                                         Err(msg) => { println!("{:?}", msg); },
                                         Ok(plan) => {
+                                            let rules = serde_json::from_str::<Vec<Rule>>(&rules_json).unwrap();
+                                            
                                             worker.dataflow::<usize, _, _>(|scope| {
-                                                register(scope, &mut ctx, "test".to_string(), plan);
+                                                let mut rel_map = register(scope,
+                                                                           &mut ctx,
+                                                                           &query_name,
+                                                                           plan,
+                                                                           rules);
+
+                                                let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
+                                                // .as_collection(|tuple, _| tuple.clone())
+                                                    .as_collection(|_,_| ())
+                                                    .consolidate()
+                                                    .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
+                                                // .inspect_batch(move |_t, tuples| {
+                                                //     let out: Vec<Out> = tuples.into_iter()
+                                                //         .map(move |x| Out(x.0.clone(), x.2))
+                                                //         .collect();
+
+                                                //     // @TODO how to output?
+                                                //     println!("<= {:?} {:?}", &name, out);
+                                                // })
+                                                    .probe();
+
+                                                ctx.probes.push(probe);
                                             });
-                                            println!("Successfully registered");
                                         }
                                     }
                                 } else {
-                                    println!("No plan provided");
+                                    println!("Command does not conform to register?<name>?<plan>?<rules>");
                                 }
                             },
                             "transact" => {
@@ -100,16 +145,56 @@ fn main () {
                                             next_tx = next_tx + 1;
                                             ctx.input_handle.advance_to(next_tx);
                                             ctx.input_handle.flush();
-
-                                            // for probe in &mut ctx.probes {
-                                            //     while probe.less_than(ctx.input_handle.time()) {
-                                            //         worker.step();
-                                            //     }
-                                            // }
                                         }
                                     }
                                 } else {
                                     println!("No tx-data provided");
+                                }
+                            },
+                            "load_data" => {
+                                if command.len() > 0 {
+                                    let load_timer = ::std::time::Instant::now();
+                                    
+                                    let filename = command.remove(0);
+                                    let file = BufReader::new(File::open(filename).unwrap());
+                                    let peers = worker.peers();
+
+                                    let max_lines: usize = command.remove(0).parse().unwrap();
+                                    let mut line_count: usize = 0;
+                                    
+                                    for readline in file.lines() {
+                                        let line = readline.ok().expect("read error");
+
+                                        if line_count > max_lines { break; };
+                                        line_count += 1;
+                                        
+                                        if !line.starts_with('#') && line.len() > 0 {
+                                            let mut elts = line[..].split_whitespace();
+                                            let src: u64 = elts.next().unwrap().parse().ok().expect("malformed src");
+                                            
+                                            if (src as usize) % peers == index {
+                                                let dst: u64 = elts.next().unwrap().parse().ok().expect("malformed dst");
+                                                let typ: &str = elts.next().unwrap();
+                                                match typ {
+                                                    "n" => { ctx.input_handle.update(Datom(src, ATTR_NODE, Value::Eid(dst)), 1); },
+                                                    "e" => { ctx.input_handle.update(Datom(src, ATTR_EDGE, Value::Eid(dst)), 1); },
+                                                    unk => { panic!("unknown type: {}", unk)},
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if index == 0 {
+                                        println!("{:?}:\tData loaded", load_timer.elapsed());
+                                        println!("{:?}", ::std::time::Instant::now());
+                                    }
+                                    
+                                    next_tx = next_tx + 1;
+                                    ctx.input_handle.advance_to(next_tx);
+                                    ctx.input_handle.flush();
+
+                                } else {
+                                    println!("No filename provided");
                                 }
                             },
                             _ => {
@@ -120,56 +205,83 @@ fn main () {
                 }
             }
 
-            // arguably we should pick a time (now) and `step_while` until it has passed. 
-            // this should ensure that we actually fully drain ranges of updates, rather
-            // than providing no guaranteed progress for e.g. iterative computations.
+            // @FRANK does the below make sense?
 
             worker.step();
+
+            for probe in &mut ctx.probes {
+                while probe.less_than(ctx.input_handle.time()) {
+                    worker.step();
+                }
+            }
         }
 
         println!("worker {}: command queue unavailable; exiting command loop.", worker.index());
     });
-        
+
     std::io::stdout().flush().unwrap();
-
-    let listener = TcpListener::bind("127.0.0.1:6262").unwrap();
-    listener.set_nonblocking(false).expect("Cannot set blocking");
     
-    println!("Running on port 6262");
+    match interface {
+        Interface::CLI => {
+            let input = std::io::stdin();
+            let mut done = false;
 
-    for stream in listener.incoming() {
-        match stream {
-            Ok(mut sin) => {
-                println!("Accepted connection");
+            while !done {
+                if let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
+                    let elts: Vec<_> = line.split('?').map(|x| x.to_owned()).collect();
 
-                let mut reader = BufReader::new(sin);
-                for input in reader.lines() {
-                    match input {
-                        Err(e) => { println!("Error reading line {}", e); break; },
-                        Ok(line) => {
+                    if elts.len() > 0 {
+                        match elts[0].as_str() {
+                            "help" => { println!("valid commands are currently: help, register, transact, load_data, exit"); },
+                            "register" => { send.send(elts).expect("failed to send command"); },
+                            "transact" => { send.send(elts).expect("failed to send command"); },
+                            "load_data" => { send.send(elts).expect("failed to send command"); },
+                            "exit" => { done = true; },
+                            _ => { println!("unrecognized command: {:?}", elts[0]); },
+                        }
+                    }
+
+                    std::io::stdout().flush().unwrap();
+                }
+            }
+
+            drop(send);
+        },
+        Interface::WS => {
+            let send_handle = &send;
+            
+            ws::listen("127.0.0.1:6262", |out| {
+                move |msg| {
+                    match msg {
+                        Message::Text(line) => {
                             let elts: Vec<_> = line.split('?').map(|x| x.to_owned()).collect();
 
                             if elts.len() > 0 {
                                 match elts[0].as_str() {
-                                    "help" => { println!("valid commands are currently: help, register, transact, exit"); },
-                                    "register" => { send.send(elts).expect("failed to send command"); },
-                                    "transact" => { send.send(elts).expect("failed to send command"); },
-                                    "exit" => { break; },
-                                    _ => { println!("unrecognized command: {:?}", elts[0]); },
+                                    "help" => { out.send("valid commands are currently: help, register, transact, exit") },
+                                    "register" => {
+                                        send_handle.send(elts).expect("failed to send command");
+                                        out.send("Ok")
+                                    },
+                                    "transact" => {
+                                        send_handle.send(elts).expect("failed to send command");
+                                        out.send("Ok")
+                                    },
+                                    "exit" => { out.close(CloseCode::Normal) },
+                                    _ => { out.send("unrecognized command") },
                                 }
+                            } else {
+                                out.send("malformed message")
                             }
-                        }
+                        },
+                        Message::Binary(_) => { out.send("Server only accepts string messages.") },
                     }
                 }
-
-                println!("Closing connection");
-            },
-            Err(e) => { println!("Encountered I/O error: {}", e); }
+            }).unwrap();
         }
-    }
-
+    };
+    
     println!("main: exited command loop");
-    drop(send);
     drop(recv);
 
     guards.unwrap();
