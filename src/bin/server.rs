@@ -4,41 +4,62 @@ extern crate declarative_server;
 extern crate serde_json;
 extern crate ws;
 
+#[macro_use]
+extern crate abomonation_derive;
+extern crate abomonation;
+
 use std::io::{Write, BufRead, BufReader};
 use std::sync::{Arc, Weak, Mutex};
-use std::sync::mpsc::Receiver;
+use std::sync::mpsc::{Sender, Receiver};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fs::File;
+use std::thread;
 
 use timely::PartialOrder;
 use timely::progress::timestamp::RootTimestamp;
 use timely::progress::nested::product::Product;
 use timely::dataflow::scopes::root::Root;
 use timely::dataflow::operators::Unary;
-use timely::dataflow::channels::pact::Exchange;
 use timely::dataflow::operators::Probe;
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
-use timely::dataflow::operators::generic::source;
+use timely::dataflow::operators::generic::{source, OutputHandle};
+use timely::dataflow::operators::Map;
+use timely::dataflow::operators::Exchange;
 
 use differential_dataflow::operators::consolidate::Consolidate;
 
 use ws::{Message, CloseCode};
 
-use declarative_server::{Context, Plan, Rule, TxData, Datom, Attribute, Value, setup_db, register};
+use declarative_server::{Context, Plan, Rule, TxData, Out, Datom, Attribute, Value, setup_db, register};
 
 const ATTR_NODE: Attribute = 100;
 const ATTR_EDGE: Attribute = 200;
 
+#[derive(Clone)]
 enum Interface { CLI, WS, }
+
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug)]
+struct Command {
+    id: usize,
+    // the worker (typically a controller) that issued this command
+    // and is the one that should receive outputs
+    owner: usize,
+    cmd: Vec<String>,
+}
 
 fn main () {
     
-    // shared queue of commands to serialize (in the "put in an order" sense).
+    // shared queue of commands to serialize (in the "put in an order" sense)
     let (send, recv) = std::sync::mpsc::channel();
-    let recv = Arc::new(Mutex::new(recv));
-    let weak = Arc::downgrade(&recv);
+    let input_recv = Arc::new(Mutex::new(recv));
+    let shareable_input_recv = Arc::downgrade(&input_recv);
+
+    // shared queue of outputs to forward to clients
+    let (send_results, recv_results) = std::sync::mpsc::channel();
+    let send_results_arc = Arc::new(Mutex::new(send_results));
+    let send_results_shareable = Arc::downgrade(&send_results_arc);
 
     let interface: Interface = match std::env::args().nth(1) {
         None => Interface::CLI,
@@ -50,7 +71,7 @@ fn main () {
             }
         }
     };
-    
+        
     let guards = timely::execute_from_args(std::env::args(), move |worker| {
         // setup interpreter context
         let mut ctx = worker.dataflow(|scope| {
@@ -72,13 +93,13 @@ fn main () {
         // common probe used by all dataflows to express progress information.
         let mut probe = timely::dataflow::operators::probe::Handle::new();
         
-        // queue shared between serializer (producer) and command loop (consumer).
+        // serializing and broadcasting commands
         let command_queue_strong = Rc::new(RefCell::new(VecDeque::new()));
-        build_command_serializer(worker, timer, weak.clone(), &command_queue_strong, &mut probe);
+        build_controller(worker, timer, shareable_input_recv.clone(), &command_queue_strong, &mut probe);
         let command_queue = Rc::downgrade(&command_queue_strong);
         drop(command_queue_strong);
 
-        // continue running as long as we haven't dropped the queue.
+        // continue running as long as we haven't dropped the queue
         while let Some(command_queue) = command_queue.upgrade() {
 
             if let Ok(mut borrow) = command_queue.try_borrow_mut() {
@@ -87,20 +108,21 @@ fn main () {
                     let index = worker.index();
                     println!("worker {:?}: received command: {:?}", index, command);
 
-                    if command.len() > 1 {
-                        let operation = command.remove(0);
+                    if command.cmd.len() > 1 {
+                        let operation = command.cmd.remove(0);
                         match operation.as_str() {
                             "register" => {
-                                if command.len() > 2 {
-                                    let query_name = command.remove(0);
-                                    let plan_json = command.remove(0);
-                                    let rules_json = command.remove(0);
+                                if command.cmd.len() > 2 {
+                                    let query_name = command.cmd.remove(0);
+                                    let plan_json = command.cmd.remove(0);
+                                    let rules_json = command.cmd.remove(0);
 
                                     match serde_json::from_str::<Plan>(&plan_json) {
                                         Err(msg) => { println!("{:?}", msg); },
                                         Ok(plan) => {
                                             let rules = serde_json::from_str::<Vec<Rule>>(&rules_json).unwrap();
-                                            
+                                            let send_results_shareable = send_results_shareable.clone();
+                                                
                                             worker.dataflow::<usize, _, _>(|scope| {
                                                 let mut rel_map = register(scope,
                                                                            &mut ctx,
@@ -108,19 +130,35 @@ fn main () {
                                                                            plan,
                                                                            rules);
 
-                                                let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
-                                                // .as_collection(|tuple, _| tuple.clone())
-                                                    .as_collection(|_,_| ())
-                                                    .consolidate()
-                                                    .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
-                                                // .inspect_batch(move |_t, tuples| {
-                                                //     let out: Vec<Out> = tuples.into_iter()
-                                                //         .map(move |x| Out(x.0.clone(), x.2))
-                                                //         .collect();
+                                                // output for experiments
+                                                // let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
+                                                //     .as_collection(|_,_| ())
+                                                //     .consolidate()
+                                                //     .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
+                                                //     .probe();
 
-                                                //     // @TODO how to output?
-                                                //     println!("<= {:?} {:?}", &name, out);
-                                                // })
+                                                // @TODO Frank sanity check
+                                                let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
+                                                    .as_collection(|tuple,_| tuple.clone())
+                                                    .inner
+                                                    .map(|x| Out(x.0.clone(), x.2))
+                                                    .unary_notify(
+                                                        timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64), 
+                                                        "OutputsRecv", 
+                                                        Vec::new(),
+                                                        move |input, output: &mut OutputHandle<_, Out, _>, notificator| {
+
+                                                            // grab each command and queue it up
+                                                            input.for_each(|time, data| {
+                                                                let out: Vec<Out> = data.drain(..).collect();
+
+                                                                if let Some(send_results) = send_results_shareable.upgrade() {
+                                                                    if let Ok(send_results) = send_results.try_lock() {
+                                                                        send_results.send(out);
+                                                                    }
+                                                                } else { panic!("send_results channel not available"); }
+                                                            });
+                                                        })
                                                     .probe();
 
                                                 ctx.probes.push(probe);
@@ -132,8 +170,8 @@ fn main () {
                                 }
                             },
                             "transact" => {
-                                if command.len() > 0 {
-                                    let tx_data_json = command.remove(0);
+                                if command.cmd.len() > 0 {
+                                    let tx_data_json = command.cmd.remove(0);
 
                                     match serde_json::from_str::<Vec<TxData>>(&tx_data_json) {
                                         Err(msg) => { println!("{:?}", msg); },
@@ -152,14 +190,14 @@ fn main () {
                                 }
                             },
                             "load_data" => {
-                                if command.len() > 0 {
+                                if command.cmd.len() > 0 {
                                     let load_timer = ::std::time::Instant::now();
                                     
-                                    let filename = command.remove(0);
+                                    let filename = command.cmd.remove(0);
                                     let file = BufReader::new(File::open(filename).unwrap());
                                     let peers = worker.peers();
 
-                                    let max_lines: usize = command.remove(0).parse().unwrap();
+                                    let max_lines: usize = command.cmd.remove(0).parse().unwrap();
                                     let mut line_count: usize = 0;
                                     
                                     for readline in file.lines() {
@@ -219,10 +257,106 @@ fn main () {
         println!("worker {}: command queue unavailable; exiting command loop.", worker.index());
     });
 
-    std::io::stdout().flush().unwrap();
+    let forwarder_iface = interface.clone();
+    thread::spawn(|| run_forwarder(forwarder_iface, recv_results));
+
+    run_server(interface, send);
+    
+    drop(input_recv);
+    drop(send_results_arc);
+    
+    guards.unwrap();
+}
+
+/// The controller is a differential dataflow serializing and
+/// circulating new commands to all workers.
+fn build_controller<A: timely::Allocate>(
+    worker: &mut Root<A>,
+    timer: ::std::time::Instant,
+    input_recv: Weak<Mutex<Receiver<Vec<String>>>>,
+    command_queue: &Rc<RefCell<VecDeque<Command>>>,
+    handle: &mut ProbeHandle<Product<RootTimestamp, usize>>,
+) {
+
+    let this_idx = worker.index();
+    let command_queue = command_queue.clone();
+
+    // command serialization and circulation
+    worker.dataflow(move |dataflow| {
+
+        let peers = dataflow.peers();
+        let mut recvd_commands = Vec::new();
+
+        // source attempting to pull from input_recv and producing
+        // commands for everyone
+        source(dataflow, "InputCommands", move |capability| {
+
+            // so we can drop, if input queue vanishes.
+            let mut capability = Some(capability);
+
+            // closure broadcasts any commands it grabs.
+            move |output| {
+
+                if let Some(input_recv) = input_recv.upgrade() {
+
+                    // determine current nanoseconds
+                    if let Some(capability) = capability.as_mut() {
+
+                        // this could be less frequent if needed.
+                        let mut time = capability.time().clone();
+                        let elapsed = timer.elapsed();
+                        time.inner = (elapsed.as_secs() * 1000000000 + elapsed.subsec_nanos() as u64) as usize;
+
+                        // downgrade the capability.
+                        capability.downgrade(&time);
+
+                        if let Ok(input_recv) = input_recv.try_lock() {
+                            while let Ok(cmd) = input_recv.try_recv() {
+                                let mut session = output.session(&capability);
+                                // @TODO load balance instead of replicate?
+                                for worker_idx in 0 .. peers {
+                                    // @TODO command ids?
+                                    session.give((worker_idx, Command { id: 0, owner: this_idx, cmd: cmd.clone() }));
+                                }
+                            }
+                        }
+                    } else { panic!("command serializer: capability lost while input queue valid"); }
+                } else { capability = None; }
+            }
+        })
+        .unary_notify(
+            timely::dataflow::channels::pact::Exchange::new(|x: &(usize, Command)| x.0 as u64), 
+            "InputCommandsRecv", 
+            Vec::new(), 
+            move |input, output, notificator| {
+
+            // grab all commands
+            input.for_each(|time, data| {
+                recvd_commands.extend(data.drain(..).map(|(_,command)| (time.time().clone(), command)));
+                if false { output.session(&time).give(0u64); }
+            });
+
+            recvd_commands.sort();
+
+            // try to move any commands at completed times to a shared queue.
+            if let Ok(mut borrow) = command_queue.try_borrow_mut() {
+                while recvd_commands.len() > 0 && !notificator.frontier(0).iter().any(|x| x.less_than(&recvd_commands[0].0)) {
+                    borrow.push_back(recvd_commands.remove(0).1);
+                }
+            } else { panic!("failed to borrow shared command queue"); }
+        })
+        .probe_with(handle);
+    });
+}
+
+fn run_server(interface: Interface, command_channel: Sender<Vec<String>>) {
+
+    println!("[SERVER] running");
     
     match interface {
         Interface::CLI => {
+            std::io::stdout().flush().unwrap();
+            
             let input = std::io::stdin();
             let mut done = false;
 
@@ -233,9 +367,9 @@ fn main () {
                     if elts.len() > 0 {
                         match elts[0].as_str() {
                             "help" => { println!("valid commands are currently: help, register, transact, load_data, exit"); },
-                            "register" => { send.send(elts).expect("failed to send command"); },
-                            "transact" => { send.send(elts).expect("failed to send command"); },
-                            "load_data" => { send.send(elts).expect("failed to send command"); },
+                            "register" => { command_channel.send(elts).expect("failed to send command"); },
+                            "transact" => { command_channel.send(elts).expect("failed to send command"); },
+                            "load_data" => { command_channel.send(elts).expect("failed to send command"); },
                             "exit" => { done = true; },
                             _ => { println!("unrecognized command: {:?}", elts[0]); },
                         }
@@ -244,11 +378,9 @@ fn main () {
                     std::io::stdout().flush().unwrap();
                 }
             }
-
-            drop(send);
         },
         Interface::WS => {
-            let send_handle = &send;
+            let send_handle = &command_channel;
             
             ws::listen("127.0.0.1:6262", |out| {
                 move |msg| {
@@ -280,91 +412,25 @@ fn main () {
             }).unwrap();
         }
     };
-    
-    println!("main: exited command loop");
-    drop(recv);
 
-    guards.unwrap();
+    println!("[SERVER] exited");
 }
 
-fn build_command_serializer<A: timely::Allocate>(
-    worker: &mut Root<A>,
-    timer: ::std::time::Instant,
-    input: Weak<Mutex<Receiver<Vec<String>>>>,
-    target: &Rc<RefCell<VecDeque<Vec<String>>>>,
-    handle: &mut ProbeHandle<Product<RootTimestamp, usize>>,
-) {
+fn run_forwarder(interface: Interface, results_channel: Receiver<Vec<Out>>) {
 
-    let target = target.clone();
-
-    // build a dataflow used to serialize and circulate commands
-    worker.dataflow(move |dataflow| {
-
-        let peers = dataflow.peers();
-        let mut recvd = Vec::new();
-
-        // a source that attempts to pull from `recv` and produce commands for everyone
-        source(dataflow, "InputCommands", move |capability| {
-
-            // so we can drop, if input queue vanishes.
-            let mut capability = Some(capability);
-
-            // closure broadcasts any commands it grabs.
-            move |output| {
-
-                if let Some(input) = input.upgrade() {
-
-                    // determine current nanoseconds
-                    if let Some(capability) = capability.as_mut() {
-
-                        // this could be less frequent if needed.
-                        let mut time = capability.time().clone();
-                        let elapsed = timer.elapsed();
-                        time.inner = (elapsed.as_secs() * 1000000000 + elapsed.subsec_nanos() as u64) as usize;
-
-                        // downgrade the capability.
-                        capability.downgrade(&time);
-
-                        if let Ok(input) = input.try_lock() {
-                            while let Ok(command) = input.try_recv() {
-                                let command: Vec<String> = command;
-                                let mut session = output.session(&capability);
-                                for worker_index in 0 .. peers {
-                                    session.give((worker_index, command.clone()));
-                                }
-                            }
-                        }
-                    }
-                    else { panic!("command serializer: capability lost while input queue valid"); }
-                }
-                else {
-                    capability = None;
-                }
+    println!("[FORWARDER] running");
+    
+    match interface {
+        Interface::CLI => {
+            loop {
+                match results_channel.recv() {
+                    Err(_err) => break,
+                    Ok(results) => { println!("=> {:?}", results) }
+                };
             }
-        })
-        .unary_notify(
-            Exchange::new(|x: &(usize, Vec<String>)| x.0 as u64), 
-            "InputCommandsRecv", 
-            Vec::new(), 
-            move |input, output, notificator| {
+        },
+        _ => panic!("not supported yet")
+    };
 
-            // grab each command and queue it up
-            input.for_each(|time, data| {
-                recvd.extend(data.drain(..).map(|(_,command)| (time.time().clone(), command)));
-                if false { output.session(&time).give(0u64); }
-            });
-
-            recvd.sort();
-
-            // try to move any commands at completed times to a shared queue.
-            if let Ok(mut borrow) = target.try_borrow_mut() {
-                while recvd.len() > 0 && !notificator.frontier(0).iter().any(|x| x.less_than(&recvd[0].0)) {
-                    borrow.push_back(recvd.remove(0).1);
-                }
-            }
-            else { panic!("failed to borrow shared command queue"); }
-
-        })
-        .probe_with(handle);
-    });
+    println!("[FORWARDER] exited");
 }

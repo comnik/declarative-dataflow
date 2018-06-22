@@ -15,4 +15,4 @@ ClojureScript](https://github.com/comnik/clj-3df).
 
 The main binary is `bin/server.rs`, which can be invoked by running
 
-    cargo run --release --bin server
+    cargo run --release --bin server <cli|ws>

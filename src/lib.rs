@@ -51,7 +51,7 @@ pub struct Datom(pub Entity, pub Attribute, pub Value);
 #[derive(Deserialize, Debug)]
 pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
 
-#[derive(Serialize, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize)]
 pub struct Out(pub Vec<Value>, pub isize);
 
 type ProbeHandle<T> = Handle<Product<RootTimestamp, T>>;
