@@ -8,6 +8,9 @@ extern crate websocket;
 extern crate abomonation_derive;
 extern crate abomonation;
 
+#[macro_use]
+extern crate serde_derive;
+
 use std::io::{Write, BufRead, BufReader};
 use std::sync::{Arc, Weak, Mutex};
 use std::sync::mpsc::{Sender, Receiver};
@@ -46,7 +49,14 @@ struct Command {
     // the worker (typically a controller) that issued this command
     // and is the one that should receive outputs
     owner: usize,
-    cmd: Vec<String>,
+    cmd: String,
+}
+
+#[derive(Deserialize)]
+enum Request {
+    Transact { tx_data: Vec<TxData> },
+    Register { query_name: String, plan: Plan, rules: Vec<Rule> },
+    LoadData { filename: String, max_lines: usize },
 }
 
 fn main () {
@@ -108,96 +118,66 @@ fn main () {
                     let index = worker.index();
                     println!("worker {:?}: received command: {:?}", index, command);
 
-                    if command.cmd.len() > 1 {
-                        let operation = command.cmd.remove(0);
-                        match operation.as_str() {
-                            "register" => {
-                                if command.cmd.len() > 2 {
-                                    let query_name = command.cmd.remove(0);
-                                    let plan_json = command.cmd.remove(0);
-                                    let rules_json = command.cmd.remove(0);
-
-                                    match serde_json::from_str::<Plan>(&plan_json) {
-                                        Err(msg) => { println!("{:?}", msg); },
-                                        Ok(plan) => {
-                                            let rules = serde_json::from_str::<Vec<Rule>>(&rules_json).unwrap();
-                                            let send_results_shareable = send_results_shareable.clone();
-                                                
-                                            worker.dataflow::<usize, _, _>(|scope| {
-                                                let mut rel_map = register(scope,
-                                                                           &mut ctx,
-                                                                           &query_name,
-                                                                           plan,
-                                                                           rules);
-
-                                                // output for experiments
-                                                // let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
-                                                //     .as_collection(|_,_| ())
-                                                //     .consolidate()
-                                                //     .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
-                                                //     .probe();
-
-                                                // @TODO Frank sanity check
-                                                let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
-                                                    .as_collection(|tuple,_| tuple.clone())
-                                                    .inner
-                                                    .map(|x| Out(x.0.clone(), x.2))
-                                                    .unary_notify(
-                                                        timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64), 
-                                                        "OutputsRecv", 
-                                                        Vec::new(),
-                                                        move |input, _output: &mut OutputHandle<_, Out, _>, _notificator| {
-
-                                                            // grab each command and queue it up
-                                                            input.for_each(|_time, data| {
-                                                                let out: Vec<Out> = data.drain(..).collect();
-
-                                                                if let Some(send_results) = send_results_shareable.upgrade() {
-                                                                    if let Ok(send_results) = send_results.try_lock() {
-                                                                        send_results.send(out).expect("failed to put results onto channel");
-                                                                    }
-                                                                } else { panic!("send_results channel not available"); }
-                                                            });
-                                                        })
-                                                    .probe();
-
-                                                ctx.probes.push(probe);
-                                            });
-                                        }
-                                    }
-                                } else {
-                                    println!("Command does not conform to register?<name>?<plan>?<rules>");
-                                }
-                            },
-                            "transact" => {
-                                if command.cmd.len() > 0 {
-                                    let tx_data_json = command.cmd.remove(0);
-
-                                    match serde_json::from_str::<Vec<TxData>>(&tx_data_json) {
-                                        Err(msg) => { println!("{:?}", msg); },
-                                        Ok(tx_data) => {
-                                            println!("{:?}", tx_data);
-                                            for TxData(op, e, a, v) in tx_data {
-                                                ctx.input_handle.update(Datom(e, a, v), op);
-                                            }
-                                            next_tx = next_tx + 1;
-                                            ctx.input_handle.advance_to(next_tx);
-                                            ctx.input_handle.flush();
-                                        }
-                                    }
-                                } else {
-                                    println!("No tx-data provided");
-                                }
-                            },
-                            "load_data" => {
-                                if command.cmd.len() > 0 {
-                                    let load_timer = ::std::time::Instant::now();
+                    match serde_json::from_str::<Request>(&command.cmd) {
+                        Err(msg) => { println!("failed to parse command: {:?}", msg); },
+                        Ok(req) => {
+                            match req {
+                                Request::Transact { tx_data } => {
                                     
-                                    let filename = command.cmd.remove(0);
-                                    let file = BufReader::new(File::open(filename).unwrap());
-                                    let peers = worker.peers();
+                                    for TxData(op, e, a, v) in tx_data {
+                                        ctx.input_handle.update(Datom(e, a, v), op);
+                                    }
+                                    
+                                    next_tx = next_tx + 1;
+                                    ctx.input_handle.advance_to(next_tx);
+                                    ctx.input_handle.flush();
+                                },
+                                Request::Register { query_name, plan, rules } => {
 
-                                    let max_lines: usize = command.cmd.remove(0).parse().unwrap();
+                                    let send_results_shareable = send_results_shareable.clone();
+                                    
+                                    worker.dataflow::<usize, _, _>(|scope| {
+                                        let mut rel_map = register(scope, &mut ctx, &query_name, plan, rules);
+
+                                        // output for experiments
+                                        // let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
+                                        //     .as_collection(|_,_| ())
+                                        //     .consolidate()
+                                        //     .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
+                                        //     .probe();
+
+                                        // @TODO Frank sanity check
+                                        let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
+                                            .as_collection(|tuple,_| tuple.clone())
+                                            .inner
+                                            .map(|x| Out(x.0.clone(), x.2))
+                                            .unary_notify(
+                                                timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64), 
+                                                "OutputsRecv", 
+                                                Vec::new(),
+                                                move |input, _output: &mut OutputHandle<_, Out, _>, _notificator| {
+
+                                                    // grab each command and queue it up
+                                                    input.for_each(|_time, data| {
+                                                        let out: Vec<Out> = data.drain(..).collect();
+
+                                                        if let Some(send_results) = send_results_shareable.upgrade() {
+                                                            if let Ok(send_results) = send_results.try_lock() {
+                                                                send_results.send(out).expect("failed to put results onto channel");
+                                                            }
+                                                        } else { panic!("send_results channel not available"); }
+                                                    });
+                                                })
+                                            .probe();
+
+                                        ctx.probes.push(probe);
+                                    });
+                                },
+                                Request::LoadData { filename, max_lines } => {
+
+                                    let load_timer = ::std::time::Instant::now();
+                                    let peers = worker.peers();
+                                    let file = BufReader::new(File::open(filename).unwrap());
                                     let mut line_count: usize = 0;
                                     
                                     for readline in file.lines() {
@@ -230,16 +210,10 @@ fn main () {
                                     next_tx = next_tx + 1;
                                     ctx.input_handle.advance_to(next_tx);
                                     ctx.input_handle.flush();
-
-                                } else {
-                                    println!("No filename provided");
                                 }
-                            },
-                            _ => {
-                                println!("worker {:?}: unrecognized command: {:?}", index, operation);
                             }
                         }
-                    }
+                    }                    
                 }
             }
 
@@ -273,7 +247,7 @@ fn main () {
 fn build_controller<A: timely::Allocate>(
     worker: &mut Root<A>,
     timer: ::std::time::Instant,
-    input_recv: Weak<Mutex<Receiver<Vec<String>>>>,
+    input_recv: Weak<Mutex<Receiver<String>>>,
     command_queue: &Rc<RefCell<VecDeque<Command>>>,
     handle: &mut ProbeHandle<Product<RootTimestamp, usize>>,
 ) {
@@ -349,7 +323,7 @@ fn build_controller<A: timely::Allocate>(
     });
 }
 
-fn run_cli_server(command_channel: Sender<Vec<String>>, results_channel: Receiver<Vec<Out>>) {
+fn run_cli_server(command_channel: Sender<String>, results_channel: Receiver<Vec<Out>>) {
 
     println!("[CLI-SERVER] running");
 
@@ -367,17 +341,9 @@ fn run_cli_server(command_channel: Sender<Vec<String>>, results_channel: Receive
     
     loop {
         if let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
-            let elts: Vec<_> = line.split('?').map(|x| x.to_owned()).collect();
-
-            if elts.len() > 0 {
-                match elts[0].as_str() {
-                    "help" => { println!("valid commands are currently: help, register, transact, load_data, exit"); },
-                    "register" => { command_channel.send(elts).expect("failed to send command"); },
-                    "transact" => { command_channel.send(elts).expect("failed to send command"); },
-                    "load_data" => { command_channel.send(elts).expect("failed to send command"); },
-                    "exit" => { break },
-                    _ => { println!("unrecognized command: {:?}", elts[0]); },
-                }
+            match line.as_str() {
+                "exit" => { break },
+                _ => { command_channel.send(line).expect("failed to send command"); },
             }
         }
     }
@@ -385,19 +351,12 @@ fn run_cli_server(command_channel: Sender<Vec<String>>, results_channel: Receive
     println!("[CLI-SERVER] exiting");
 }
 
-fn run_ws_server(command_channel: Sender<Vec<String>>, results_channel: Receiver<Vec<Out>>) {
+fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<Vec<Out>>) {
 
     println!("[WS-SERVER] running");
     
     let send_handle = &command_channel;
     let mut server = Server::bind("127.0.0.1:6262").expect("[SERVER] can't bind to port");
-
-    let help_msg = Message::text("valid commands are currently: help, register, transact, exit");
-    let ok_msg = Message::text("ok");
-    let unrecognized_command_msg = Message::text("unrecognized command");
-    let malformed_msg = Message::text("malformed");
-    let unknown_type_msg = Message::text("serrver only accepts string messages");
-    let close_msg = Message::close();
 
     match server.accept() {
         Err(_err) => println!("[SERVER] failed to accept"),
@@ -428,17 +387,7 @@ fn run_ws_server(command_channel: Sender<Vec<String>>, results_channel: Receiver
 
                 match msg {
                     OwnedMessage::Close(_) => { println!("[SERVER] client closed connection"); },
-                    OwnedMessage::Text(line) => {
-                        let elts: Vec<_> = line.split('?').map(|x| x.to_owned()).collect();
-
-                        if elts.len() > 0 {
-                            match elts[0].as_str() {
-                                "register" => { send_handle.send(elts).expect("failed to send command"); },
-                                "transact" => { send_handle.send(elts).expect("failed to send command"); },
-                                _ => { },
-                            }
-                        }
-                    },
+                    OwnedMessage::Text(line) => { send_handle.send(line).expect("failed to send command"); },
                     _ => {  },
                 }
             }
