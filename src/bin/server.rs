@@ -257,10 +257,10 @@ fn main () {
         println!("worker {}: command queue unavailable; exiting command loop.", worker.index());
     });
 
-    let forwarder_iface = interface.clone();
-    thread::spawn(|| run_forwarder(forwarder_iface, recv_results));
-
-    run_server(interface, send);
+    match interface {
+        Interface::CLI => { run_cli_server(send, recv_results); },
+        Interface::WS => { run_ws_server(send, recv_results); }
+    }
     
     drop(input_recv);
     drop(send_results_arc);
@@ -349,114 +349,101 @@ fn build_controller<A: timely::Allocate>(
     });
 }
 
-fn run_server(interface: Interface, command_channel: Sender<Vec<String>>) {
+fn run_cli_server(command_channel: Sender<Vec<String>>, results_channel: Receiver<Vec<Out>>) {
 
-    println!("[SERVER] running");
+    println!("[CLI-SERVER] running");
+
+    std::io::stdout().flush().unwrap();
+    let input = std::io::stdin();
+
+    thread::spawn(move || {
+        loop {
+            match results_channel.recv() {
+                Err(_err) => break,
+                Ok(results) => { println!("=> {:?}", results) }
+            };
+        }
+    });
     
-    match interface {
-        Interface::CLI => {
-            std::io::stdout().flush().unwrap();
-            
-            let input = std::io::stdin();
-            let mut done = false;
+    loop {
+        if let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
+            let elts: Vec<_> = line.split('?').map(|x| x.to_owned()).collect();
 
-            while !done {
-                if let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
-                    let elts: Vec<_> = line.split('?').map(|x| x.to_owned()).collect();
-
-                    if elts.len() > 0 {
-                        match elts[0].as_str() {
-                            "help" => { println!("valid commands are currently: help, register, transact, load_data, exit"); },
-                            "register" => { command_channel.send(elts).expect("failed to send command"); },
-                            "transact" => { command_channel.send(elts).expect("failed to send command"); },
-                            "load_data" => { command_channel.send(elts).expect("failed to send command"); },
-                            "exit" => { done = true; },
-                            _ => { println!("unrecognized command: {:?}", elts[0]); },
-                        }
-                    }
-
-                    std::io::stdout().flush().unwrap();
-                }
-            }
-        },
-        Interface::WS => {
-            let send_handle = &command_channel;
-            let mut server = Server::bind("127.0.0.1:6262").expect("[SERVER] can't bind to port");
-
-            let help_msg = Message::text("valid commands are currently: help, register, transact, exit");
-            let ok_msg = Message::text("ok");
-            let unrecognized_command_msg = Message::text("unrecognized command");
-            let malformed_msg = Message::text("malformed");
-            let unknown_type_msg = Message::text("serrver only accepts string messages");
-            let close_msg = Message::close();
-            
-            loop {
-                match server.accept() {
-                    Err(_err) => println!("[SERVER] failed to accept"),
-                    Ok(ws_upgrade) => {
-                        let client = ws_upgrade.accept().expect("[SERVER] failed to accept");
-
-                        println!("[SERVER] connection from {:?}", client.peer_addr().unwrap());
-
-                        let (mut receiver, mut sender) = client.split().unwrap();
-
-                        for msg in receiver.incoming_messages() {
-
-                            let msg = msg.unwrap();
-                            println!("[SERVER] new message: {:?}", msg);
-
-                            match msg {
-                                OwnedMessage::Close(_) => { println!("[SERVER] client closed connection"); },
-                                OwnedMessage::Text(line) => {
-                                    let elts: Vec<_> = line.split('?').map(|x| x.to_owned()).collect();
-
-                                    if elts.len() > 0 {
-                                        match elts[0].as_str() {
-                                            "help" => { sender.send_message(&help_msg).unwrap(); },
-                                            "register" => {
-                                                send_handle.send(elts).expect("failed to send command");
-                                                sender.send_message(&ok_msg).unwrap();
-                                            },
-                                            "transact" => {
-                                                send_handle.send(elts).expect("failed to send command");
-                                                sender.send_message(&ok_msg).unwrap();
-                                            },
-                                            "exit" => { sender.send_message(&close_msg).unwrap(); },
-                                            _ => { sender.send_message(&unrecognized_command_msg).unwrap(); },
-                                        }
-                                    } else { sender.send_message(&malformed_msg).unwrap(); }
-                                },
-                                _ => { sender.send_message(&unknown_type_msg).unwrap(); },
-                            }
-                        }
-                    }
+            if elts.len() > 0 {
+                match elts[0].as_str() {
+                    "help" => { println!("valid commands are currently: help, register, transact, load_data, exit"); },
+                    "register" => { command_channel.send(elts).expect("failed to send command"); },
+                    "transact" => { command_channel.send(elts).expect("failed to send command"); },
+                    "load_data" => { command_channel.send(elts).expect("failed to send command"); },
+                    "exit" => { break },
+                    _ => { println!("unrecognized command: {:?}", elts[0]); },
                 }
             }
         }
-    };
+    }
 
-    println!("[SERVER] exited");
+    println!("[CLI-SERVER] exiting");
 }
 
-fn run_forwarder(interface: Interface, results_channel: Receiver<Vec<Out>>) {
+fn run_ws_server(command_channel: Sender<Vec<String>>, results_channel: Receiver<Vec<Out>>) {
 
-    println!("[FORWARDER] running");
+    println!("[WS-SERVER] running");
     
-    match interface {
-        Interface::CLI => {
-            loop {
-                match results_channel.recv() {
-                    Err(_err) => break,
-                    Ok(results) => { println!("=> {:?}", results) }
-                };
-            }
-        },
-        Interface::WS => {
-            loop {
+    let send_handle = &command_channel;
+    let mut server = Server::bind("127.0.0.1:6262").expect("[SERVER] can't bind to port");
+
+    let help_msg = Message::text("valid commands are currently: help, register, transact, exit");
+    let ok_msg = Message::text("ok");
+    let unrecognized_command_msg = Message::text("unrecognized command");
+    let malformed_msg = Message::text("malformed");
+    let unknown_type_msg = Message::text("serrver only accepts string messages");
+    let close_msg = Message::close();
+
+    match server.accept() {
+        Err(_err) => println!("[SERVER] failed to accept"),
+        Ok(ws_upgrade) => {
+            let client = ws_upgrade.accept().expect("[SERVER] failed to accept");
+
+            println!("[SERVER] connection from {:?}", client.peer_addr().unwrap());
+
+            let (mut receiver, mut sender) = client.split().unwrap();
+
+            thread::spawn(move || {
+                loop {
+                    match results_channel.recv() {
+                        Err(_err) => break,
+                        Ok(results) => {
+                            let serialized = serde_json::to_string::<Vec<Out>>(&results).expect("failed to serialize outputs");
+                            sender.send_message(&Message::text(serialized)).expect("failed to send message");
+                        }
+                    };
+                }
+            });
+
+            for msg in receiver.incoming_messages() {
                 
+                let msg = msg.unwrap();
+                
+                println!("[SERVER] new message: {:?}", msg);
+
+                match msg {
+                    OwnedMessage::Close(_) => { println!("[SERVER] client closed connection"); },
+                    OwnedMessage::Text(line) => {
+                        let elts: Vec<_> = line.split('?').map(|x| x.to_owned()).collect();
+
+                        if elts.len() > 0 {
+                            match elts[0].as_str() {
+                                "register" => { send_handle.send(elts).expect("failed to send command"); },
+                                "transact" => { send_handle.send(elts).expect("failed to send command"); },
+                                _ => { },
+                            }
+                        }
+                    },
+                    _ => {  },
+                }
             }
         }
-    };
+    }
 
-    println!("[FORWARDER] exited");
+    println!("[WS-SERVER] exited");
 }
