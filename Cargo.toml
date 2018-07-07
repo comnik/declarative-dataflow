@@ -5,8 +5,7 @@ authors = ["Frank McSherry <fmcsherry@me.com>", "Nikolas Göbel <me@nikolasgoebe
 
 [dependencies]
 differential-dataflow = { git = "https://github.com/frankmcsherry/differential-dataflow" }
-timely_communication = { git = "https://github.com/frankmcsherry/timely-dataflow" }
-timely = { git = "https://github.com/frankmcsherry/timely-dataflow" }
+timely = "0.6"
 abomonation = "0.5"
 abomonation_derive = "0.3"
 serde = "1"
