@@ -11,7 +11,8 @@ extern crate abomonation;
 #[macro_use]
 extern crate serde_derive;
 
-use std::io::{Write, BufRead, BufReader};
+use std::io::{Write, BufRead, BufReader, BufWriter};
+use std::net::{TcpListener};
 use std::sync::{Arc, Weak, Mutex};
 use std::sync::mpsc::{Sender, Receiver};
 use std::collections::{HashMap, VecDeque};
@@ -30,18 +31,13 @@ use timely::dataflow::operators::probe::Handle as ProbeHandle;
 use timely::dataflow::operators::generic::{source, OutputHandle};
 use timely::dataflow::operators::Map;
 
-use differential_dataflow::operators::consolidate::Consolidate;
-
 use websocket::{Message, OwnedMessage};
 use websocket::sync::Server;
 
 use declarative_server::{Context, Plan, Rule, TxData, Out, Datom, Attribute, Value, setup_db, register};
 
-const ATTR_NODE: Attribute = 100;
-const ATTR_EDGE: Attribute = 200;
-
 #[derive(Clone)]
-enum Interface { CLI, WS, }
+enum Interface { CLI, WS, TCP }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug)]
 struct Command {
@@ -77,6 +73,7 @@ fn main () {
             match name.as_ref() {
                 "cli" => Interface::CLI,
                 "ws" => Interface::WS,
+                "tcp" => Interface::TCP,
                 _ => panic!("Unknown interface {}", name)
             }
         }
@@ -179,7 +176,10 @@ fn main () {
                                     let peers = worker.peers();
                                     let file = BufReader::new(File::open(filename).unwrap());
                                     let mut line_count: usize = 0;
-                                    
+
+                                    let attr_node: Attribute = 100;
+                                    let attr_edge: Attribute = 200;
+
                                     for readline in file.lines() {
                                         let line = readline.ok().expect("read error");
 
@@ -194,8 +194,8 @@ fn main () {
                                                 let dst: u64 = elts.next().unwrap().parse().ok().expect("malformed dst");
                                                 let typ: &str = elts.next().unwrap();
                                                 match typ {
-                                                    "n" => { ctx.input_handle.update(Datom(src, ATTR_NODE, Value::Eid(dst)), 1); },
-                                                    "e" => { ctx.input_handle.update(Datom(src, ATTR_EDGE, Value::Eid(dst)), 1); },
+                                                    "n" => { ctx.input_handle.update(Datom(src, attr_node, Value::Eid(dst)), 1); },
+                                                    "e" => { ctx.input_handle.update(Datom(src, attr_edge, Value::Eid(dst)), 1); },
                                                     unk => { panic!("unknown type: {}", unk)},
                                                 }
                                             }
@@ -233,7 +233,8 @@ fn main () {
 
     match interface {
         Interface::CLI => { run_cli_server(send, recv_results); },
-        Interface::WS => { run_ws_server(send, recv_results); }
+        Interface::WS => { run_ws_server(send, recv_results); },
+        Interface::TCP => { run_tcp_server(send, recv_results); },
     }
     
     drop(input_recv);
@@ -287,7 +288,6 @@ fn build_controller<A: timely::Allocate>(
                         if let Ok(input_recv) = input_recv.try_lock() {
                             while let Ok(cmd) = input_recv.try_recv() {
                                 let mut session = output.session(&capability);
-                                // @TODO load balance instead of replicate?
                                 for worker_idx in 0 .. peers {
                                     // @TODO command ids?
                                     session.give((worker_idx, Command { id: 0, owner: this_idx, cmd: cmd.clone() }));
@@ -352,18 +352,18 @@ fn run_cli_server(command_channel: Sender<String>, results_channel: Receiver<Vec
 }
 
 fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<Vec<Out>>) {
-
-    println!("[WS-SERVER] running");
     
     let send_handle = &command_channel;
-    let mut server = Server::bind("127.0.0.1:6262").expect("[SERVER] can't bind to port");
+    let mut server = Server::bind("127.0.0.1:6262").expect("can't bind to port");
 
+    println!("[WS-SERVER] running on port 6262");
+    
     match server.accept() {
-        Err(_err) => println!("[SERVER] failed to accept"),
+        Err(_err) => println!("[WS-SERVER] failed to accept"),
         Ok(ws_upgrade) => {
-            let client = ws_upgrade.accept().expect("[SERVER] failed to accept");
+            let client = ws_upgrade.accept().expect("[WS-SERVER] failed to accept");
 
-            println!("[SERVER] connection from {:?}", client.peer_addr().unwrap());
+            println!("[WS-SERVER] connection from {:?}", client.peer_addr().unwrap());
 
             let (mut receiver, mut sender) = client.split().unwrap();
 
@@ -383,10 +383,10 @@ fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<Vec<
                 
                 let msg = msg.unwrap();
                 
-                println!("[SERVER] new message: {:?}", msg);
+                println!("[WS-SERVER] new message: {:?}", msg);
 
                 match msg {
-                    OwnedMessage::Close(_) => { println!("[SERVER] client closed connection"); },
+                    OwnedMessage::Close(_) => { println!("[WS-SERVER] client closed connection"); },
                     OwnedMessage::Text(line) => { send_handle.send(line).expect("failed to send command"); },
                     _ => {  },
                 }
@@ -395,4 +395,55 @@ fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<Vec<
     }
 
     println!("[WS-SERVER] exited");
+}
+
+fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<Vec<Out>>) {
+
+    let send_handle = &command_channel;
+    
+    let listener = TcpListener::bind("127.0.0.1:6262").expect("can't bind to port");
+    listener.set_nonblocking(false).expect("Cannot set blocking");
+
+    println!("[TCP-SERVER] running on port 6262");
+    
+    match listener.accept() {
+        Ok((stream, _addr)) => {
+            
+            println!("[TCP-SERVER] accepted connection");
+
+            let mut out_stream = stream.try_clone().unwrap();
+            let mut writer = BufWriter::new(out_stream);
+            
+            thread::spawn(move || {
+                loop {
+                    match results_channel.recv() {
+                        Err(_err) => break,
+                        Ok(results) => {
+                            let serialized = serde_json::to_string::<Vec<Out>>(&results)
+                                .expect("failed to serialize outputs");
+                            
+                            writer.write(serialized.as_bytes()).expect("failed to send output");
+                        }
+                    };
+                }
+            });
+            
+            let mut reader = BufReader::new(stream);
+            for input in reader.lines() {
+                match input {
+                    Err(e) => { println!("Error reading line {}", e); break; },
+                    Ok(line) => {
+                        println!("[TCP-SERVER] new message: {:?}", line);
+                        
+                        send_handle.send(line).expect("failed to send command");
+                    }
+                }
+            }
+
+            println!("[TCP-SERVER] closing connection");
+        },
+        Err(e) => { println!("Encountered I/O error: {}", e); }
+    }
+    
+    println!("[TCP-SERVER] exited");
 }
