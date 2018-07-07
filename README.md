@@ -19,7 +19,7 @@ Assuming an up-to-date Rust environment, the server can be built and
 run via
 
     cargo run --release --bin server <cli|ws|tcp>
-	
+    
 where the first argument specifies the interface to use. At the time
 of this writing, all three interfaces are very rough, unstable, and
 lack features of a production-grade system (e.g. the server only
@@ -32,13 +32,13 @@ The synthesizer supports the following operators:
 ```
 Plan := Project Plan Var
         | 'Union Var Plan+
-		| 'Join Plan Plan Var
-		| 'Not Plan
-		| 'Lookup Entity Attribute Var
-		| 'Entity Entity Var Var
-		| 'HasAttr Var Attribute Var
-		| 'Filter Var Attribute Value
-		| 'RuleExpr String Var+
+        | 'Join Plan Plan Var
+        | 'Not Plan
+        | 'Lookup Entity Attribute Var
+        | 'Entity Entity Var Var
+        | 'HasAttr Var Attribute Var
+        | 'Filter Var Attribute Value
+        | 'RuleExpr String Var+
 ```
 
 The following sample plan is intended to be an examples of what a
