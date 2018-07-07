@@ -25,10 +25,9 @@ use timely::PartialOrder;
 use timely::progress::timestamp::RootTimestamp;
 use timely::progress::nested::product::Product;
 use timely::dataflow::scopes::root::Root;
-use timely::dataflow::operators::Unary;
 use timely::dataflow::operators::Probe;
 use timely::dataflow::operators::probe::Handle as ProbeHandle;
-use timely::dataflow::operators::generic::{source, OutputHandle};
+use timely::dataflow::operators::generic::{source, OutputHandle, Operator};
 use timely::dataflow::operators::Map;
 
 use websocket::{Message, OwnedMessage};
