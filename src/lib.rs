@@ -54,6 +54,9 @@ pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize)]
 pub struct Out(pub Vec<Value>, pub isize);
 
+#[derive(Deserialize, Clone, Debug)]
+pub enum Predicate { LT, GT, LTE, GTE, EQ, NEQ }
+
 type ProbeHandle<T> = Handle<Product<RootTimestamp, T>>;
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
@@ -99,12 +102,13 @@ pub struct Context<T: Timestamp+Lattice> {
 // QUERY PLAN GRAMMAR
 //
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub enum Plan {
     Project(Box<Plan>, Vec<Var>),
     Union(Vec<Var>, Vec<Box<Plan>>),
     Join(Box<Plan>, Box<Plan>, Var),
     Not(Box<Plan>),
+    PredExpr(Predicate, Vec<Var>, Box<Plan>),
     Lookup(Entity, Attribute, Var),
     Entity(Entity, Var, Var),
     HasAttr(Var, Attribute, Var),
@@ -112,7 +116,7 @@ pub enum Plan {
     RuleExpr(String, Vec<Var>),
 }
 
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Deserialize, Clone, Debug)]
 pub struct Rule {
     pub name: String,
     pub plan: Plan,
@@ -324,6 +328,7 @@ fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>(
             left_inputs
         },
         &Plan::Not(ref plan) => { create_inputs(plan.deref(), scope) },
+        &Plan::PredExpr(_, _, ref plan) => { create_inputs(plan.deref(), scope) },
         &Plan::Lookup(e, a, _) => {
             let mut inputs = HashMap::new();
             inputs.insert((Some(e), Some(a), None), scope.new_collection_from(vec![vec![Value::Eid(e), Value::Attribute(a)]]).1.arrange_by_self());
@@ -439,6 +444,31 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
             //     tuples: rel.tuples().negate()
             // }
         },
+        &Plan::PredExpr(ref predicate, ref syms, ref plan) => {
+            let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
+
+            let key_offsets: Vec<usize> = syms.iter()
+                .map(|sym| rel.symbols().iter().position(|&v| *sym == v).expect("Symbol not found."))
+                .collect();
+
+            SimpleRelation {
+                symbols: rel.symbols().to_vec(),
+                tuples: match predicate {
+                    &Predicate::LT => rel.tuples()
+                        .filter(move |tuple| tuple[key_offsets[0]] < tuple[key_offsets[1]]),
+                    &Predicate::LTE => rel.tuples()
+                        .filter(move |tuple| tuple[key_offsets[0]] <= tuple[key_offsets[1]]),
+                    &Predicate::GT => rel.tuples()
+                        .filter(move |tuple| tuple[key_offsets[0]] > tuple[key_offsets[1]]),
+                    &Predicate::GTE => rel.tuples()
+                        .filter(move |tuple| tuple[key_offsets[0]] >= tuple[key_offsets[1]]),
+                    &Predicate::EQ => rel.tuples()
+                        .filter(move |tuple| tuple[key_offsets[0]] == tuple[key_offsets[1]]),
+                    &Predicate::NEQ => rel.tuples()
+                        .filter(move |tuple| tuple[key_offsets[0]] != tuple[key_offsets[1]])
+                }
+            }
+        },
         &Plan::Lookup(e, a, sym1) => {
             let ea_in = db.input_map.get(&(Some(e), Some(a), None)).unwrap().enter(nested);
             let tuples = db.ea_v.enter(nested)
@@ -466,7 +496,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                 .join_core(&av_in, |_, tuple, _| { Some(tuple.clone()) });
             
             SimpleRelation { symbols: vec![sym1], tuples }
-        }
+        },
         &Plan::RuleExpr(ref name, ref syms) => {
             match relation_map.get(name) {
                 None => panic!("{:?} not in relation map", name),
