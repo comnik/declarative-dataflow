@@ -28,6 +28,7 @@ use differential_dataflow::operators::arrange::{ArrangeByKey, ArrangeBySelf, Tra
 use differential_dataflow::operators::group::Threshold;
 use differential_dataflow::operators::join::{Join, JoinCore};
 use differential_dataflow::operators::iterate::Variable;
+use differential_dataflow::operators::Consolidate;
 
 //
 // TYPES
@@ -107,6 +108,7 @@ pub enum Plan {
     Project(Box<Plan>, Vec<Var>),
     Union(Vec<Var>, Vec<Box<Plan>>),
     Join(Box<Plan>, Box<Plan>, Var),
+    Antijoin(Box<Plan>, Box<Plan>, Vec<Var>),
     Not(Box<Plan>),
     PredExpr(Predicate, Vec<Var>, Box<Plan>),
     Lookup(Entity, Attribute, Var),
@@ -327,6 +329,16 @@ fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>(
 
             left_inputs
         },
+        &Plan::Antijoin(ref left_plan, ref right_plan, _) => {
+            let mut left_inputs = create_inputs(left_plan.deref(), scope);
+            let mut right_inputs = create_inputs(right_plan.deref(), scope);
+            
+            for (k, v) in right_inputs.drain() {
+                left_inputs.insert(k, v);
+            }
+
+            left_inputs
+        },
         &Plan::Not(ref plan) => { create_inputs(plan.deref(), scope) },
         &Plan::PredExpr(_, _, ref plan) => { create_inputs(plan.deref(), scope) },
         &Plan::Lookup(e, a, _) => {
@@ -425,13 +437,42 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                     Some(vstar)                    
                 });
 
-            let mut symbols: Vec<Var> = Vec::with_capacity(left_syms.len() + right_syms.len());
+            let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len() + right_syms.len());
             symbols.append(&mut join_vars);
             symbols.append(&mut left_syms);
             symbols.append(&mut right_syms);
 
             // let debug_syms: Vec<String> = symbols.iter().map(|x| x.to_string()).collect();
             // println!(debug_syms);
+
+            SimpleRelation { symbols, tuples }
+        },
+        &Plan::Antijoin(ref left_plan, ref right_plan, ref join_vars) => {
+            let mut left = implement_plan(left_plan.deref(), db, nested, relation_map, queries);
+            let mut right = implement_plan(right_plan.deref(), db, nested, relation_map, queries);
+
+            let mut left_syms: Vec<Var> = left.symbols().clone();
+            left_syms.retain(|&sym| {
+                match join_vars.iter().position(|&v| sym == v) {
+                    None => true,
+                    Some(_) => false
+                }
+            });
+            
+            let tuples = left.tuples_by_symbols(join_vars.clone())
+                .inspect(|&((ref key, ref values), _, _)| { println!("left {:?} {:?}", key, values) })
+                .antijoin(&right.tuples_by_symbols(join_vars.clone()).map(|(key, _)| key).distinct().inspect(|&(ref key, _, _)| { println!("right {:?}", key) }))
+                .map(|(key, tuple)| {
+                    let mut vstar = Vec::with_capacity(key.len() + tuple.len());
+                    vstar.extend(key.iter().cloned());
+                    vstar.extend(tuple.iter().cloned());
+
+                    vstar
+                }).consolidate().inspect(|ref tuple| { println!("out {:?}", tuple) });
+
+            let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len());
+            symbols.extend(join_vars.iter().cloned());
+            symbols.append(&mut left_syms);
 
             SimpleRelation { symbols, tuples }
         },
