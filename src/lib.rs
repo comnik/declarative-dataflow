@@ -25,7 +25,7 @@ use differential_dataflow::lattice::Lattice;
 use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::implementations::ord::{OrdValSpine, OrdKeySpine};
 use differential_dataflow::operators::arrange::{ArrangeByKey, ArrangeBySelf, TraceAgent, Arranged};
-use differential_dataflow::operators::group::Threshold;
+use differential_dataflow::operators::group::{Group, Threshold};
 use differential_dataflow::operators::join::{Join, JoinCore};
 use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::operators::Consolidate;
@@ -57,6 +57,9 @@ pub struct Out(pub Vec<Value>, pub isize);
 
 #[derive(Deserialize, Clone, Debug)]
 pub enum Predicate { LT, GT, LTE, GTE, EQ, NEQ }
+
+#[derive(Deserialize, Clone, Debug)]
+pub enum AggregationFn { MIN, }
 
 type ProbeHandle<T> = Handle<Product<RootTimestamp, T>>;
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
@@ -106,6 +109,7 @@ pub struct Context<T: Timestamp+Lattice> {
 #[derive(Deserialize, Clone, Debug)]
 pub enum Plan {
     Project(Box<Plan>, Vec<Var>),
+    Aggregate(AggregationFn, Box<Plan>, Vec<Var>),
     Union(Vec<Var>, Vec<Box<Plan>>),
     Join(Box<Plan>, Box<Plan>, Var),
     Antijoin(Box<Plan>, Box<Plan>, Vec<Var>),
@@ -306,6 +310,7 @@ fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>(
 
     match plan {
         &Plan::Project(ref plan, _) => { create_inputs(plan.deref(), scope) },
+        &Plan::Aggregate(_, ref plan, _) => { create_inputs(plan.deref(), scope) },
         &Plan::Union(_, ref plans) => {
             let mut inputs = HashMap::new();
             
@@ -378,10 +383,36 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
             let mut relation = implement_plan(plan.deref(), db, nested, relation_map, queries);
             let tuples = relation
                 .tuples_by_symbols(symbols.clone())
-                .map(|(key, _tuple)| key);
+                .map(|(key, _tuple)| key)
+                .distinct();
 
             // @TODO distinct? or just before negation?
             SimpleRelation { symbols: symbols.to_vec(), tuples }
+        },
+        &Plan::Aggregate(ref aggregation_fn, ref plan, ref symbols) => {
+            let mut relation = implement_plan(plan.deref(), db, nested, relation_map, queries);
+            let mut tuples = relation.tuples_by_symbols(symbols.clone());
+
+            match aggregation_fn {
+                &AggregationFn::MIN => {
+                    SimpleRelation {
+                        symbols: symbols.to_vec(),
+                        tuples: tuples
+                            .map(|(ref key, ref _tuple)| ((), match key[0] {
+                                Value::Number(v) => v,
+                                _ => panic!("MIN can only be applied on type Number.")
+                            }))
+                            .group(|_key, vals, output| {
+                                let mut min = vals[0].0;
+                                for &(val, _) in vals.iter() {
+                                    if min > val { min = val; }
+                                }
+                                output.push((*min, 1));
+                            })
+                            .map(|(_, min)| vec![Value::Number(min)])
+                    }
+                }
+            }
         },
         &Plan::Union(ref symbols, ref plans) => {
             let first = plans.get(0).expect("Union requires at least one plan");
