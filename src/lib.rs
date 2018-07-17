@@ -25,7 +25,7 @@ use differential_dataflow::lattice::Lattice;
 use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::implementations::ord::{OrdValSpine, OrdKeySpine};
 use differential_dataflow::operators::arrange::{ArrangeByKey, ArrangeBySelf, TraceAgent, Arranged};
-use differential_dataflow::operators::group::{Group, Threshold};
+use differential_dataflow::operators::group::{Group, Threshold, Count};
 use differential_dataflow::operators::join::{Join, JoinCore};
 use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::operators::Consolidate;
@@ -59,7 +59,7 @@ pub struct Out(pub Vec<Value>, pub isize);
 pub enum Predicate { LT, GT, LTE, GTE, EQ, NEQ }
 
 #[derive(Deserialize, Clone, Debug)]
-pub enum AggregationFn { MIN, }
+pub enum AggregationFn { MIN, MAX, COUNT }
 
 type ProbeHandle<T> = Handle<Product<RootTimestamp, T>>;
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
@@ -278,7 +278,12 @@ fn implement<A: timely::Allocate, T: Timestamp+Lattice> (
         }
 
         let output_relation = NamedRelation::from(&source.enter(nested));
-        let output_trace = output_relation.variable.as_ref().unwrap().leave().arrange_by_self().trace;
+        let output_trace = output_relation.variable.as_ref().unwrap()
+            .leave()
+            .consolidate()
+            .inspect(|ref tuple| { println!("=> {:?}", tuple) })
+            .arrange_by_self()
+            .trace;
         relation_map.insert(name.clone(), output_relation);
         
         result_map.insert(name.clone(), RelationHandles { input: source_handle, trace: output_trace });
@@ -386,7 +391,6 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                 .map(|(key, _tuple)| key)
                 .distinct();
 
-            // @TODO distinct? or just before negation?
             SimpleRelation { symbols: symbols.to_vec(), tuples }
         },
         &Plan::Aggregate(ref aggregation_fn, ref plan, ref symbols) => {
@@ -410,6 +414,33 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                                 output.push((*min, 1));
                             })
                             .map(|(_, min)| vec![Value::Number(min)])
+                    }
+                },
+                &AggregationFn::MAX => {
+                    SimpleRelation {
+                        symbols: symbols.to_vec(),
+                        tuples: tuples
+                            .map(|(ref key, ref _tuple)| ((), match key[0] {
+                                Value::Number(v) => v,
+                                _ => panic!("MAX can only be applied on type Number.")
+                            }))
+                            .group(|_key, vals, output| {
+                                let mut max = vals[0].0;
+                                for &(val, _) in vals.iter() {
+                                    if max < val { max = val; }
+                                }
+                                output.push((*max, 1));
+                            })
+                            .map(|(_, max)| vec![Value::Number(max)])
+                    }
+                },
+                &AggregationFn::COUNT => {
+                    SimpleRelation {
+                        symbols: symbols.to_vec(),
+                        tuples: tuples
+                            .map(|(ref key, ref _tuple)| ((), ()))
+                            .count()
+                            .map(|(_, count)| vec![Value::Number(count as i64)])
                     }
                 }
             }
