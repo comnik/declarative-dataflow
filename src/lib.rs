@@ -273,6 +273,11 @@ fn implement<A: timely::Allocate, T: Timestamp+Lattice> (
         for (rule_name, (_handle, collection)) in source_map.drain() {
             println!("Registering {:?}", rule_name);
             let rel = NamedRelation::from(&collection.enter(nested));
+
+            if relation_map.contains_key(&rule_name) {
+                panic!("Attempted to redefine relation {:?}.", rule_name);
+            }
+            
             relation_map.insert(rule_name.clone(), rel);
             // @TODO add handle and trace to result_map?
         }
@@ -281,9 +286,13 @@ fn implement<A: timely::Allocate, T: Timestamp+Lattice> (
         let output_trace = output_relation.variable.as_ref().unwrap()
             .leave()
             .consolidate()
-            .inspect(|ref tuple| { println!("=> {:?}", tuple) })
             .arrange_by_self()
             .trace;
+
+        if relation_map.contains_key(name) {
+            panic!("Query name clashes with rule name {:?}.", name);
+        }
+        
         relation_map.insert(name.clone(), output_relation);
         
         result_map.insert(name.clone(), RelationHandles { input: source_handle, trace: output_trace });
@@ -388,8 +397,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
             let mut relation = implement_plan(plan.deref(), db, nested, relation_map, queries);
             let tuples = relation
                 .tuples_by_symbols(symbols.clone())
-                .map(|(key, _tuple)| key)
-                .distinct();
+                .map(|(key, _tuple)| key);
 
             SimpleRelation { symbols: symbols.to_vec(), tuples }
         },
@@ -522,15 +530,15 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
             });
             
             let tuples = left.tuples_by_symbols(join_vars.clone())
-                .inspect(|&((ref key, ref values), _, _)| { println!("left {:?} {:?}", key, values) })
-                .antijoin(&right.tuples_by_symbols(join_vars.clone()).map(|(key, _)| key).distinct().inspect(|&(ref key, _, _)| { println!("right {:?}", key) }))
+                .distinct()
+                .antijoin(&right.tuples_by_symbols(join_vars.clone()).map(|(key, _)| key).distinct())
                 .map(|(key, tuple)| {
                     let mut vstar = Vec::with_capacity(key.len() + tuple.len());
                     vstar.extend(key.iter().cloned());
                     vstar.extend(tuple.iter().cloned());
 
                     vstar
-                }).consolidate().inspect(|ref tuple| { println!("out {:?}", tuple) });
+                });
 
             let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len());
             symbols.extend(join_vars.iter().cloned());
