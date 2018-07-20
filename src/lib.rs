@@ -410,6 +410,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                     SimpleRelation {
                         symbols: symbols.to_vec(),
                         tuples: tuples
+                            // @TODO use rest of tuple as key
                             .map(|(ref key, ref _tuple)| ((), match key[0] {
                                 Value::Number(v) => v,
                                 _ => panic!("MIN can only be applied on type Number.")
@@ -419,6 +420,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                                 for &(val, _) in vals.iter() {
                                     if min > val { min = val; }
                                 }
+                                // @TODO could preserve multiplicity of smallest value here
                                 output.push((*min, 1));
                             })
                             .map(|(_, min)| vec![Value::Number(min)])
@@ -428,6 +430,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                     SimpleRelation {
                         symbols: symbols.to_vec(),
                         tuples: tuples
+                        // @TODO use rest of tuple as key
                             .map(|(ref key, ref _tuple)| ((), match key[0] {
                                 Value::Number(v) => v,
                                 _ => panic!("MAX can only be applied on type Number.")
@@ -446,7 +449,8 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                     SimpleRelation {
                         symbols: symbols.to_vec(),
                         tuples: tuples
-                            .map(|(ref key, ref _tuple)| ((), ()))
+                        // @TODO use rest of tuple as key
+                            .map(|(ref key, ref _tuple)| ())
                             .count()
                             .map(|(_, count)| vec![Value::Number(count as i64)])
                     }
@@ -480,6 +484,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                 tuples: tuples.distinct()
             }
         },
+        // @TODO specialized join for join on single variable
         &Plan::Join(ref left_plan, ref right_plan, join_var) => {
             let mut left = implement_plan(left_plan.deref(), db, nested, relation_map, queries);
             let mut right = implement_plan(right_plan.deref(), db, nested, relation_map, queries);
