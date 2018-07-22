@@ -111,7 +111,7 @@ pub enum Plan {
     Project(Box<Plan>, Vec<Var>),
     Aggregate(AggregationFn, Box<Plan>, Vec<Var>),
     Union(Vec<Var>, Vec<Box<Plan>>),
-    Join(Box<Plan>, Box<Plan>, Var),
+    Join(Box<Plan>, Box<Plan>, Vec<Var>),
     Antijoin(Box<Plan>, Box<Plan>, Vec<Var>),
     Not(Box<Plan>),
     PredExpr(Predicate, Vec<Var>, Box<Plan>),
@@ -485,17 +485,25 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
             }
         },
         // @TODO specialized join for join on single variable
-        &Plan::Join(ref left_plan, ref right_plan, join_var) => {
+        &Plan::Join(ref left_plan, ref right_plan, ref join_vars) => {
             let mut left = implement_plan(left_plan.deref(), db, nested, relation_map, queries);
             let mut right = implement_plan(right_plan.deref(), db, nested, relation_map, queries);
 
-            let mut join_vars = vec![join_var];
-
             let mut left_syms: Vec<Var> = left.symbols().clone();
-            left_syms.retain(|&sym| sym != join_var);
+            left_syms.retain(|&sym| {
+                match join_vars.iter().position(|&v| sym == v) {
+                    None => true,
+                    Some(_) => false
+                }
+            });
             
             let mut right_syms: Vec<Var> = right.symbols().clone();
-            right_syms.retain(|&sym| sym != join_var);
+            right_syms.retain(|&sym| {
+                match join_vars.iter().position(|&v| sym == v) {
+                    None => true,
+                    Some(_) => false
+                }
+            });
 
             // useful for inspecting join inputs
             //.inspect(|&((ref key, ref values), _, _)| { println!("right {:?} {:?}", key, values) })
@@ -513,7 +521,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                 });
 
             let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len() + right_syms.len());
-            symbols.append(&mut join_vars);
+            symbols.extend(join_vars.iter().cloned());
             symbols.append(&mut left_syms);
             symbols.append(&mut right_syms);
 
