@@ -560,13 +560,11 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
             SimpleRelation { symbols, tuples }
         },
         &Plan::Not(ref plan) => {
-            implement_negation(plan.deref(), db, nested, relation_map, queries)
-            
-            // let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
-            // SimpleRelation {
-            //     symbols: rel.symbols().clone(),
-            //     tuples: rel.tuples().negate()
-            // }
+            let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
+            SimpleRelation {
+                symbols: rel.symbols().clone(),
+                tuples: rel.tuples().negate()
+            }
         },
         &Plan::PredExpr(ref predicate, ref syms, ref plan) => {
             let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
@@ -632,54 +630,6 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
                 }
             }
         }
-    }
-}
-
-fn implement_negation<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
-    plan: &Plan,
-    db: &ImplContext<Child<'a, Root<A>, T>>,
-    nested: &mut Child<'b, Child<'a, Root<A>, T>, u64>,
-    relation_map: &RelationMap<'b, Child<'a, Root<A>, T>>,
-    queries: &QueryMap<T, isize>
-) -> SimpleRelation<'b, Child<'a, Root<A>, T>> {
-
-    match plan {
-        &Plan::Lookup(e, a, sym1) => {
-            let ea_in = db.input_map.get(&(Some(e), Some(a), None)).unwrap().enter(nested);
-            let tuples = db.ea_v.enter(nested)
-                .antijoin(&ea_in.as_collection(|k,_| k.clone()))
-            // .distinct()
-                .map(|(_, tuple)| { tuple.clone() });
-            
-            SimpleRelation { symbols: vec![sym1], tuples }
-        },
-        &Plan::Entity(e, sym1, sym2) => {
-            let e_in = db.input_map.get(&(Some(e), None, None)).unwrap().enter(nested);
-            let tuples = db.e_av.enter(nested)
-                .antijoin(&e_in.as_collection(|k,_| k.clone()))
-                // .distinct()
-                .map(|(_, tuple)| { tuple.clone() });
-            
-            SimpleRelation { symbols: vec![sym1, sym2], tuples }
-        },
-        &Plan::HasAttr(sym1, a, sym2) => {
-            let a_in = db.input_map.get(&(None, Some(a), None)).unwrap().enter(nested);
-            let tuples = db.a_ev.enter(nested)
-                .antijoin(&a_in.as_collection(|k,_| k.clone()))
-            // .distinct()
-                .map(|(_, tuple)| { tuple.clone() });
-            
-            SimpleRelation { symbols: vec![sym1, sym2], tuples }
-        },
-        &Plan::Filter(sym1, a, ref v) => {
-            let av_in = db.input_map.get(&(None, Some(a), Some(v.clone()))).unwrap().enter(nested);
-            let tuples = db.av_e.enter(nested)
-                .antijoin(&av_in.as_collection(|k,_| k.clone()))
-                .map(|(_, tuple)| { tuple.clone() });
-            
-            SimpleRelation { symbols: vec![sym1], tuples }
-        },
-        _ => panic!("Negation not supported for this plan.")
     }
 }
 
