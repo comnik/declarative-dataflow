@@ -159,7 +159,7 @@ fn main () {
 
                                                         if let Some(send_results) = send_results_shareable.upgrade() {
                                                             if let Ok(send_results) = send_results.try_lock() {
-                                                                send_results.send(out).expect("failed to put results onto channel");
+                                                                send_results.send((query_name.clone(), out)).expect("failed to put results onto channel");
                                                             }
                                                         } else { panic!("send_results channel not available"); }
                                                     });
@@ -322,7 +322,7 @@ fn build_controller<A: timely::Allocate>(
     });
 }
 
-fn run_cli_server(command_channel: Sender<String>, results_channel: Receiver<Vec<Out>>) {
+fn run_cli_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
 
     println!("[CLI-SERVER] running");
 
@@ -333,7 +333,7 @@ fn run_cli_server(command_channel: Sender<String>, results_channel: Receiver<Vec
         loop {
             match results_channel.recv() {
                 Err(_err) => break,
-                Ok(results) => { println!("=> {:?}", results) }
+                Ok((query_name, results)) => { println!("=> {:?} {:?}", query_name, results) }
             };
         }
     });
@@ -350,7 +350,7 @@ fn run_cli_server(command_channel: Sender<String>, results_channel: Receiver<Vec
     println!("[CLI-SERVER] exiting");
 }
 
-fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<Vec<Out>>) {
+fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
     
     let send_handle = &command_channel;
     let mut server = Server::bind("127.0.0.1:6262").expect("can't bind to port");
@@ -370,8 +370,8 @@ fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<Vec<
                 loop {
                     match results_channel.recv() {
                         Err(_err) => break,
-                        Ok(results) => {
-                            let serialized = serde_json::to_string::<Vec<Out>>(&results).expect("failed to serialize outputs");
+                        Ok((query_name, results)) => {
+                            let serialized = serde_json::to_string::<(String, Vec<Out>)>(&(query_name, results)).expect("failed to serialize outputs");
                             sender.send_message(&Message::text(serialized)).expect("failed to send message");
                         }
                     };
@@ -382,7 +382,7 @@ fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<Vec<
                 
                 let msg = msg.unwrap();
                 
-                println!("[WS-SERVER] new message: {:?}", msg);
+                // println!("[WS-SERVER] new message: {:?}", msg);
 
                 match msg {
                     OwnedMessage::Close(_) => { println!("[WS-SERVER] client closed connection"); },
@@ -396,7 +396,7 @@ fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<Vec<
     println!("[WS-SERVER] exited");
 }
 
-fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<Vec<Out>>) {
+fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
 
     let send_handle = &command_channel;
     
@@ -418,7 +418,7 @@ fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<Vec
                     match results_channel.recv() {
                         Err(_err) => break,
                         Ok(results) => {
-                            let serialized = serde_json::to_string::<Vec<Out>>(&results)
+                            let serialized = serde_json::to_string::<(String, Vec<Out>)>(&results)
                                 .expect("failed to serialize outputs");
                             
                             writer.write(serialized.as_bytes()).expect("failed to send output");
