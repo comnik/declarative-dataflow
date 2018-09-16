@@ -25,6 +25,11 @@ of this writing, all three interfaces are very rough, unstable, and
 lack features of a production-grade system (e.g. the server only
 accepts a single client connection).
 
+## Documentation
+
+Architectural decisions are documented in the `docs/adr/`
+sub-directory.
+
 ## Query Plans
 
 The synthesizer supports the following operators:

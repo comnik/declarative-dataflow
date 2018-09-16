@@ -2,7 +2,14 @@ extern crate timely;
 extern crate differential_dataflow;
 extern crate declarative_server;
 extern crate serde_json;
-extern crate websocket;
+extern crate mio;
+extern crate slab;
+extern crate ws;
+extern crate getopts;
+
+#[macro_use]
+extern crate log;
+extern crate env_logger;
 
 #[macro_use]
 extern crate abomonation_derive;
@@ -11,32 +18,34 @@ extern crate abomonation;
 #[macro_use]
 extern crate serde_derive;
 
-use std::io::{Write, BufRead, BufReader, BufWriter};
-use std::net::{TcpListener};
-use std::sync::{Arc, Weak, Mutex};
-use std::sync::mpsc::{Sender, Receiver};
-use std::collections::{HashMap, VecDeque};
-use std::rc::Rc;
-use std::cell::RefCell;
-use std::fs::File;
-use std::thread;
+use std::{thread, usize};
+use std::collections::{HashMap};
+use std::io::{BufRead};
+use std::net::{SocketAddr, IpAddr, Ipv4Addr};
+use std::time::{Instant, Duration};
 
-use timely::PartialOrder;
-use timely::progress::timestamp::RootTimestamp;
-use timely::progress::nested::product::Product;
-use timely::dataflow::scopes::root::Root;
-use timely::dataflow::operators::Probe;
-use timely::dataflow::operators::probe::Handle as ProbeHandle;
-use timely::dataflow::operators::generic::{source, OutputHandle, Operator};
-use timely::dataflow::operators::Map;
+use getopts::Options;
 
-use websocket::{Message, OwnedMessage};
-use websocket::sync::Server;
+use timely::dataflow::operators::{Probe, Map, Operator};
+use timely::dataflow::operators::generic::{OutputHandle};
 
-use declarative_server::{Context, Plan, Rule, TxData, Out, Datom, Attribute, Value, setup_db, register};
+use mio::*;
+use mio::net::{TcpListener};
 
-#[derive(Clone)]
-enum Interface { CLI, WS, TCP }
+use slab::Slab;
+
+use ws::connection::{Connection, ConnEvent};
+
+use declarative_server::{Context, Plan, Rule, TxData, Out, Datom, setup_db, register};
+
+mod sequencer;
+use sequencer::{Sequencer};
+
+#[derive(Debug)]
+struct Config {
+    port: u16,
+    enable_cli: bool,
+}
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug)]
 struct Command {
@@ -44,405 +53,480 @@ struct Command {
     // the worker (typically a controller) that issued this command
     // and is the one that should receive outputs
     owner: usize,
+    // the client token that issued the command (only relevant to the
+    // owning worker, no one else has the connection)
+    client: Option<usize>,
     cmd: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 enum Request {
-    Transact { tx_data: Vec<TxData> },
+    Transact { tx: usize, tx_data: Vec<TxData> },
     Register { query_name: String, plan: Plan, rules: Vec<Rule> },
     // LoadData { filename: String, max_lines: usize },
 }
 
-fn main () {
-    
-    // shared queue of commands to serialize (in the "put in an order" sense)
-    let (send, recv) = std::sync::mpsc::channel();
-    let input_recv = Arc::new(Mutex::new(recv));
-    let shareable_input_recv = Arc::downgrade(&input_recv);
+const SERVER: Token = Token(usize::MAX - 1);
+const RESULTS: Token = Token(usize::MAX - 2);
+const CLI: Token = Token(usize::MAX - 3);
 
-    // shared queue of outputs to forward to clients
-    let (send_results, recv_results) = std::sync::mpsc::channel();
-    let send_results_arc = Arc::new(Mutex::new(send_results));
-    let send_results_shareable = Arc::downgrade(&send_results_arc);
+fn main() {
 
-    let interface: Interface = match std::env::args().nth(1) {
-        None => Interface::CLI,
-        Some(name) => {
-            match name.as_ref() {
-                "cli" => Interface::CLI,
-                "ws" => Interface::WS,
-                "tcp" => Interface::TCP,
-                _ => panic!("Unknown interface {}", name)
+    env_logger::init();
+
+    let mut opts = Options::new();
+    opts.optopt("", "port", "server port", "PORT");
+    opts.optflag("", "enable-cli", "enable the CLI interface");
+
+    let args: Vec<String> = std::env::args().collect();
+    let timely_args = std::env::args().take_while(|ref arg| arg.to_string() != "--");
+
+    timely::execute_from_args(timely_args, move |worker| {
+
+        // read configuration
+        let server_args = args.iter().rev().take_while(|arg| arg.to_string() != "--");
+        let config = match opts.parse(server_args) {
+            Err(err) => panic!(err),
+            Ok(matches) => {
+                Config {
+                    port: matches.opt_str("port").map(|x| x.parse().unwrap_or(6262)).unwrap_or(6262),
+                    enable_cli: matches.opt_present("enable-cli")
+                }
             }
-        }
-    };
-        
-    let guards = timely::execute_from_args(std::env::args(), move |worker| {
+        };
+
         // setup interpreter context
         let mut ctx = worker.dataflow(|scope| {
             let (input_handle, db) = setup_db(scope);
-            
-            Context {
-                db,
-                input_handle,
-                probes: Vec::new(),
-                queries: HashMap::new(),
-            }
+
+            Context { db, input_handle, queries: HashMap::new(), }
         });
+        let mut probes = Vec::new();
 
-        // setup transaction context
-        let mut next_tx: usize = 0;
+        // mapping from query names to interested client tokens
+        let mut interests: HashMap<String, Vec<Token>> = HashMap::new();
+
+        // setup serialized command queue (shared between all workers)
+        let mut sequencer: Sequencer<Command> = Sequencer::new(worker, Instant::now());
+
+        // configure websocket server
+        let ws_settings = ws::Settings {
+            max_connections: 1024,
+            .. ws::Settings::default()
+        };
+
+        // setup CLI channel
+        let (send_cli, recv_cli) = mio::channel::channel();
+
+        // setup results channel
+        let (send_results, recv_results) = mio::channel::channel();
         
-        let timer = ::std::time::Instant::now();
+        // setup server socket
+        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
+        let server = TcpListener::bind(&addr).unwrap();
+        let mut connections = Slab::with_capacity(ws_settings.max_connections);
+        let mut next_connection_id: u32 = 0;
+
+        // setup event loop
+        let poll = Poll::new().unwrap();
+        let mut events = Events::with_capacity(1024);
+
+        if config.enable_cli {
+            poll.register(&recv_cli, CLI, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+
+            thread::spawn(move || {
+
+                info!("[CLI] accepting cli commands");
+                
+                let input = std::io::stdin();
+                while let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
+                    send_cli.send(line.to_string()).expect("failed to send command");
+                }
+            });
+        }
         
-        // common probe used by all dataflows to express progress information.
-        let mut probe = timely::dataflow::operators::probe::Handle::new();
+        poll.register(&recv_results, RESULTS, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+        poll.register(&server, SERVER, Ready::readable(), PollOpt::level()).unwrap();
+
+        info!("[WORKER {}] running with config {:?}", worker.index(), config);
         
-        // serializing and broadcasting commands
-        let command_queue_strong = Rc::new(RefCell::new(VecDeque::new()));
-        build_controller(worker, timer, shareable_input_recv.clone(), &command_queue_strong, &mut probe);
-        let command_queue = Rc::downgrade(&command_queue_strong);
-        drop(command_queue_strong);
+        loop {
+            
+            // each worker has to...
+            //
+            // ...accept new client connections
+            // ...accept commands on a client connection and push them to the sequencer
+            // ...step computations
+            // ...send results to clients
+            //
+            // by having everything inside a single event loop, we can
+            // easily make trade-offs such as limiting the number of
+            // commands consumed, in order to ensure timely progress
+            // on registered queues
 
-        // continue running as long as we haven't dropped the queue
-        while let Some(command_queue) = command_queue.upgrade() {
+            // polling - should usually be driven completely
+            // non-blocking (i.e. timeout 0), but higher timeouts can
+            // be used for debugging or artificial braking
+            //
+            // @TODO handle errors
+            poll.poll(&mut events, Some(Duration::from_millis(0))).unwrap();
 
-            if let Ok(mut borrow) = command_queue.try_borrow_mut() {
-                while let Some(mut command) = borrow.pop_front() {
+            for event in events.iter() {
 
-                    let index = worker.index();
-                    println!("worker {:?}: received command: {:?}", index, command);
+                trace!("[WORKER {}] recv event on {:?}", worker.index(), event.token());
+                
+                match event.token() {
+                    CLI => {
+                        while let Ok(cli_input) = recv_cli.try_recv() {
+                            let command = Command {
+                                id: 0, // @TODO command ids?
+                                owner: worker.index(),
+                                client: None,
+                                cmd: cli_input
+                            };
 
-                    match serde_json::from_str::<Request>(&command.cmd) {
-                        Err(msg) => { println!("failed to parse command: {:?}", msg); },
-                        Ok(req) => {
-                            match req {
-                                Request::Transact { tx_data } => {
-                                    
-                                    for TxData(op, e, a, v) in tx_data {
-                                        ctx.input_handle.update(Datom(e, a, v), op);
-                                    }
-                                    
-                                    next_tx = next_tx + 1;
-                                    ctx.input_handle.advance_to(next_tx);
-                                    ctx.input_handle.flush();
-                                },
-                                Request::Register { query_name, plan, rules } => {
+                            sequencer.push(command);
+                        }
 
-                                    let send_results_shareable = send_results_shareable.clone();
-                                    
-                                    worker.dataflow::<usize, _, _>(|scope| {
-                                        let mut rel_map = register(scope, &mut ctx, &query_name, plan, rules);
+                        poll.reregister(&recv_cli, CLI, Ready::readable(), PollOpt::edge() | PollOpt::oneshot())
+                            .unwrap();
+                    },
+                    SERVER => {
+                        if event.readiness().is_readable() {
+                            // new connection arrived on the server socket
+                            match server.accept() {
+                                Err(err) => error!("[WORKER {}] error while accepting connection {:?}", worker.index(), err),
+                                Ok((socket, addr)) => {
+                                    info!("[WORKER {}] new tcp connection from {}", worker.index(), addr);
 
-                                        // output for experiments
-                                        // let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
-                                        //     .as_collection(|_,_| ())
-                                        //     .consolidate()
-                                        //     .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
-                                        //     .probe();
+                                    // @TODO to nagle or not to nagle?
+                                    // sock.set_nodelay(true)
 
-                                        // @TODO Frank sanity check
-                                        let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
-                                            .as_collection(|tuple,_| tuple.clone())
-                                            .inner
-                                            .map(|x| Out(x.0.clone(), x.2))
-                                            .unary_notify(
-                                                timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64), 
-                                                "OutputsRecv", 
-                                                Vec::new(),
-                                                move |input, _output: &mut OutputHandle<_, Out, _>, _notificator| {
+                                    let token = {
+                                        let entry = connections.vacant_entry();
+                                        let token = Token(entry.key());
+                                        let connection_id = next_connection_id;
+                                        next_connection_id = next_connection_id.wrapping_add(1);
 
-                                                    // grab each command and queue it up
-                                                    input.for_each(|_time, data| {
-                                                        let out: Vec<Out> = data.drain(..).collect();
+                                        entry.insert(Connection::new(token, socket, ws_settings, connection_id));
 
-                                                        if let Some(send_results) = send_results_shareable.upgrade() {
-                                                            if let Ok(send_results) = send_results.try_lock() {
-                                                                send_results.send((query_name.clone(), out)).expect("failed to put results onto channel");
-                                                            }
-                                                        } else { panic!("send_results channel not available"); }
-                                                    });
-                                                })
-                                            .probe();
+                                        token
+                                    };
 
-                                        ctx.probes.push(probe);
-                                    });
-                                },
-                                // Request::LoadData { filename, max_lines } => {
+                                    let conn = &mut connections[token.into()];
 
-                                //     let load_timer = ::std::time::Instant::now();
-                                //     let peers = worker.peers();
-                                //     let file = BufReader::new(File::open(filename).unwrap());
-                                //     let mut line_count: usize = 0;
+                                    conn.as_server().unwrap();
 
-                                //     let attr_node: Attribute = 100;
-                                //     let attr_edge: Attribute = 200;
-
-                                //     for readline in file.lines() {
-                                //         let line = readline.ok().expect("read error");
-
-                                //         if line_count > max_lines { break; };
-                                //         line_count += 1;
-                                        
-                                //         if !line.starts_with('#') && line.len() > 0 {
-                                //             let mut elts = line[..].split_whitespace();
-                                //             let src: u64 = elts.next().unwrap().parse().ok().expect("malformed src");
-                                            
-                                //             if (src as usize) % peers == index {
-                                //                 let dst: u64 = elts.next().unwrap().parse().ok().expect("malformed dst");
-                                //                 let typ: &str = elts.next().unwrap();
-                                //                 match typ {
-                                //                     "n" => { ctx.input_handle.update(Datom(src, attr_node, Value::Eid(dst)), 1); },
-                                //                     "e" => { ctx.input_handle.update(Datom(src, attr_edge, Value::Eid(dst)), 1); },
-                                //                     unk => { panic!("unknown type: {}", unk)},
-                                //                 }
-                                //             }
-                                //         }
-                                //     }
-
-                                //     if index == 0 {
-                                //         println!("{:?}:\tData loaded", load_timer.elapsed());
-                                //         println!("{:?}", ::std::time::Instant::now());
-                                //     }
-                                    
-                                //     next_tx = next_tx + 1;
-                                //     ctx.input_handle.advance_to(next_tx);
-                                //     ctx.input_handle.flush();
-                                // }
+                                    poll.register(
+                                        conn.socket(),
+                                        conn.token(),
+                                        conn.events(),
+                                        PollOpt::edge() | PollOpt::oneshot()
+                                    ).unwrap();
+                                }
                             }
                         }
-                    }                    
+                    },
+                    RESULTS => {
+                        while let Ok((query_name, results)) = recv_results.try_recv() {
+
+                            info!("[WORKER {}] {:?} {:?}", worker.index(), query_name, results);
+
+                            match interests.get(&query_name) {
+                                None => { /* @TODO unregister this flow */ },
+                                Some(tokens) => {
+                                    let serialized = serde_json::to_string::<(String, Vec<Out>)>(&(query_name, results))
+                                        .expect("failed to serialize outputs");
+                                    let msg = ws::Message::text(serialized);
+
+                                    for &token in tokens.iter() {
+                                        // @TODO check whether connection still exists
+                                        let conn = &mut connections[token.into()];
+                                        info!("[WORKER {}] sending msg {:?}", worker.index(), msg);
+
+                                        conn.send_message(msg.clone()).expect("failed to send message");
+
+                                        poll.reregister(
+                                            conn.socket(),
+                                            conn.token(),
+                                            conn.events(),
+                                            PollOpt::edge() | PollOpt::oneshot(),
+                                        ).unwrap();
+                                    }
+                                }
+                            }                                                
+                        }
+
+                        poll.reregister(
+                            &recv_results,
+                            RESULTS,
+                            Ready::readable(),
+                            PollOpt::edge() | PollOpt::oneshot()
+                        ).unwrap();
+                    },
+                    _ => {
+                        let token = event.token();
+                        let active = {
+                            let readiness = event.readiness();
+                            let conn_events = connections[token.into()].events();
+
+                            // @TODO refactor connection to accept a
+                            // vector in which to place events and
+                            // rename conn_events to avoid name clash
+                            
+                            if (readiness & conn_events).is_readable() {
+                                match connections[token.into()].read() {
+                                    Err(err) => {
+                                        trace!("[WORKER {}] error while reading: {}", worker.index(), err);
+                                        // @TODO error handling
+                                        connections[token.into()].error(err)
+                                    },
+                                    Ok(mut conn_events) => {
+                                        for conn_event in conn_events.drain(0..) {
+                                            match conn_event {
+                                                ConnEvent::Message(msg) => {
+                                                    let command = Command {
+                                                        id: 0, // @TODO command ids?
+                                                        owner: worker.index(),
+                                                        client: Some(token.into()),
+                                                        cmd: msg.into_text().unwrap()
+                                                    };
+
+                                                    trace!("[WORKER {}] {:?}", worker.index(), command);
+                                                    
+                                                    sequencer.push(command);
+                                                },
+                                                _ => { println!("other"); }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            let conn_events = connections[token.into()].events();
+
+                            if (readiness & conn_events).is_writable() {
+                                match connections[token.into()].write() {
+                                    Err(err) => {
+                                        trace!("[WORKER {}] error while writing: {}", worker.index(), err);
+                                        // @TODO error handling
+                                        connections[token.into()].error(err)
+                                    },
+                                    Ok(_) => { }
+                                }
+                            }
+
+                            // connection events may have changed
+                            connections[token.into()].events().is_readable()
+                                || connections[token.into()].events().is_writable()
+                        };
+
+                        // NOTE: Closing state only applies after a ws connection was successfully
+                        // established. It's possible that we may go inactive while in a connecting
+                        // state if the handshake fails.
+                        if !active {
+                            if let Ok(addr) = connections[token.into()].socket().peer_addr() {
+                                debug!("WebSocket connection to {} disconnected.", addr);
+                            } else {
+                                trace!("WebSocket connection to token={:?} disconnected.", token);
+                            }
+                            connections.remove(token.into());
+                        } else {
+                            let conn = &connections[token.into()];
+                            poll.reregister(
+                                conn.socket(),
+                                conn.token(),
+                                conn.events(),
+                                PollOpt::edge() | PollOpt::oneshot(),
+                            ).unwrap();
+                        }
+                    }
                 }
             }
 
-            // @FRANK does the below make sense?
+            // handle commands
+                        
+            while let Some(command) = sequencer.next() {
 
+                match serde_json::from_str::<Request>(&command.cmd) {
+                    Err(msg) => { panic!("failed to parse command: {:?}", msg); },
+                    Ok(req) => {
+
+                        info!("[WORKER {}] {:?}", worker.index(), req);
+                        
+                        match req {
+                            Request::Transact { tx, tx_data } => {
+                                
+                                for TxData(op, e, a, v) in tx_data {
+                                    ctx.input_handle.update(Datom(e, a, v), op);
+                                }
+                                
+                                ctx.input_handle.advance_to(tx + 1);
+                                ctx.input_handle.flush();
+                            },
+                            Request::Register { query_name, plan, rules } => {
+
+                                if command.owner == worker.index() {
+
+                                    // we are the owning worker and thus have to
+                                    // keep track of this client's new interest
+
+                                    match command.client {
+                                        None => { },
+                                        Some(client) => {
+                                            let client_token = Token(client);
+                                            interests.entry(query_name.clone())
+                                                .or_insert(Vec::new())
+                                                .push(client_token);
+                                        }
+                                    }
+                                }
+
+                                let send_results_handle = send_results.clone();
+
+                                worker.dataflow::<usize, _, _>(|scope| {
+
+                                    let mut rel_map = register(scope, &mut ctx, &query_name, plan, rules);
+
+                                    let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
+                                        .as_collection(|tuple,_| tuple.clone())
+                                        .inner
+                                        .map(|x| Out(x.0.clone(), x.2))
+                                        .unary_notify(
+                                            timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64), 
+                                            "OutputsRecv", 
+                                            Vec::new(),
+                                            move |input, _output: &mut OutputHandle<_, Out, _>, _notificator| {
+                                                
+                                                // due to the exchange pact, this closure is only
+                                                // executed by the owning worker
+
+                                                input.for_each(|_time, data| {
+                                                    let out: Vec<Out> = data.to_vec();
+                                                    send_results_handle.send((query_name.clone(), out)).unwrap();
+                                                });
+                                            })
+                                        .probe();
+
+                                    probes.push(probe);
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ensure work continues, even if no queries registered,
+            // s.t. the sequencer continues issuing commands
             worker.step();
-
-            for probe in &mut ctx.probes {
+            
+            for probe in &mut probes {
                 while probe.less_than(ctx.input_handle.time()) {
                     worker.step();
                 }
             }
         }
 
-        println!("worker {}: command queue unavailable; exiting command loop.", worker.index());
-    });
-
-    match interface {
-        Interface::CLI => { run_cli_server(send, recv_results); },
-        Interface::WS => { run_ws_server(send, recv_results); },
-        Interface::TCP => { run_tcp_server(send, recv_results); },
-    }
-    
-    drop(input_recv);
-    drop(send_results_arc);
-    
-    guards.unwrap();
+        info!("[WORKER {}] exited command loop", worker.index());
+        
+    }).unwrap(); // asserts error-free execution
 }
 
-/// The controller is a differential dataflow serializing and
-/// circulating new commands to all workers.
-fn build_controller<A: timely::Allocate>(
-    worker: &mut Root<A>,
-    timer: ::std::time::Instant,
-    input_recv: Weak<Mutex<Receiver<String>>>,
-    command_queue: &Rc<RefCell<VecDeque<Command>>>,
-    handle: &mut ProbeHandle<Product<RootTimestamp, usize>>,
-) {
+// output for experiments
+// let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
+//     .as_collection(|_,_| ())
+//     .consolidate()
+//     .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
+//     .probe();
 
-    let this_idx = worker.index();
-    let command_queue = command_queue.clone();
+// fn handle_load_data(filename: String, max_lines: usize) {
+//     let load_timer = ::std::time::Instant::now();
+//     let peers = worker.peers();
+//     let file = BufReader::new(File::open(filename).unwrap());
+//     let mut line_count: usize = 0;
 
-    // command serialization and circulation
-    worker.dataflow(move |dataflow| {
+//     let attr_node: Attribute = 100;
+//     let attr_edge: Attribute = 200;
 
-        let peers = dataflow.peers();
-        let mut recvd_commands = Vec::new();
+//     for readline in file.lines() {
+//         let line = readline.ok().expect("read error");
 
-        // source attempting to pull from input_recv and producing
-        // commands for everyone
-        source(dataflow, "InputCommands", move |capability| {
-
-            // so we can drop, if input queue vanishes.
-            let mut capability = Some(capability);
-
-            // closure broadcasts any commands it grabs.
-            move |output| {
-
-                if let Some(input_recv) = input_recv.upgrade() {
-
-                    // determine current nanoseconds
-                    if let Some(capability) = capability.as_mut() {
-
-                        // this could be less frequent if needed.
-                        let mut time = capability.time().clone();
-                        let elapsed = timer.elapsed();
-                        time.inner = (elapsed.as_secs() * 1000000000 + elapsed.subsec_nanos() as u64) as usize;
-
-                        // downgrade the capability.
-                        capability.downgrade(&time);
-
-                        if let Ok(input_recv) = input_recv.try_lock() {
-                            while let Ok(cmd) = input_recv.try_recv() {
-                                let mut session = output.session(&capability);
-                                for worker_idx in 0 .. peers {
-                                    // @TODO command ids?
-                                    session.give((worker_idx, Command { id: 0, owner: this_idx, cmd: cmd.clone() }));
-                                }
-                            }
-                        }
-                    } else { panic!("command serializer: capability lost while input queue valid"); }
-                } else { capability = None; }
-            }
-        })
-        .unary_notify(
-            timely::dataflow::channels::pact::Exchange::new(|x: &(usize, Command)| x.0 as u64), 
-            "InputCommandsRecv", 
-            Vec::new(), 
-            move |input, output, notificator| {
-
-            // grab all commands
-            input.for_each(|time, data| {
-                recvd_commands.extend(data.drain(..).map(|(_,command)| (time.time().clone(), command)));
-                if false { output.session(&time).give(0u64); }
-            });
-
-            recvd_commands.sort();
-
-            // try to move any commands at completed times to a shared queue.
-            if let Ok(mut borrow) = command_queue.try_borrow_mut() {
-                while recvd_commands.len() > 0 && !notificator.frontier(0).iter().any(|x| x.less_than(&recvd_commands[0].0)) {
-                    borrow.push_back(recvd_commands.remove(0).1);
-                }
-            } else { panic!("failed to borrow shared command queue"); }
-        })
-        .probe_with(handle);
-    });
-}
-
-fn run_cli_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
-
-    println!("[CLI-SERVER] running");
-
-    std::io::stdout().flush().unwrap();
-    let input = std::io::stdin();
-
-    thread::spawn(move || {
-        loop {
-            match results_channel.recv() {
-                Err(_err) => break,
-                Ok((query_name, results)) => { println!("=> {:?} {:?}", query_name, results) }
-            };
-        }
-    });
-    
-    loop {
-        if let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
-            match line.as_str() {
-                "exit" => { break },
-                _ => { command_channel.send(line).expect("failed to send command"); },
-            }
-        }
-    }
-
-    println!("[CLI-SERVER] exiting");
-}
-
-fn run_ws_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
-    
-    let send_handle = &command_channel;
-    let mut server = Server::bind("127.0.0.1:6262").expect("can't bind to port");
-
-    println!("[WS-SERVER] running on port 6262");
-    
-    match server.accept() {
-        Err(_err) => println!("[WS-SERVER] failed to accept"),
-        Ok(ws_upgrade) => {
-            let client = ws_upgrade.accept().expect("[WS-SERVER] failed to accept");
-
-            println!("[WS-SERVER] connection from {:?}", client.peer_addr().unwrap());
-
-            let (mut receiver, mut sender) = client.split().unwrap();
-
-            thread::spawn(move || {
-                loop {
-                    match results_channel.recv() {
-                        Err(_err) => break,
-                        Ok((query_name, results)) => {
-                            let serialized = serde_json::to_string::<(String, Vec<Out>)>(&(query_name, results)).expect("failed to serialize outputs");
-                            sender.send_message(&Message::text(serialized)).expect("failed to send message");
-                        }
-                    };
-                }
-            });
-
-            for msg in receiver.incoming_messages() {
-                
-                let msg = msg.unwrap();
-                
-                // println!("[WS-SERVER] new message: {:?}", msg);
-
-                match msg {
-                    OwnedMessage::Close(_) => { println!("[WS-SERVER] client closed connection"); },
-                    OwnedMessage::Text(line) => { send_handle.send(line).expect("failed to send command"); },
-                    _ => {  },
-                }
-            }
-        }
-    }
-
-    println!("[WS-SERVER] exited");
-}
-
-fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
-
-    let send_handle = &command_channel;
-    
-    let listener = TcpListener::bind("127.0.0.1:6262").expect("can't bind to port");
-    listener.set_nonblocking(false).expect("Cannot set blocking");
-
-    println!("[TCP-SERVER] running on port 6262");
-    
-    match listener.accept() {
-        Ok((stream, _addr)) => {
+//         if line_count > max_lines { break; };
+//         line_count += 1;
+        
+//         if !line.starts_with('#') && line.len() > 0 {
+//             let mut elts = line[..].split_whitespace();
+//             let src: u64 = elts.next().unwrap().parse().ok().expect("malformed src");
             
-            println!("[TCP-SERVER] accepted connection");
+//             if (src as usize) % peers == index {
+//                 let dst: u64 = elts.next().unwrap().parse().ok().expect("malformed dst");
+//                 let typ: &str = elts.next().unwrap();
+//                 match typ {
+//                     "n" => { ctx.input_handle.update(Datom(src, attr_node, Value::Eid(dst)), 1); },
+//                     "e" => { ctx.input_handle.update(Datom(src, attr_edge, Value::Eid(dst)), 1); },
+//                     unk => { panic!("unknown type: {}", unk)},
+//                 }
+//             }
+//         }
+//     }
 
-            let mut out_stream = stream.try_clone().unwrap();
-            let mut writer = BufWriter::new(out_stream);
+//     if index == 0 {
+//         println!("{:?}:\tData loaded", load_timer.elapsed());
+//         println!("{:?}", ::std::time::Instant::now());
+//     }
+    
+//     next_tx = next_tx + 1;
+//     ctx.input_handle.advance_to(next_tx);
+//     ctx.input_handle.flush();
+// }
+
+// fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
+
+//     let send_handle = &command_channel;
+    
+//     let listener = TcpListener::bind("127.0.0.1:6262").expect("can't bind to port");
+//     listener.set_nonblocking(false).expect("Cannot set blocking");
+
+//     println!("[TCP-SERVER] running on port 6262");
+    
+//     match listener.accept() {
+//         Ok((stream, _addr)) => {
             
-            thread::spawn(move || {
-                loop {
-                    match results_channel.recv() {
-                        Err(_err) => break,
-                        Ok(results) => {
-                            let serialized = serde_json::to_string::<(String, Vec<Out>)>(&results)
-                                .expect("failed to serialize outputs");
+//             println!("[TCP-SERVER] accepted connection");
+
+//             let mut out_stream = stream.try_clone().unwrap();
+//             let mut writer = BufWriter::new(out_stream);
+            
+//             thread::spawn(move || {
+//                 loop {
+//                     match results_channel.recv() {
+//                         Err(_err) => break,
+//                         Ok(results) => {
+//                             let serialized = serde_json::to_string::<(String, Vec<Out>)>(&results)
+//                                 .expect("failed to serialize outputs");
                             
-                            writer.write(serialized.as_bytes()).expect("failed to send output");
-                        }
-                    };
-                }
-            });
+//                             writer.write(serialized.as_bytes()).expect("failed to send output");
+//                         }
+//                     };
+//                 }
+//             });
             
-            let mut reader = BufReader::new(stream);
-            for input in reader.lines() {
-                match input {
-                    Err(e) => { println!("Error reading line {}", e); break; },
-                    Ok(line) => {
-                        println!("[TCP-SERVER] new message: {:?}", line);
+//             let mut reader = BufReader::new(stream);
+//             for input in reader.lines() {
+//                 match input {
+//                     Err(e) => { println!("Error reading line {}", e); break; },
+//                     Ok(line) => {
+//                         println!("[TCP-SERVER] new message: {:?}", line);
                         
-                        send_handle.send(line).expect("failed to send command");
-                    }
-                }
-            }
+//                         send_handle.send(line).expect("failed to send command");
+//                     }
+//                 }
+//             }
 
-            println!("[TCP-SERVER] closing connection");
-        },
-        Err(e) => { println!("Encountered I/O error: {}", e); }
-    }
+//             println!("[TCP-SERVER] closing connection");
+//         },
+//         Err(e) => { println!("Encountered I/O error: {}", e); }
+//     }
     
-    println!("[TCP-SERVER] exited");
-}
+//     println!("[TCP-SERVER] exited");
+// }

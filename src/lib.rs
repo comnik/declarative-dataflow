@@ -13,12 +13,11 @@ use std::boxed::Box;
 use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
 
+use timely::*;
 use timely::dataflow::*;
 use timely::dataflow::scopes::{Root, Child};
-use timely::progress::Timestamp;
-use timely::progress::timestamp::RootTimestamp;
+use timely::progress::timestamp::{Timestamp, RootTimestamp};
 use timely::progress::nested::product::Product;
-use timely::dataflow::operators::probe::{Handle};
 
 use differential_dataflow::collection::{Collection};
 use differential_dataflow::lattice::Lattice;
@@ -61,7 +60,6 @@ pub enum Predicate { LT, GT, LTE, GTE, EQ, NEQ }
 #[derive(Deserialize, Clone, Debug)]
 pub enum AggregationFn { MIN, MAX, COUNT }
 
-type ProbeHandle<T> = Handle<Product<RootTimestamp, T>>;
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 type Arrange<G: Scope, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, G::Timestamp, R>>;
@@ -95,10 +93,11 @@ struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
     // variable_map: RelationMap<'a, G>,
 }
 
+// @TODO move input_handle into server, get rid of all this and use DB
+// struct directly
 pub struct Context<T: Timestamp+Lattice> {
     pub input_handle: InputSession<T, Datom, isize>,
     pub db: DB<T>,
-    pub probes: Vec<ProbeHandle<T>>,
     pub queries: QueryMap<T, isize>,
 }
 
@@ -197,7 +196,7 @@ struct NamedRelation<'a, G: Scope> where G::Timestamp : Lattice {
 }
 
 impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
-    pub fn from (source: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) -> Self {
+    pub fn from(source: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) -> Self {
         let variable = Variable::from(source.clone());
         NamedRelation {
             variable: Some(variable),
@@ -224,7 +223,7 @@ impl<'a, G: Scope> Drop for NamedRelation<'a, G> where G::Timestamp : Lattice {
 /// Takes a query plan and turns it into a differential dataflow. The
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
-fn implement<A: timely::Allocate, T: Timestamp+Lattice> (
+fn implement<A: Allocate, T: Timestamp+Lattice>(
     name: &String,
     plan: Plan,
     rules: Vec<Rule>,
@@ -317,7 +316,7 @@ fn implement<A: timely::Allocate, T: Timestamp+Lattice> (
     })
 }
 
-fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>(
+fn create_inputs<'a, A: Allocate, T: Timestamp+Lattice>(
     plan: &Plan,
     scope: &mut Child<'a, Root<A>, T>
 ) -> InputMap<Child<'a, Root<A>, T>> {
@@ -384,7 +383,7 @@ fn create_inputs<'a, A: timely::Allocate, T: Timestamp+Lattice>(
     }
 }
 
-fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
+fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
     plan: &Plan,
     db: &ImplContext<Child<'a, Root<A>, T>>,
     nested: &mut Child<'b, Child<'a, Root<A>, T>, u64>,
@@ -637,7 +636,7 @@ fn implement_plan<'a, 'b, A: timely::Allocate, T: Timestamp+Lattice> (
 // PUBLIC API
 //
 
-pub fn setup_db<A: timely::Allocate, T: Timestamp+Lattice> (scope: &mut Child<Root<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
+pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Root<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
     let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
     let db = DB {
         e_av: datoms.map(|Datom(e, a, v)| (vec![Value::Eid(e)], vec![Value::Attribute(a), v])).arrange_by_key().trace,
@@ -649,7 +648,7 @@ pub fn setup_db<A: timely::Allocate, T: Timestamp+Lattice> (scope: &mut Child<Ro
     (input_handle, db)
 }
 
-pub fn register<A: timely::Allocate, T: Timestamp+Lattice> (
+pub fn register<A: Allocate, T: Timestamp+Lattice>(
     scope: &mut Child<Root<A>, T>,
     ctx: &mut Context<T>,
     name: &String,
@@ -664,22 +663,3 @@ pub fn register<A: timely::Allocate, T: Timestamp+Lattice> (
     
     result_map
 }
-
-// @TODO this is probably only neccessary in the WASM interface
-//
-// pub fn transact<A: Allocate>(ctx: &mut Context<A, usize>, tx: usize, d: Vec<TxData>) -> bool {
-//     for TxData(op, e, a, v) in d {
-//         ctx.input_handle.update(Datom(e, a, v), op);
-//     }
-//     ctx.input_handle.advance_to(tx + 1);
-//     ctx.input_handle.flush();
-
-//     for probe in &mut ctx.probes {
-//         while probe.less_than(ctx.input_handle.time()) {
-//             ctx.root.step();
-//         }
-//     }
-
-//     true
-// }
-
