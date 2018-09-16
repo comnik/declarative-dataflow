@@ -18,19 +18,29 @@ utilize the same query plan interface.
 Assuming an up-to-date Rust environment, the server can be built and
 run via
 
-    cargo run --release --bin server <cli|ws|tcp>
-    
-where the first argument specifies the interface to use. At the time
-of this writing, all three interfaces are very rough, unstable, and
-lack features of a production-grade system (e.g. the server only
-accepts a single client connection).
+    cargo run --release --bin server -- <timely args> -- <server args>
+
+The server executable accepts two sets of arguments separated by `--`,
+one for [configuring timely dataflow](https://github.com/frankmcsherry/timely-dataflow)
+and the other for configuring the server.
+
+Server configuration:
+
+    OPTION       | DESCRIPTION                | DEFAULT
+    --port       | port to listen at          | 6262
+    --enable-cli | accept commands via stdin? | false
+
+Logging at a specific level can be enabled by setting the `RUST_LOG`
+environment variable to
+
+    RUST_LOG=server=info
 
 ## Documentation
 
-Architectural decisions are documented in the `docs/adr/`
-sub-directory.
+Read the [high-level motivation for this project](https://www.nikolasgoebel.com/2018/09/13/incremental-datalog.html).
 
-## Query Plans
+Architectural decisions are documented in the [docs/adr/](docs/adr/)
+sub-directory.
 
 The synthesizer supports the following operators:
 
