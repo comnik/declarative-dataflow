@@ -73,10 +73,10 @@ type RelationMap<'a, G> = HashMap<String, NamedRelation<'a, G>>;
 //
 
 pub struct DB<T: Timestamp+Lattice> {
-    e_av: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
-    a_ev: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
-    ea_v: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
-    av_e: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    pub e_av: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    pub a_ev: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    pub ea_v: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    pub av_e: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
 }
 
 struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {

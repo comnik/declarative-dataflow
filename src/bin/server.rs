@@ -29,6 +29,8 @@ use getopts::Options;
 use timely::dataflow::operators::{Probe, Map, Operator};
 use timely::dataflow::operators::generic::{OutputHandle};
 
+use differential_dataflow::trace::{TraceReader};
+
 use mio::*;
 use mio::net::{TcpListener};
 
@@ -45,6 +47,7 @@ use sequencer::{Sequencer};
 struct Config {
     port: u16,
     enable_cli: bool,
+    enable_history: bool,
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug)]
@@ -77,6 +80,7 @@ fn main() {
     let mut opts = Options::new();
     opts.optopt("", "port", "server port", "PORT");
     opts.optflag("", "enable-cli", "enable the CLI interface");
+    opts.optflag("", "enable-history", "enable historical queries");
 
     let args: Vec<String> = std::env::args().collect();
     let timely_args = std::env::args().take_while(|ref arg| arg.to_string() != "--");
@@ -90,7 +94,8 @@ fn main() {
             Ok(matches) => {
                 Config {
                     port: matches.opt_str("port").map(|x| x.parse().unwrap_or(6262)).unwrap_or(6262),
-                    enable_cli: matches.opt_present("enable-cli")
+                    enable_cli: matches.opt_present("enable-cli"),
+                    enable_history: matches.opt_present("enable-history"),
                 }
             }
         };
@@ -363,6 +368,18 @@ fn main() {
                                 
                                 ctx.input_handle.advance_to(tx + 1);
                                 ctx.input_handle.flush();
+
+                                if config.enable_history == false {
+                                    
+                                    // if historical queries don't matter, we should advance
+                                    // the index traces to allow them to compact
+
+                                    let frontier = &[ctx.input_handle.time().clone()];
+                                    ctx.db.e_av.advance_by(frontier);
+                                    ctx.db.a_ev.advance_by(frontier);
+                                    ctx.db.ea_v.advance_by(frontier);
+                                    ctx.db.av_e.advance_by(frontier);
+                                }
                             },
                             Request::Register { query_name, plan, rules } => {
 
