@@ -375,10 +375,16 @@ fn main() {
                                     // the index traces to allow them to compact
 
                                     let frontier = &[ctx.input_handle.time().clone()];
+
                                     ctx.db.e_av.advance_by(frontier);
                                     ctx.db.a_ev.advance_by(frontier);
                                     ctx.db.ea_v.advance_by(frontier);
                                     ctx.db.av_e.advance_by(frontier);
+
+                                    ctx.db.e_av.distinguish_since(frontier);
+                                    ctx.db.a_ev.distinguish_since(frontier);
+                                    ctx.db.ea_v.distinguish_since(frontier);
+                                    ctx.db.av_e.distinguish_since(frontier);
                                 }
                             },
                             Request::Register { query_name, plan, rules } => {
