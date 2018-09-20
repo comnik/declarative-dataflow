@@ -38,11 +38,13 @@ pub type Attribute = u32;
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
 pub enum Value {
-    Eid(Entity),
     Attribute(Attribute),
-    Number(i64),
     String(String),
     Bool(bool),
+    Number(i64),
+    Eid(Entity),
+    Instant(u64), // milliseconds since midnight, January 1, 1970 UTC
+    Uuid([u8; 16])
 }
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
