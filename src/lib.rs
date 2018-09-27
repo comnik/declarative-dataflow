@@ -1,3 +1,11 @@
+//! Declarative dataflow infrastructure
+//!
+//! This crate contains types, traits, and logic for assembling differential
+//! dataflow computations from declaratively specified programs, without any
+//! additional compilation.
+
+#![forbid(missing_docs)]
+
 extern crate timely;
 extern crate differential_dataflow;
 
@@ -35,34 +43,72 @@ use differential_dataflow::operators::Consolidate;
 // TYPES
 //
 
+/// A unique entity identifier.
 pub type Entity = u64;
+/// A unique attribute identifier.
 pub type Attribute = u32;
 
+/// Possible data values.
+///
+/// This enum captures the currently supported data types, and is the least common denominator
+/// for the types of records moved around.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
 pub enum Value {
+    /// An attribute identifier
     Attribute(Attribute),
+    /// A string
     String(String),
+    /// A boolean
     Bool(bool),
+    /// A 64 bit signed integer
     Number(i64),
+    /// An entity identifier
     Eid(Entity),
-    Instant(u64), // milliseconds since midnight, January 1, 1970 UTC
+    /// Milliseconds since midnight, January 1, 1970 UTC
+    Instant(u64),
+    /// A 16 byte unique identifier.
     Uuid([u8; 16])
 }
 
+/// An entity, attribute, value triple.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
 pub struct Datom(pub Entity, pub Attribute, pub Value);
 
+/// TODO
 #[derive(Deserialize, Debug)]
 pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
 
+/// TODO
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize)]
 pub struct Out(pub Vec<Value>, pub isize);
 
+/// Permitted comparison predicates.
 #[derive(Deserialize, Clone, Debug)]
-pub enum Predicate { LT, GT, LTE, GTE, EQ, NEQ }
+pub enum Predicate {
+    /// Less than
+    LT,
+    /// Greater than
+    GT,
+    /// Less than or equal to
+    LTE,
+    /// Greater than or equal to
+    GTE,
+    /// Equal
+    EQ,
+    /// Not equal
+    NEQ,
+}
 
+/// Permitted aggregation function.
 #[derive(Deserialize, Clone, Debug)]
-pub enum AggregationFn { MIN, MAX, COUNT }
+pub enum AggregationFn {
+    /// Minimum
+    MIN,
+    /// Maximum
+    MAX,
+    /// Count
+    COUNT,
+}
 
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
@@ -76,10 +122,19 @@ type RelationMap<'a, G> = HashMap<String, NamedRelation<'a, G>>;
 // CONTEXT
 //
 
+/// Handles to maintained indices
+///
+/// A `DB` contains multiple indices for (entity, attribute, value) triples, by various
+/// subsets of these three fields. These indices can be shared between all queries that
+/// need access to the common data.
 pub struct DB<T: Timestamp+Lattice> {
+    /// Indexed by entity.
     pub e_av: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    /// Indexed by attribute.
     pub a_ev: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    /// Indexed by (entity, attribute).
     pub ea_v: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    /// Indexed by (attribute, value).
     pub av_e: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
 }
 
@@ -99,9 +154,13 @@ struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
 
 // @TODO move input_handle into server, get rid of all this and use DB
 // struct directly
+/// Context maintained by the query processor.
 pub struct Context<T: Timestamp+Lattice> {
+    /// TODO
     pub input_handle: InputSession<T, Datom, isize>,
+    /// Maintained indices.
     pub db: DB<T>,
+    /// Named relations.
     pub queries: QueryMap<T, isize>,
 }
 
@@ -109,25 +168,41 @@ pub struct Context<T: Timestamp+Lattice> {
 // QUERY PLAN GRAMMAR
 //
 
+/// Possible query plan types.
 #[derive(Deserialize, Clone, Debug)]
 pub enum Plan {
+    /// Projection
     Project(Box<Plan>, Vec<Var>),
+    /// Aggregation
     Aggregate(AggregationFn, Box<Plan>, Vec<Var>),
+    /// Union
     Union(Vec<Var>, Vec<Box<Plan>>),
+    /// Equijoin
     Join(Box<Plan>, Box<Plan>, Vec<Var>),
+    /// Antijoin
     Antijoin(Box<Plan>, Box<Plan>, Vec<Var>),
+    /// Negation
     Not(Box<Plan>),
+    /// TODO
     PredExpr(Predicate, Vec<Var>, Box<Plan>),
+    /// TODO
     Lookup(Entity, Attribute, Var),
+    /// TODO
     Entity(Entity, Var, Var),
+    /// TODO
     HasAttr(Var, Attribute, Var),
+    /// TODO
     Filter(Var, Attribute, Value),
+    /// Sources data from a named relation
     RuleExpr(String, Vec<Var>),
 }
 
+/// A named relation.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Rule {
+    /// The name binding the relation.
     pub name: String,
+    /// The plan describing contents of the relation.
     pub plan: Plan,
 }
 
@@ -137,14 +212,28 @@ type Var = u32;
 // RELATIONS
 //
 
+/// A relation with identified attributes
+///
+/// A relation is internally a collection of records of type `Vec<Value>` each of a
+/// common length, and a mapping from variable identifiers to positions in each of
+/// these vectors.
 trait Relation<'a, G: Scope> where G::Timestamp : Lattice {
+    /// List the variable identifiers.
     fn symbols(&self) -> &Vec<Var>;
+    /// A collection containing all tuples.
     fn tuples(self) -> Collection<Child<'a, G, u64>, Vec<Value>, isize>;
+    /// A collection with tuples partitioned by `syms`.
+    ///
+    /// Variables present in `syms` are collected in order and populate a first "key"
+    /// `Vec<Value>`, followed by those variables not present in `syms`.
     fn tuples_by_symbols(self, syms: Vec<Var>) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
 }
 
+/// Handles to inputs and traces.
 pub struct RelationHandles<T: Timestamp+Lattice> {
+    /// A handle to an interactive input session.
     pub input: InputSession<T, Vec<Value>, isize>,
+    /// A handle to the corresponding arranged data.
     pub trace: TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>,
 }
 
@@ -648,6 +737,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
 // PUBLIC API
 //
 
+/// Create a new DB instance and interactive session.
 pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
     let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
     let db = DB {
@@ -660,6 +750,7 @@ pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, 
     (input_handle, db)
 }
 
+/// TODO
 pub fn register<A: Allocate, T: Timestamp+Lattice>(
     scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>,
