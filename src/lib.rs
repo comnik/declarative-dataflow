@@ -13,11 +13,13 @@ use std::boxed::Box;
 use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
 
-use timely::*;
+// use timely::*;
 use timely::dataflow::*;
-use timely::dataflow::scopes::{Root, Child};
+use timely::dataflow::scopes::Child;
 use timely::progress::timestamp::{Timestamp, RootTimestamp};
 use timely::progress::nested::product::Product;
+use timely::communication::Allocate;
+use timely::worker::Worker;
 
 use differential_dataflow::collection::{Collection};
 use differential_dataflow::lattice::Lattice;
@@ -193,13 +195,13 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
 }
 
 struct NamedRelation<'a, G: Scope> where G::Timestamp : Lattice {
-    variable: Option<Variable<'a, G, Vec<Value>, isize>>,
+    variable: Option<Variable<'a, G, Vec<Value>, u64, isize>>,
     tuples: Collection<Child<'a, G, u64>, Vec<Value>, isize>,
 }
 
 impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
     pub fn from(source: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) -> Self {
-        let variable = Variable::from(source.clone());
+        let variable = Variable::new_from(source.clone(), u64::max_value(), 1);
         NamedRelation {
             variable: Some(variable),
             tuples: source.clone(),
@@ -229,7 +231,7 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     name: &String,
     plan: Plan,
     rules: Vec<Rule>,
-    scope: &mut Child<Root<A>, T>,
+    scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>
 ) -> HashMap<String, RelationHandles<T>> {
 
@@ -248,7 +250,7 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     // }
 
     // @TODO Only import those we need for the query?
-    let impl_ctx: ImplContext<Child<Root<A>, T>> = ImplContext {
+    let impl_ctx: ImplContext<Child<Worker<A>, T>> = ImplContext {
         e_av: db.e_av.import(scope),
         a_ev: db.a_ev.import(scope),
         ea_v: db.ea_v.import(scope),
@@ -320,8 +322,8 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
 
 // fn create_inputs<'a, A: Allocate, T: Timestamp+Lattice>(
 //     plan: &Plan,
-//     scope: &mut Child<'a, Root<A>, T>
-// ) -> InputMap<Child<'a, Root<A>, T>> {
+//     scope: &mut Child<'a, Worker<A>, T>
+// ) -> InputMap<Child<'a, Worker<A>, T>> {
 //
 //     match plan {
 //         &Plan::Project(ref plan, _) => { create_inputs(plan.deref(), scope) },
@@ -388,11 +390,11 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
 
 fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
     plan: &Plan,
-    db: &ImplContext<Child<'a, Root<A>, T>>,
-    nested: &mut Child<'b, Child<'a, Root<A>, T>, u64>,
-    relation_map: &RelationMap<'b, Child<'a, Root<A>, T>>,
+    db: &ImplContext<Child<'a, Worker<A>, T>>,
+    nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
+    relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
     queries: &QueryMap<T, isize>
-) -> SimpleRelation<'b, Child<'a, Root<A>, T>> {
+) -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
     use timely::dataflow::operators::ToStream;
     use differential_dataflow::AsCollection;
@@ -650,7 +652,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
 // PUBLIC API
 //
 
-pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Root<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
+pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
     let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
     let db = DB {
         e_av: datoms.map(|Datom(e, a, v)| (vec![Value::Eid(e)], vec![Value::Attribute(a), v])).arrange_by_key().trace,
@@ -663,7 +665,7 @@ pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Root<A>, T>
 }
 
 pub fn register<A: Allocate, T: Timestamp+Lattice>(
-    scope: &mut Child<Root<A>, T>,
+    scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>,
     name: &String,
     plan: Plan,
