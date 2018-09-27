@@ -1,6 +1,6 @@
 extern crate timely;
 extern crate differential_dataflow;
-    
+
 #[macro_use]
 extern crate abomonation_derive;
 extern crate abomonation;
@@ -64,9 +64,9 @@ pub enum AggregationFn { MIN, MAX, COUNT }
 
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
-type Arrange<G: Scope, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, G::Timestamp, R>>;
-type ArrangeSelf<G: Scope, K, R> = Arranged<G, K, (), R, TraceKeyHandle<K, G::Timestamp, R>>;
-type InputMap<G: Scope> = HashMap<(Option<Entity>, Option<Attribute>, Option<Value>), ArrangeSelf<G, Vec<Value>, isize>>;
+type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
+// type ArrangeSelf<G, K, R> = Arranged<G, K, (), R, TraceKeyHandle<K, <G as ScopeParent>::Timestamp, R>>;
+// type InputMap<G> = HashMap<(Option<Entity>, Option<Attribute>, Option<Value>), ArrangeSelf<G, Vec<Value>, isize>>;
 type QueryMap<T, R> = HashMap<String, TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, R>>;
 type RelationMap<'a, G> = HashMap<String, NamedRelation<'a, G>>;
 
@@ -89,8 +89,8 @@ struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
     av_e: Arrange<G, Vec<Value>, Vec<Value>, isize>,
 
     // Parameter inputs
-    input_map: InputMap<G>,
-    
+    // input_map: InputMap<G>,
+
     // Collection variables for recursion
     // variable_map: RelationMap<'a, G>,
 }
@@ -158,7 +158,7 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
     fn tuples_by_symbols(self, syms: Vec<Var>) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>{
         let key_length = syms.len();
         let values_length = self.symbols().len() - key_length;
-        
+
         let mut key_offsets: Vec<usize> = Vec::with_capacity(key_length);
         let mut value_offsets: Vec<usize> = Vec::with_capacity(values_length);
         let sym_set: HashSet<Var> = syms.iter().cloned().collect();
@@ -180,13 +180,13 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
         // let debug_values: Vec<String> = value_offsets.iter().map(|x| x.to_string()).collect();
         // println!("key offsets: {:?}", debug_keys);
         // println!("value offsets: {:?}", debug_values);
-        
+
         self.tuples()
             .map(move |tuple| {
                 let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
                 // @TODO second clone not really neccessary
                 let values: Vec<Value> = value_offsets.iter().map(|i| tuple[*i].clone()).collect();
-                
+
                 (key, values)
             })
     }
@@ -232,21 +232,21 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     scope: &mut Child<Root<A>, T>,
     ctx: &mut Context<T>
 ) -> HashMap<String, RelationHandles<T>> {
-        
+
     let db = &mut ctx.db;
     let queries = &mut ctx.queries;
 
-    // query input
-    let mut input_map = create_inputs(&plan, scope);
+    // // query input
+    // let mut input_map = create_inputs(&plan, scope);
 
-    // rule inputs
-    for rule in rules.iter() {
-        let mut rule_inputs = create_inputs(&rule.plan, scope);
-        for (k, v) in rule_inputs.drain() {
-            input_map.insert(k, v);
-        }
-    }
-    
+    // // rule inputs
+    // for rule in rules.iter() {
+    //     let mut rule_inputs = create_inputs(&rule.plan, scope);
+    //     for (k, v) in rule_inputs.drain() {
+    //         input_map.insert(k, v);
+    //     }
+    // }
+
     // @TODO Only import those we need for the query?
     let impl_ctx: ImplContext<Child<Root<A>, T>> = ImplContext {
         e_av: db.e_av.import(scope),
@@ -254,7 +254,7 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         ea_v: db.ea_v.import(scope),
         av_e: db.av_e.import(scope),
 
-        input_map
+        // input_map
     };
 
     // query source
@@ -265,7 +265,7 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     for rule in rules.iter() {
         source_map.entry(rule.name.clone()).or_insert_with(|| scope.new_collection());
     }
-    
+
     scope.scoped(|nested| {
 
         let mut relation_map = HashMap::new();
@@ -278,7 +278,7 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
             if relation_map.contains_key(&rule_name) {
                 panic!("Attempted to redefine relation {:?}.", rule_name);
             }
-            
+
             relation_map.insert(rule_name.clone(), rel);
             // @TODO add handle and trace to result_map?
         }
@@ -293,22 +293,22 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         if relation_map.contains_key(name) {
             panic!("Query name clashes with rule name {:?}.", name);
         }
-        
+
         relation_map.insert(name.clone(), output_relation);
-        
+
         result_map.insert(name.clone(), RelationHandles { input: source_handle, trace: output_trace });
-        
+
         for rule in rules.iter() {
             println!("Planning {:?}", rule.name);
             let execution = implement_plan(&rule.plan, &impl_ctx, nested, &relation_map, queries);
 
             relation_map.get_mut(&rule.name).expect("Rule should be in relation_map, but isn't")
                 .add_execution(&execution.tuples());
-        } 
+        }
 
         println!("Planning query");
         let execution = implement_plan(&plan, &impl_ctx, nested, &relation_map, queries);
-        
+
         relation_map
             .get_mut(name).unwrap()
             .add_execution(&execution.tuples());
@@ -318,72 +318,73 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     })
 }
 
-fn create_inputs<'a, A: Allocate, T: Timestamp+Lattice>(
-    plan: &Plan,
-    scope: &mut Child<'a, Root<A>, T>
-) -> InputMap<Child<'a, Root<A>, T>> {
+// fn create_inputs<'a, A: Allocate, T: Timestamp+Lattice>(
+//     plan: &Plan,
+//     scope: &mut Child<'a, Root<A>, T>
+// ) -> InputMap<Child<'a, Root<A>, T>> {
+//
+//     match plan {
+//         &Plan::Project(ref plan, _) => { create_inputs(plan.deref(), scope) },
+//         &Plan::Aggregate(_, ref plan, _) => { create_inputs(plan.deref(), scope) },
+//         &Plan::Union(_, ref plans) => {
+//             let mut inputs = HashMap::new();
+//
+//             for plan in plans.iter() {
+//                 let mut plan_inputs = create_inputs(plan.deref(), scope);
+//
+//                 for (k, v) in plan_inputs.drain() {
+//                     inputs.insert(k, v);
+//                 }
+//             }
+//
+//             inputs
+//         },
+//         &Plan::Join(ref left_plan, ref right_plan, _) => {
+//             let mut left_inputs = create_inputs(left_plan.deref(), scope);
+//             let mut right_inputs = create_inputs(right_plan.deref(), scope);
+//
+//             for (k, v) in right_inputs.drain() {
+//                 left_inputs.insert(k, v);
+//             }
+//
+//             left_inputs
+//         },
+//         &Plan::Antijoin(ref left_plan, ref right_plan, _) => {
+//             let mut left_inputs = create_inputs(left_plan.deref(), scope);
+//             let mut right_inputs = create_inputs(right_plan.deref(), scope);
+//
+//             for (k, v) in right_inputs.drain() {
+//                 left_inputs.insert(k, v);
+//             }
+//
+//             left_inputs
+//         },
+//         &Plan::Not(ref plan) => { create_inputs(plan.deref(), scope) },
+//         &Plan::PredExpr(_, _, ref plan) => { create_inputs(plan.deref(), scope) },
+//         &Plan::Lookup(e, a, _) => {
+//             let mut inputs = HashMap::new();
+//             inputs.insert((Some(e), Some(a), None), scope.new_collection_from(vec![vec![Value::Eid(e), Value::Attribute(a)]]).1.arrange_by_self());
+//             inputs
+//         },
+//         &Plan::Entity(e, _, _) => {
+//             let mut inputs = HashMap::new();
+//             inputs.insert((Some(e), None, None), scope.new_collection_from(vec![vec![Value::Eid(e)]]).1.arrange_by_self());
+//             inputs
+//         },
+//         &Plan::HasAttr(_, a, _) => {
+//             let mut inputs = HashMap::new();
+//             inputs.insert((None, Some(a), None), scope.new_collection_from(vec![vec![Value::Attribute(a)]]).1.arrange_by_self());
+//             inputs
+//         },
+//         &Plan::Filter(_, a, ref v) => {
+//             let mut inputs = HashMap::new();
+//             inputs.insert((None, Some(a), Some(v.clone())), scope.new_collection_from(vec![vec![Value::Attribute(a), v.clone()]]).1.arrange_by_self());
+//             inputs
+//         },
+//         &Plan::RuleExpr(_, _) => { HashMap::new() }
+//     }
+// }
 
-    match plan {
-        &Plan::Project(ref plan, _) => { create_inputs(plan.deref(), scope) },
-        &Plan::Aggregate(_, ref plan, _) => { create_inputs(plan.deref(), scope) },
-        &Plan::Union(_, ref plans) => {
-            let mut inputs = HashMap::new();
-            
-            for plan in plans.iter() {
-                let mut plan_inputs = create_inputs(plan.deref(), scope);
-
-                for (k, v) in plan_inputs.drain() {
-                    inputs.insert(k, v);
-                }
-            }
-            
-            inputs
-        },
-        &Plan::Join(ref left_plan, ref right_plan, _) => {
-            let mut left_inputs = create_inputs(left_plan.deref(), scope);
-            let mut right_inputs = create_inputs(right_plan.deref(), scope);
-            
-            for (k, v) in right_inputs.drain() {
-                left_inputs.insert(k, v);
-            }
-
-            left_inputs
-        },
-        &Plan::Antijoin(ref left_plan, ref right_plan, _) => {
-            let mut left_inputs = create_inputs(left_plan.deref(), scope);
-            let mut right_inputs = create_inputs(right_plan.deref(), scope);
-            
-            for (k, v) in right_inputs.drain() {
-                left_inputs.insert(k, v);
-            }
-
-            left_inputs
-        },
-        &Plan::Not(ref plan) => { create_inputs(plan.deref(), scope) },
-        &Plan::PredExpr(_, _, ref plan) => { create_inputs(plan.deref(), scope) },
-        &Plan::Lookup(e, a, _) => {
-            let mut inputs = HashMap::new();
-            inputs.insert((Some(e), Some(a), None), scope.new_collection_from(vec![vec![Value::Eid(e), Value::Attribute(a)]]).1.arrange_by_self());
-            inputs
-        },
-        &Plan::Entity(e, _, _) => {
-            let mut inputs = HashMap::new();
-            inputs.insert((Some(e), None, None), scope.new_collection_from(vec![vec![Value::Eid(e)]]).1.arrange_by_self());
-            inputs
-        },
-        &Plan::HasAttr(_, a, _) => {
-            let mut inputs = HashMap::new();
-            inputs.insert((None, Some(a), None), scope.new_collection_from(vec![vec![Value::Attribute(a)]]).1.arrange_by_self());
-            inputs
-        },
-        &Plan::Filter(_, a, ref v) => {
-            let mut inputs = HashMap::new();
-            inputs.insert((None, Some(a), Some(v.clone())), scope.new_collection_from(vec![vec![Value::Attribute(a), v.clone()]]).1.arrange_by_self());
-            inputs
-        },
-        &Plan::RuleExpr(_, _) => { HashMap::new() }
-    }
-}
 
 fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
     plan: &Plan,
@@ -392,7 +393,10 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
     relation_map: &RelationMap<'b, Child<'a, Root<A>, T>>,
     queries: &QueryMap<T, isize>
 ) -> SimpleRelation<'b, Child<'a, Root<A>, T>> {
-        
+
+    use timely::dataflow::operators::ToStream;
+    use differential_dataflow::AsCollection;
+
     match plan {
         &Plan::Project(ref plan, ref symbols) => {
             let mut relation = implement_plan(plan.deref(), db, nested, relation_map, queries);
@@ -451,7 +455,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
                         symbols: symbols.to_vec(),
                         tuples: tuples
                         // @TODO use rest of tuple as key
-                            .map(|(ref key, ref _tuple)| ())
+                            .map(|(ref _key, ref _tuple)| ())
                             .count()
                             .map(|(_, count)| vec![Value::Number(count as i64)])
                     }
@@ -497,7 +501,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
                     Some(_) => false
                 }
             });
-            
+
             let mut right_syms: Vec<Var> = right.symbols().clone();
             right_syms.retain(|&sym| {
                 match join_vars.iter().position(|&v| sym == v) {
@@ -508,7 +512,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
 
             // useful for inspecting join inputs
             //.inspect(|&((ref key, ref values), _, _)| { println!("right {:?} {:?}", key, values) })
-            
+
             let tuples = left.tuples_by_symbols(join_vars.clone())
                 .arrange_by_key()
                 .join_core(&right.tuples_by_symbols(join_vars.clone()).arrange_by_key(), |key, v1, v2| {
@@ -517,8 +521,8 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
                     vstar.extend(key.iter().cloned());
                     vstar.extend(v1.iter().cloned());
                     vstar.extend(v2.iter().cloned());
-                    
-                    Some(vstar)                    
+
+                    Some(vstar)
                 });
 
             let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len() + right_syms.len());
@@ -542,7 +546,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
                     Some(_) => false
                 }
             });
-            
+
             let tuples = left.tuples_by_symbols(join_vars.clone())
                 .distinct()
                 .antijoin(&right.tuples_by_symbols(join_vars.clone()).map(|(key, _)| key).distinct())
@@ -593,31 +597,39 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
             }
         },
         &Plan::Lookup(e, a, sym1) => {
-            let ea_in = db.input_map.get(&(Some(e), Some(a), None)).unwrap().enter(nested);
+            let tuple = (vec![Value::Eid(e), Value::Attribute(a)], Default::default(), 1);
+            let ea_in = Some(tuple).to_stream(nested).as_collection();
             let tuples = db.ea_v.enter(nested)
-                .join_core(&ea_in, |_, tuple, _| { Some(tuple.clone()) });
-            
+                .semijoin(&ea_in)
+                .map(|x| x.1);
+
             SimpleRelation { symbols: vec![sym1], tuples }
         },
         &Plan::Entity(e, sym1, sym2) => {
-            let e_in = db.input_map.get(&(Some(e), None, None)).unwrap().enter(nested);
+            let tuple = (vec![Value::Eid(e)], Default::default(), 1);
+            let e_in = Some(tuple).to_stream(nested).as_collection();
             let tuples = db.e_av.enter(nested)
-                .join_core(&e_in, |_, tuple, _| { Some(tuple.clone()) });
-            
+                .semijoin(&e_in)
+                .map(|x| x.1);
+
             SimpleRelation { symbols: vec![sym1, sym2], tuples }
         },
         &Plan::HasAttr(sym1, a, sym2) => {
-            let a_in = db.input_map.get(&(None, Some(a), None)).unwrap().enter(nested);
+            let tuple = (vec![Value::Attribute(a)], Default::default(), 1);
+            let a_in = Some(tuple).to_stream(nested).as_collection();
             let tuples = db.a_ev.enter(nested)
-                .join_core(&a_in, |_, tuple, _| { Some(tuple.clone()) });
-            
+                .semijoin(&a_in)
+                .map(|x| x.1);
+
             SimpleRelation { symbols: vec![sym1, sym2], tuples }
         },
         &Plan::Filter(sym1, a, ref v) => {
-            let av_in = db.input_map.get(&(None, Some(a), Some(v.clone()))).unwrap().enter(nested);
+            let tuple = (vec![Value::Attribute(a), v.clone()], Default::default(), 1);
+            let av_in = Some(tuple).to_stream(nested).as_collection();
             let tuples = db.av_e.enter(nested)
-                .join_core(&av_in, |_, tuple, _| { Some(tuple.clone()) });
-            
+                .semijoin(&av_in)
+                .map(|x| x.1);
+
             SimpleRelation { symbols: vec![sym1], tuples }
         },
         &Plan::RuleExpr(ref name, ref syms) => {
@@ -657,11 +669,11 @@ pub fn register<A: Allocate, T: Timestamp+Lattice>(
     plan: Plan,
     rules: Vec<Rule>
 ) -> HashMap<String, RelationHandles<T>> {
-    
+
     let result_map = implement(name, plan, rules, scope, ctx);
 
     // @TODO store trace somewhere for re-use from other queries later
     // queries.insert(name.clone(), output_collection.arrange_by_self().trace);
-    
+
     result_map
 }
