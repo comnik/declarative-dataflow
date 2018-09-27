@@ -600,37 +600,33 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         },
         &Plan::Lookup(e, a, sym1) => {
             let tuple = (vec![Value::Eid(e), Value::Attribute(a)], Default::default(), 1);
-            let ea_in = Some(tuple).to_stream(nested).as_collection();
+            let ea_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
             let tuples = db.ea_v.enter(nested)
-                .semijoin(&ea_in)
-                .map(|x| x.1);
+                .join_core(&ea_in, |_,tuples,_| Some(tuples.clone()));
 
             SimpleRelation { symbols: vec![sym1], tuples }
         },
         &Plan::Entity(e, sym1, sym2) => {
             let tuple = (vec![Value::Eid(e)], Default::default(), 1);
-            let e_in = Some(tuple).to_stream(nested).as_collection();
+            let e_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
             let tuples = db.e_av.enter(nested)
-                .semijoin(&e_in)
-                .map(|x| x.1);
+                .join_core(&e_in, |_,tuples,_| Some(tuples.clone()));
 
             SimpleRelation { symbols: vec![sym1, sym2], tuples }
         },
         &Plan::HasAttr(sym1, a, sym2) => {
             let tuple = (vec![Value::Attribute(a)], Default::default(), 1);
-            let a_in = Some(tuple).to_stream(nested).as_collection();
+            let a_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
             let tuples = db.a_ev.enter(nested)
-                .semijoin(&a_in)
-                .map(|x| x.1);
+                .join_core(&a_in, |_,tuples,_| Some(tuples.clone()));
 
             SimpleRelation { symbols: vec![sym1, sym2], tuples }
         },
         &Plan::Filter(sym1, a, ref v) => {
             let tuple = (vec![Value::Attribute(a), v.clone()], Default::default(), 1);
-            let av_in = Some(tuple).to_stream(nested).as_collection();
+            let av_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
             let tuples = db.av_e.enter(nested)
-                .semijoin(&av_in)
-                .map(|x| x.1);
+                .join_core(&av_in, |_,tuples,_| Some(tuples.clone()));
 
             SimpleRelation { symbols: vec![sym1], tuples }
         },
