@@ -151,7 +151,7 @@ trait Relation<'a, G: Scope> where G::Timestamp : Lattice {
     ///
     /// Variables present in `syms` are collected in order and populate a first "key"
     /// `Vec<Value>`, followed by those variables not present in `syms`.
-    fn tuples_by_symbols(self, syms: Vec<Var>) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
+    fn tuples_by_symbols(self, syms: &[Var]) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
 }
 
 /// A handle to an arranged relation.
@@ -167,40 +167,50 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
     fn symbols(&self) -> &Vec<Var> { &self.symbols }
     fn tuples(self) -> Collection<Child<'a, G, u64>, Vec<Value>, isize> { self.tuples }
 
-    fn tuples_by_symbols(self, syms: Vec<Var>) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>{
-        let key_length = syms.len();
-        let values_length = self.symbols().len() - key_length;
-
-        let mut key_offsets: Vec<usize> = Vec::with_capacity(key_length);
-        let mut value_offsets: Vec<usize> = Vec::with_capacity(values_length);
-        let sym_set: HashSet<Var> = syms.iter().cloned().collect();
-
-        // It is important to preservere the key symbols in the order
-        // they were specified.
-        for sym in syms.iter() {
-            key_offsets.push(self.symbols().iter().position(|&v| *sym == v).unwrap());
+    /// Separates tuple fields by those in `syms` and those not.
+    ///
+    /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)` containing first exactly
+    /// those symbols in `syms` in that order, followed by the remaining values in their
+    /// original order.
+    fn tuples_by_symbols(self, syms: &[Var]) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>{
+        if syms == &self.symbols()[..] {
+            self.tuples().map(|x| (x, Vec::new()))
         }
+        else {
+            let key_length = syms.len();
+            let values_length = self.symbols().len() - key_length;
 
-        // Values we'll just take in the order they were.
-        for (idx, sym) in self.symbols().iter().enumerate() {
-            if sym_set.contains(sym) == false {
-                value_offsets.push(idx);
+            let mut key_offsets: Vec<usize> = Vec::with_capacity(key_length);
+            let mut value_offsets: Vec<usize> = Vec::with_capacity(values_length);
+            let sym_set: HashSet<Var> = syms.iter().cloned().collect();
+
+            // It is important to preserve the key symbols in the order
+            // they were specified.
+            for sym in syms.iter() {
+                key_offsets.push(self.symbols().iter().position(|&v| *sym == v).unwrap());
             }
+
+            // Values we'll just take in the order they were.
+            for (idx, sym) in self.symbols().iter().enumerate() {
+                if sym_set.contains(sym) == false {
+                    value_offsets.push(idx);
+                }
+            }
+
+            // let debug_keys: Vec<String> = key_offsets.iter().map(|x| x.to_string()).collect();
+            // let debug_values: Vec<String> = value_offsets.iter().map(|x| x.to_string()).collect();
+            // println!("key offsets: {:?}", debug_keys);
+            // println!("value offsets: {:?}", debug_values);
+
+            self.tuples()
+                .map(move |tuple| {
+                    let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
+                    // @TODO second clone not really neccessary
+                    let values: Vec<Value> = value_offsets.iter().map(|i| tuple[*i].clone()).collect();
+
+                    (key, values)
+                })
         }
-
-        // let debug_keys: Vec<String> = key_offsets.iter().map(|x| x.to_string()).collect();
-        // let debug_values: Vec<String> = value_offsets.iter().map(|x| x.to_string()).collect();
-        // println!("key offsets: {:?}", debug_keys);
-        // println!("value offsets: {:?}", debug_values);
-
-        self.tuples()
-            .map(move |tuple| {
-                let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
-                // @TODO second clone not really neccessary
-                let values: Vec<Value> = value_offsets.iter().map(|i| tuple[*i].clone()).collect();
-
-                (key, values)
-            })
     }
 }
 
@@ -235,6 +245,7 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         let mut relation_map = RelationMap::new();
         let mut result_map = QueryMap::new();
 
+        // Step 0: Canonicalize, check uniqueness of bindings.
         rules.sort_by(|x,y| x.name.cmp(&y.name));
         for index in 1 .. rules.len() - 1 {
             if rules[index].name == rules[index-1].name {

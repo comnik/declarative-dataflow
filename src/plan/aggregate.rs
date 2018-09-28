@@ -1,4 +1,4 @@
-//! Predicate expression plan.
+//! Aggregate expression plan.
 
 use timely::dataflow::scopes::Child;
 use timely::progress::timestamp::Timestamp;
@@ -10,8 +10,7 @@ use differential_dataflow::operators::{Group, Count};
 
 use Relation;
 use plan::Implementable;
-use super::super::{ImplContext, RelationMap, QueryMap, SimpleRelation};
-use super::super::{Value, Var, Plan};
+use {ImplContext, RelationMap, QueryMap, SimpleRelation, Value, Var};
 
 /// Permitted aggregation function.
 #[derive(Deserialize, Clone, Debug)]
@@ -26,18 +25,18 @@ pub enum AggregationFn {
 
 /// A predicate expression plan stage.
 #[derive(Deserialize, Clone, Debug)]
-pub struct Aggregate {
+pub struct Aggregate<P: Implementable> {
     /// Logical predicate to apply.
     pub aggregation_fn: AggregationFn,
     /// TODO
     pub variables: Vec<Var>,
     /// Plan for the data source.
-    pub plan: Box<Plan>
+    pub plan: Box<P>
 }
 
-impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for Aggregate {
+impl<P: Implementable> Implementable for Aggregate<P> {
 
-    fn implement(
+    fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
         db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
@@ -47,7 +46,7 @@ impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for 
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
         let relation = self.plan.implement(db, nested, relation_map, queries);
-        let tuples = relation.tuples_by_symbols(self.variables.clone());
+        let tuples = relation.tuples_by_symbols(&self.variables);
 
         match self.aggregation_fn {
             AggregationFn::MIN => {

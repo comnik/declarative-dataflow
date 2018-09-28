@@ -7,8 +7,8 @@ use timely::worker::Worker;
 
 use differential_dataflow::lattice::Lattice;
 
-use super::{ImplContext, RelationMap, QueryMap, SimpleRelation, Relation};
-use super::{Value, Var, Entity, Attribute};
+use {ImplContext, RelationMap, QueryMap, SimpleRelation, Relation};
+use {Value, Var, Entity, Attribute};
 
 pub mod predicate;
 pub mod aggregate;
@@ -25,9 +25,9 @@ pub use self::join::Join;
 pub use self::antijoin::Antijoin;
 
 /// A type that can be implemented as a simple relation.
-pub trait Implementable<'a, 'b, A: Allocate, T: Timestamp+Lattice> {
+pub trait Implementable {
     /// Implements the type as a simple relation.
-    fn implement(
+    fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
         db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
@@ -41,19 +41,19 @@ pub trait Implementable<'a, 'b, A: Allocate, T: Timestamp+Lattice> {
 #[derive(Deserialize, Clone, Debug)]
 pub enum Plan {
     /// Projection
-    Project(Projection),
+    Project(Projection<Plan>),
     /// Aggregation
-    Aggregate(Aggregate),
+    Aggregate(Aggregate<Plan>),
     /// Union
-    Union(Union),
+    Union(Union<Plan>),
     /// Equijoin
-    Join(Join),
+    Join(Join<Plan,Plan>),
     /// Antijoin
-    Antijoin(Antijoin),
+    Antijoin(Antijoin<Plan,Plan>),
     /// Negation
     Not(Box<Plan>),
     /// Filters bindings by one of the built-in predicates
-    PredExpr(PredExpr),
+    PredExpr(PredExpr<Plan>),
     /// Data pattern of the form [e a ?v]
     Lookup(Entity, Attribute, Var),
     /// Data pattern of the form [e ?a ?v]
@@ -69,8 +69,8 @@ pub enum Plan {
 }
 
 
-impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for Plan {
-    fn implement(
+impl Implementable for Plan {
+    fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
         db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,

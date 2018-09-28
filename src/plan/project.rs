@@ -1,4 +1,4 @@
-//! Predicate expression plan.
+//! Projection expression plan.
 
 use timely::dataflow::scopes::Child;
 use timely::progress::timestamp::Timestamp;
@@ -9,21 +9,20 @@ use differential_dataflow::lattice::Lattice;
 
 use Relation;
 use plan::Implementable;
-use super::super::{ImplContext, RelationMap, QueryMap, SimpleRelation};
-use super::super::{Var, Plan};
+use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
 /// A predicate expression plan stage.
 #[derive(Deserialize, Clone, Debug)]
-pub struct Projection {
+pub struct Projection<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
     /// Plan for the data source.
-    pub plan: Box<Plan>
+    pub plan: Box<P>
 }
 
-impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for Projection {
+impl<P: Implementable> Implementable for Projection<P> {
 
-    fn implement(
+    fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
         db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
@@ -34,7 +33,7 @@ impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for 
 
         let relation = self.plan.implement(db, nested, relation_map, queries);
         let tuples = relation
-            .tuples_by_symbols(self.variables.clone())
+            .tuples_by_symbols(&self.variables)
             .map(|(key, _tuple)| key);
 
         SimpleRelation { symbols: self.variables.to_vec(), tuples }

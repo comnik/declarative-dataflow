@@ -1,4 +1,4 @@
-//! Predicate expression plan.
+//! Antijoin expression plan.
 
 use timely::dataflow::scopes::Child;
 use timely::progress::timestamp::Timestamp;
@@ -6,29 +6,27 @@ use timely::communication::Allocate;
 use timely::worker::Worker;
 
 use differential_dataflow::lattice::Lattice;
-// use differential_dataflow::operators::arrange::ArrangeByKey;
 use differential_dataflow::operators::Join;
 use differential_dataflow::operators::Threshold;
 
 use Relation;
 use plan::Implementable;
-use super::super::{ImplContext, RelationMap, QueryMap, SimpleRelation};
-use super::super::{Var, Plan};
+use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
 /// A predicate expression plan stage.
 #[derive(Deserialize, Clone, Debug)]
-pub struct Antijoin {
+pub struct Antijoin<P1: Implementable, P2: Implementable> {
     /// Plan for the left input.
-    pub left_plan: Box<Plan>,
+    pub left_plan: Box<P1>,
     /// Plan for the right input.
-    pub right_plan: Box<Plan>,
+    pub right_plan: Box<P2>,
     /// TODO
     pub variables: Vec<Var>,
 }
 
-impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for Antijoin {
+impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1,P2> {
 
-    fn implement(
+    fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
         db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
@@ -40,28 +38,20 @@ impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for 
         let left = self.left_plan.implement(db, nested, relation_map, queries);
         let right = self.right_plan.implement(db, nested, relation_map, queries);
 
-        let mut left_syms: Vec<Var> = left.symbols().clone();
-        left_syms.retain(|&sym| {
-            match self.variables.iter().position(|&v| sym == v) {
-                None => true,
-                Some(_) => false
-            }
-        });
+        let symbols =
+        self.variables
+            .iter().cloned()
+            .chain(left.symbols().iter().filter(|x| !self.variables.contains(x)).cloned())
+            .collect();
 
-        let tuples = left.tuples_by_symbols(self.variables.clone())
+        let tuples = left.tuples_by_symbols(&self.variables)
             .distinct()
-            .antijoin(&right.tuples_by_symbols(self.variables.clone()).map(|(key, _)| key).distinct())
-            .map(|(key, tuple)| {
-                let mut vstar = Vec::with_capacity(key.len() + tuple.len());
-                vstar.extend(key.iter().cloned());
-                vstar.extend(tuple.iter().cloned());
-
-                vstar
-            });
-
-        let mut symbols: Vec<Var> = Vec::with_capacity(self.variables.len() + left_syms.len());
-        symbols.extend(self.variables.iter().cloned());
-        symbols.append(&mut left_syms);
+            .antijoin(&right.tuples_by_symbols(&self.variables).map(|(key, _)| key).distinct())
+            .map(|(key, tuple)|
+                key .iter().cloned()
+                    .chain(tuple.iter().cloned())
+                    .collect()
+            );
 
         SimpleRelation { symbols, tuples }
     }

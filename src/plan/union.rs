@@ -1,4 +1,4 @@
-//! Predicate expression plan.
+//! Union expression plan.
 
 use timely::dataflow::scopes::Child;
 use timely::progress::timestamp::Timestamp;
@@ -10,21 +10,20 @@ use differential_dataflow::operators::Threshold;
 
 use Relation;
 use plan::Implementable;
-use super::super::{ImplContext, RelationMap, QueryMap, SimpleRelation};
-use super::super::{Var, Plan};
+use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
 /// A predicate expression plan stage.
 #[derive(Deserialize, Clone, Debug)]
-pub struct Union {
+pub struct Union<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
     /// Plan for the data source.
-    pub plans: Vec<Box<Plan>>
+    pub plans: Vec<P>
 }
 
-impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for Union {
+impl<P: Implementable> Implementable for Union<P> {
 
-    fn implement(
+    fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
         db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
@@ -33,32 +32,22 @@ impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for 
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
-        let first = self.plans.get(0).expect("Union requires at least one plan");
-        let first_rel = first.implement(db, nested, relation_map, queries);
-        let mut tuples = if first_rel.symbols() == &self.variables {
-            first_rel.tuples()
-        } else {
-            first_rel.tuples_by_symbols(self.variables.clone())
-                .map(|(key, _tuple)| key)
-        };
+        use timely::dataflow::operators::Concatenate;
+        use differential_dataflow::AsCollection;
 
-        for plan in self.plans.iter() {
-            let mut rel = plan.implement(db, nested, relation_map, queries);
-            let mut plan_tuples = if rel.symbols() == &self.variables {
-                rel.tuples()
-            } else {
-                rel.tuples_by_symbols(self.variables.clone())
-                    .map(|(key, _tuple)| key)
-            };
+        let mut scope = nested.clone();
+        let streams =
+        self.plans.iter().map(|plan|
+            plan.implement(db, &mut scope, relation_map, queries)
+                .tuples_by_symbols(&self.variables)
+                .map(|(key,_vals)| key).inner
+        );
 
-            tuples = tuples.concat(&plan_tuples);
-        }
+        let concat = nested.concatenate(streams).as_collection();
 
         SimpleRelation {
             symbols: self.variables.to_vec(),
-            tuples: tuples.distinct()
+            tuples: concat.distinct()
         }
-
-
     }
 }

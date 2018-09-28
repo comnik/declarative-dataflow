@@ -9,8 +9,7 @@ use differential_dataflow::lattice::Lattice;
 
 use Relation;
 use plan::Implementable;
-use super::super::{ImplContext, RelationMap, QueryMap, SimpleRelation};
-use super::super::{Var, Plan};
+use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
 /// Permitted comparison predicates.
 #[derive(Deserialize, Clone, Debug)]
@@ -31,18 +30,18 @@ pub enum Predicate {
 
 /// A predicate expression plan stage.
 #[derive(Deserialize, Clone, Debug)]
-pub struct PredExpr {
+pub struct PredExpr<P: Implementable> {
     /// Logical predicate to apply.
     pub predicate: Predicate,
     /// TODO
     pub variables: Vec<Var>,
     /// Plan for the data source.
-    pub plan: Box<Plan>
+    pub plan: Box<P>
 }
 
-impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for PredExpr {
+impl<P: Implementable> Implementable for PredExpr<P> {
 
-    fn implement(
+    fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
         db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
