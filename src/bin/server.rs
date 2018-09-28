@@ -40,8 +40,9 @@ use ws::connection::{Connection, ConnEvent};
 
 use declarative_server::{Context, Plan, Rule, TxData, Out, Datom, setup_db, register};
 
-mod sequencer;
-use sequencer::{Sequencer};
+// mod sequencer;
+// use sequencer::{Sequencer};
+use timely::synchronization::Sequencer;
 
 #[derive(Debug)]
 struct Config {
@@ -66,6 +67,7 @@ struct Command {
 enum Request {
     Transact { tx: Option<usize>, tx_data: Vec<TxData> },
     Register { query_name: String, plan: Plan, rules: Vec<Rule> },
+    // RegisterAlt { public: Vec<Rule>, private: Vec<Rule> },
     // LoadData { filename: String, max_lines: usize },
 }
 
@@ -125,7 +127,7 @@ fn main() {
 
         // setup results channel
         let (send_results, recv_results) = mio::channel::channel();
-        
+
         // setup server socket
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
         let server = TcpListener::bind(&addr).unwrap();
@@ -142,21 +144,21 @@ fn main() {
             thread::spawn(move || {
 
                 info!("[CLI] accepting cli commands");
-                
+
                 let input = std::io::stdin();
                 while let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
                     send_cli.send(line.to_string()).expect("failed to send command");
                 }
             });
         }
-        
+
         poll.register(&recv_results, RESULTS, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
         poll.register(&server, SERVER, Ready::readable(), PollOpt::level()).unwrap();
 
         info!("[WORKER {}] running with config {:?}", worker.index(), config);
-        
+
         loop {
-            
+
             // each worker has to...
             //
             // ...accept new client connections
@@ -179,7 +181,7 @@ fn main() {
             for event in events.iter() {
 
                 trace!("[WORKER {}] recv event on {:?}", worker.index(), event.token());
-                
+
                 match event.token() {
                     CLI => {
                         while let Ok(cli_input) = recv_cli.try_recv() {
@@ -259,7 +261,7 @@ fn main() {
                                         ).unwrap();
                                     }
                                 }
-                            }                                                
+                            }
                         }
 
                         poll.reregister(
@@ -278,7 +280,7 @@ fn main() {
                             // @TODO refactor connection to accept a
                             // vector in which to place events and
                             // rename conn_events to avoid name clash
-                            
+
                             if (readiness & conn_events).is_readable() {
                                 match connections[token.into()].read() {
                                     Err(err) => {
@@ -298,7 +300,7 @@ fn main() {
                                                     };
 
                                                     trace!("[WORKER {}] {:?}", worker.index(), command);
-                                                    
+
                                                     sequencer.push(command);
                                                 },
                                                 _ => { println!("other"); }
@@ -350,7 +352,7 @@ fn main() {
             }
 
             // handle commands
-                        
+
             while let Some(command) = sequencer.next() {
 
                 match serde_json::from_str::<Request>(&command.cmd) {
@@ -358,10 +360,10 @@ fn main() {
                     Ok(req) => {
 
                         info!("[WORKER {}] {:?}", worker.index(), req);
-                        
+
                         match req {
                             Request::Transact { tx, tx_data } => {
-                                
+
                                 for TxData(op, e, a, v) in tx_data {
                                     ctx.input_handle.update(Datom(e, a, v), op);
                                 }
@@ -370,12 +372,12 @@ fn main() {
                                     None => ctx.input_handle.epoch() + 1,
                                     Some(tx) => tx + 1
                                 };
-                                
+
                                 ctx.input_handle.advance_to(next_tx);
                                 ctx.input_handle.flush();
 
                                 if config.enable_history == false {
-                                    
+
                                     // if historical queries don't matter, we should advance
                                     // the index traces to allow them to compact
 
@@ -421,11 +423,11 @@ fn main() {
                                         .inner
                                         .map(|x| Out(x.0.clone(), x.2))
                                         .unary_notify(
-                                            timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64), 
-                                            "OutputsRecv", 
+                                            timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64),
+                                            "OutputsRecv",
                                             Vec::new(),
                                             move |input, _output: &mut OutputHandle<_, Out, _>, _notificator| {
-                                                
+
                                                 // due to the exchange pact, this closure is only
                                                 // executed by the owning worker
 
@@ -447,7 +449,7 @@ fn main() {
             // ensure work continues, even if no queries registered,
             // s.t. the sequencer continues issuing commands
             worker.step();
-            
+
             for probe in &mut probes {
                 while probe.less_than(ctx.input_handle.time()) {
                     worker.step();
@@ -456,7 +458,7 @@ fn main() {
         }
 
         info!("[WORKER {}] exited command loop", worker.index());
-        
+
     }).unwrap(); // asserts error-free execution
 }
 
@@ -481,11 +483,11 @@ fn main() {
 
 //         if line_count > max_lines { break; };
 //         line_count += 1;
-        
+
 //         if !line.starts_with('#') && line.len() > 0 {
 //             let mut elts = line[..].split_whitespace();
 //             let src: u64 = elts.next().unwrap().parse().ok().expect("malformed src");
-            
+
 //             if (src as usize) % peers == index {
 //                 let dst: u64 = elts.next().unwrap().parse().ok().expect("malformed dst");
 //                 let typ: &str = elts.next().unwrap();
@@ -502,7 +504,7 @@ fn main() {
 //         println!("{:?}:\tData loaded", load_timer.elapsed());
 //         println!("{:?}", ::std::time::Instant::now());
 //     }
-    
+
 //     next_tx = next_tx + 1;
 //     ctx.input_handle.advance_to(next_tx);
 //     ctx.input_handle.flush();
@@ -511,20 +513,20 @@ fn main() {
 // fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
 
 //     let send_handle = &command_channel;
-    
+
 //     let listener = TcpListener::bind("127.0.0.1:6262").expect("can't bind to port");
 //     listener.set_nonblocking(false).expect("Cannot set blocking");
 
 //     println!("[TCP-SERVER] running on port 6262");
-    
+
 //     match listener.accept() {
 //         Ok((stream, _addr)) => {
-            
+
 //             println!("[TCP-SERVER] accepted connection");
 
 //             let mut out_stream = stream.try_clone().unwrap();
 //             let mut writer = BufWriter::new(out_stream);
-            
+
 //             thread::spawn(move || {
 //                 loop {
 //                     match results_channel.recv() {
@@ -532,20 +534,20 @@ fn main() {
 //                         Ok(results) => {
 //                             let serialized = serde_json::to_string::<(String, Vec<Out>)>(&results)
 //                                 .expect("failed to serialize outputs");
-                            
+
 //                             writer.write(serialized.as_bytes()).expect("failed to send output");
 //                         }
 //                     };
 //                 }
 //             });
-            
+
 //             let mut reader = BufReader::new(stream);
 //             for input in reader.lines() {
 //                 match input {
 //                     Err(e) => { println!("Error reading line {}", e); break; },
 //                     Ok(line) => {
 //                         println!("[TCP-SERVER] new message: {:?}", line);
-                        
+
 //                         send_handle.send(line).expect("failed to send command");
 //                     }
 //                 }
@@ -555,6 +557,6 @@ fn main() {
 //         },
 //         Err(e) => { println!("Encountered I/O error: {}", e); }
 //     }
-    
+
 //     println!("[TCP-SERVER] exited");
 // }
