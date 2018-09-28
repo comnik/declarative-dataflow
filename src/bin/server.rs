@@ -64,7 +64,7 @@ struct Command {
 
 #[derive(Deserialize, Debug)]
 enum Request {
-    Transact { tx: usize, tx_data: Vec<TxData> },
+    Transact { tx: Option<usize>, tx_data: Vec<TxData> },
     Register { query_name: String, plan: Plan, rules: Vec<Rule> },
     // LoadData { filename: String, max_lines: usize },
 }
@@ -365,8 +365,13 @@ fn main() {
                                 for TxData(op, e, a, v) in tx_data {
                                     ctx.input_handle.update(Datom(e, a, v), op);
                                 }
+
+                                let next_tx = match tx {
+                                    None => ctx.input_handle.epoch() + 1,
+                                    Some(tx) => tx + 1
+                                };
                                 
-                                ctx.input_handle.advance_to(tx + 1);
+                                ctx.input_handle.advance_to(next_tx);
                                 ctx.input_handle.flush();
 
                                 if config.enable_history == false {
