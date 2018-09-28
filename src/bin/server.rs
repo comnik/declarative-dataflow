@@ -26,6 +26,7 @@ use std::time::{Instant, Duration};
 
 use getopts::Options;
 
+use timely::dataflow::ProbeHandle;
 use timely::dataflow::operators::{Probe, Map, Operator};
 use timely::dataflow::operators::generic::{OutputHandle};
 
@@ -120,7 +121,9 @@ fn main() {
 
             Context { db, input_handle, queries: HashMap::new(), }
         });
-        let mut probes = Vec::new();
+
+        // A probe for the transaction id time domain.
+        let mut probe = ProbeHandle::new();
 
         // mapping from query names to interested client tokens
         let mut interests: HashMap<String, Vec<Token>> = HashMap::new();
@@ -429,7 +432,7 @@ fn main() {
                                 worker.dataflow::<usize, _, _>(|scope| {
 
                                     rules.push(Rule { name: query_name.clone(), plan: plan });
-                                    let mut rel_map = register(scope, &mut ctx, rules, vec![query_name.clone()]);
+                                    let mut rel_map = register(scope, &mut ctx, rules, vec![query_name.clone()], &mut probe);
                                     for (name, trace) in rel_map.drain() {
                                         if ctx.queries.contains_key(&name) {
                                             panic!("Attempted to re-register a named relation");
@@ -439,9 +442,7 @@ fn main() {
                                         }
                                     }
 
-                                    // let mut rel_map = register(scope, &mut ctx, &query_name, plan, rules);
-
-                                    let probe = rel_map.get_mut(&query_name).unwrap().import(scope)
+                                    rel_map.get_mut(&query_name).unwrap().import(scope)
                                         .as_collection(|tuple,_| tuple.clone())
                                         .inner
                                         .map(|x| Out(x.0.clone(), x.2))
@@ -459,17 +460,15 @@ fn main() {
                                                     send_results_handle.send((query_name.clone(), out)).unwrap();
                                                 });
                                             })
-                                        .probe();
-
-                                    probes.push(probe);
+                                        .probe_with(&mut probe);
                                 });
                             },
                             Request::RegisterAlt { rules, publish } => {
 
                                 worker.dataflow::<usize, _, _>(|scope| {
 
-                                    let mut rel_map = register(scope, &mut ctx, rules, publish);
-                                    for (name, trace) in rel_map.drain() {
+                                    let rel_map = register(scope, &mut ctx, rules, publish, &mut probe);
+                                    for (name, trace) in rel_map.into_iter() {
                                         if ctx.queries.contains_key(&name) {
                                             panic!("Attempted to re-register a named relation");
                                         }
@@ -477,7 +476,6 @@ fn main() {
                                             ctx.queries.insert(name, trace);
                                         }
                                     }
-
                                 });
                             },
                             Request::Interest { name } => {
@@ -502,14 +500,13 @@ fn main() {
 
                                 worker.dataflow::<usize, _, _>(|scope| {
 
-                                    let probe =
                                     ctx .queries
                                         .get_mut(&name)
                                         .expect(&format!("Could not find relation {:?}", name))
                                         .import(scope)
                                         .as_collection(|tuple,_| tuple.clone())
                                         .inner
-                                        .map(|x| Out(x.0.clone(), x.2))
+                                        .map(|x| Out(x.0, x.2))
                                         .unary_notify(
                                             timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64),
                                             "OutputsRecv",
@@ -524,11 +521,10 @@ fn main() {
                                                     send_results_handle.send((name.clone(), out)).unwrap();
                                                 });
                                             })
-                                        .probe();
-
-                                    probes.push(probe);
+                                        .probe_with(&mut probe);
                                 });
-                            },                        }
+                            },
+                        }
                     }
                 }
             }
@@ -536,11 +532,8 @@ fn main() {
             // ensure work continues, even if no queries registered,
             // s.t. the sequencer continues issuing commands
             worker.step();
-
-            for probe in &mut probes {
-                while probe.less_than(ctx.input_handle.time()) {
-                    worker.step();
-                }
+            while probe.less_than(ctx.input_handle.time()) {
+                worker.step();
             }
         }
 

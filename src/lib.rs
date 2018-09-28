@@ -306,7 +306,8 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     rules: Vec<Rule>,
     mut publish: Vec<String>,
     scope: &mut Child<Worker<A>, T>,
-    ctx: &mut Context<T>
+    ctx: &mut Context<T>,
+    probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
 ) -> HashMap<String, RelationHandle<T>> {
 
     let db = &mut ctx.db;
@@ -347,6 +348,7 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
                 relation
                     .variable
                     .leave()
+                    .probe_with(probe)
                     .arrange_by_self()
                     .trace;
 
@@ -679,9 +681,10 @@ pub fn register<A: Allocate, T: Timestamp+Lattice>(
     // plan: Plan,
     rules: Vec<Rule>,
     publish: Vec<String>,
+    probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
 ) -> HashMap<String, RelationHandle<T>> {
 
-    let result_map = implement(rules, publish, scope, ctx);
+    let result_map = implement(rules, publish, scope, ctx, probe);
 
     // @TODO store trace somewhere for re-use from other queries later
     // queries.insert(name.clone(), output_collection.arrange_by_self().trace);
