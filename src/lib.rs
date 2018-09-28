@@ -73,14 +73,6 @@ pub enum Value {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
 pub struct Datom(pub Entity, pub Attribute, pub Value);
 
-/// TODO
-#[derive(Deserialize, Debug)]
-pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
-
-/// TODO
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize)]
-pub struct Out(pub Vec<Value>, pub isize);
-
 /// Permitted comparison predicates.
 #[derive(Deserialize, Clone, Debug)]
 pub enum Predicate {
@@ -147,7 +139,7 @@ struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
 // struct directly
 /// Context maintained by the query processor.
 pub struct Context<T: Timestamp+Lattice> {
-    /// TODO
+    /// Input handle to the collection of all Datoms in the system.
     pub input_handle: InputSession<T, Datom, isize>,
     /// Maintained indices.
     pub db: DB<T>,
@@ -174,15 +166,15 @@ pub enum Plan {
     Antijoin(Box<Plan>, Box<Plan>, Vec<Var>),
     /// Negation
     Not(Box<Plan>),
-    /// TODO
+    /// Filters bindings by one of the built-in predicates
     PredExpr(Predicate, Vec<Var>, Box<Plan>),
-    /// TODO
+    /// Data pattern of the form [e a ?v]
     Lookup(Entity, Attribute, Var),
-    /// TODO
+    /// Data pattern of the form [e ?a ?v]
     Entity(Entity, Var, Var),
-    /// TODO
+    /// Data pattern of the form [?e a ?v]
     HasAttr(Var, Attribute, Var),
-    /// TODO
+    /// Data pattern of the form [?e a v]
     Filter(Var, Attribute, Value),
     /// Sources data from a named relation
     RuleExpr(String, Vec<Var>),
@@ -662,7 +654,8 @@ pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, 
     (input_handle, db)
 }
 
-/// TODO
+/// Synthesizes a query plan and set's up the resulting collection to
+/// be available via a globally unique name.
 pub fn register<A: Allocate, T: Timestamp+Lattice>(
     scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>,
