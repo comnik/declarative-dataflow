@@ -175,8 +175,10 @@ pub enum Plan {
     HasAttr(Var, Attribute, Var),
     /// Data pattern of the form [?e a v]
     Filter(Var, Attribute, Value),
-    /// Sources data from a named relation
+    /// Sources data from a query-local relation
     RuleExpr(String, Vec<Var>),
+    /// Sources data from a published relation
+    NameExpr(String, Vec<Var>),
 }
 
 /// A named relation.
@@ -389,7 +391,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
     db: &ImplContext<Child<'a, Worker<A>, T>>,
     nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
     relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-    queries: &QueryMap<T, isize>
+    queries: &mut QueryMap<T, isize>
 ) -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
     use timely::dataflow::operators::ToStream;
@@ -633,6 +635,17 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
                     SimpleRelation {
                         symbols: syms.clone(),
                         tuples: named.variable.map(|tuple| tuple.clone()),
+                    }
+                }
+            }
+        }
+        &Plan::NameExpr(ref name, ref syms) => {
+            match queries.get_mut(name) {
+                None => panic!("{:?} not in query map", name),
+                Some(named) => {
+                    SimpleRelation {
+                        symbols: syms.clone(),
+                        tuples: named.import(&nested.parent).enter(nested).as_collection(|tuple,_| tuple.clone()),
                     }
                 }
             }
