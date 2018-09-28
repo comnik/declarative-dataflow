@@ -38,7 +38,7 @@ use slab::Slab;
 
 use ws::connection::{Connection, ConnEvent};
 
-use declarative_server::{Context, Plan, Rule, TxData, Out, Datom, setup_db, register};
+use declarative_server::{Context, Plan, Rule, Entity, Attribute, Value, Datom, setup_db, register};
 
 // mod sequencer;
 // use sequencer::{Sequencer};
@@ -63,6 +63,11 @@ struct Command {
     cmd: String,
 }
 
+/// Transaction data. Conceptually a pair (Datom, diff) but it's kept
+/// intentionally flat to be more directly compatible with Datomic.
+#[derive(Deserialize, Debug)]
+pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
+
 #[derive(Deserialize, Debug)]
 enum Request {
     Transact { tx: Option<usize>, tx_data: Vec<TxData> },
@@ -70,6 +75,10 @@ enum Request {
     // RegisterAlt { rules: Vec<Rule>, publish: Vec<String> },
     // LoadData { filename: String, max_lines: usize },
 }
+
+/// Single output (tuple, diff), as sent back to external clients.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize)]
+pub struct Out(pub Vec<Value>, pub isize);
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
