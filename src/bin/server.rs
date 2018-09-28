@@ -67,7 +67,7 @@ struct Command {
 enum Request {
     Transact { tx: Option<usize>, tx_data: Vec<TxData> },
     Register { query_name: String, plan: Plan, rules: Vec<Rule> },
-    // RegisterAlt { public: Vec<Rule>, private: Vec<Rule> },
+    // RegisterAlt { rules: Vec<Rule>, publish: Vec<String> },
     // LoadData { filename: String, max_lines: usize },
 }
 
@@ -394,7 +394,7 @@ fn main() {
                                     ctx.db.av_e.distinguish_since(frontier);
                                 }
                             },
-                            Request::Register { query_name, plan, rules } => {
+                            Request::Register { query_name, plan, mut rules } => {
 
                                 if command.owner == worker.index() {
 
@@ -416,9 +416,12 @@ fn main() {
 
                                 worker.dataflow::<usize, _, _>(|scope| {
 
-                                    let mut rel_map = register(scope, &mut ctx, &query_name, plan, rules);
+                                    rules.push(Rule { name: query_name.clone(), plan: plan });
+                                    let mut rel_map = register(scope, &mut ctx, rules, vec![query_name.clone()]);
 
-                                    let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
+                                    // let mut rel_map = register(scope, &mut ctx, &query_name, plan, rules);
+
+                                    let probe = rel_map.get_mut(&query_name).unwrap().import(scope)
                                         .as_collection(|tuple,_| tuple.clone())
                                         .inner
                                         .map(|x| Out(x.0.clone(), x.2))

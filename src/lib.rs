@@ -220,13 +220,16 @@ trait Relation<'a, G: Scope> where G::Timestamp : Lattice {
     fn tuples_by_symbols(self, syms: Vec<Var>) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
 }
 
-/// Handles to inputs and traces.
-pub struct RelationHandles<T: Timestamp+Lattice> {
-    /// A handle to an interactive input session.
-    pub input: InputSession<T, Vec<Value>, isize>,
-    /// A handle to the corresponding arranged data.
-    pub trace: TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>,
-}
+/// A handle to an arranged relation.
+pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>;
+
+// /// Handles to inputs and traces.
+// pub struct RelationHandles<T: Timestamp+Lattice> {
+//     /// A handle to an interactive input session.
+//     pub input: InputSession<T, Vec<Value>, isize>,
+//     /// A handle to the corresponding arranged data.
+//     pub trace: TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>,
+// }
 
 struct SimpleRelation<'a, G: Scope> where G::Timestamp : Lattice {
     symbols: Vec<Var>,
@@ -274,31 +277,40 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
     }
 }
 
-struct NamedRelation<'a, G: Scope> where G::Timestamp : Lattice {
-    variable: Option<Variable<'a, G, Vec<Value>, u64, isize>>,
-    tuples: Collection<Child<'a, G, u64>, Vec<Value>, isize>,
-}
+type NamedRelation<'a, G> = Variable<'a, G, Vec<Value>, u64, isize>;
 
-impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
-    pub fn from(source: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) -> Self {
-        let variable = Variable::new_from(source.clone(), u64::max_value(), 1);
-        NamedRelation {
-            variable: Some(variable),
-            tuples: source.clone(),
-        }
-    }
-    pub fn add_execution(&mut self, execution: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) {
-        self.tuples = self.tuples.concat(execution);
-    }
-}
+// struct NamedRelation<'a, G: Scope> where G::Timestamp : Lattice {
+//     variable: Option<Variable<'a, G, Vec<Value>, u64, isize>>,
+//     tuples: Collection<Child<'a, G, u64>, Vec<Value>, isize>,
+// }
 
-impl<'a, G: Scope> Drop for NamedRelation<'a, G> where G::Timestamp : Lattice {
-    fn drop(&mut self) {
-        if let Some(variable) = self.variable.take() {
-            variable.set(&self.tuples.distinct());
-        }
-    }
-}
+// impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
+//     pub fn new(scope: &mut Child<'a, G, u64>) -> Self {
+//         let variable = Variable::new(scope, u64::max_value(), 1);
+//         NamedRelation {
+//             variable: Some(variable),
+//             tuples: ::timely::dataflow::operators::Operator::empty(scope),
+//         }
+//     }
+//     pub fn new_from(source: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) -> Self {
+//         let variable = Variable::new_from(source.clone(), u64::max_value(), 1);
+//         NamedRelation {
+//             variable: Some(variable),
+//             tuples: source.clone(),
+//         }
+//     }
+//     pub fn add_execution(&mut self, execution: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) {
+//         self.tuples = self.tuples.concat(execution);
+//     }
+// }
+
+// impl<'a, G: Scope> Drop for NamedRelation<'a, G> where G::Timestamp : Lattice {
+//     fn drop(&mut self) {
+//         if let Some(variable) = self.variable.take() {
+//             variable.set(&self.tuples.distinct());
+//         }
+//     }
+// }
 
 //
 // QUERY PLAN IMPLEMENTATION
@@ -308,12 +320,13 @@ impl<'a, G: Scope> Drop for NamedRelation<'a, G> where G::Timestamp : Lattice {
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
 fn implement<A: Allocate, T: Timestamp+Lattice>(
-    name: &String,
-    plan: Plan,
+    // name: &String,
+    // plan: Plan,
     rules: Vec<Rule>,
+    mut publish: Vec<String>,
     scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>
-) -> HashMap<String, RelationHandles<T>> {
+) -> HashMap<String, RelationHandle<T>> {
 
     let db = &mut ctx.db;
     let queries = &mut ctx.queries;
@@ -324,65 +337,61 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         a_ev: db.a_ev.import(scope),
         ea_v: db.ea_v.import(scope),
         av_e: db.av_e.import(scope),
-
-        // input_map
     };
-
-    // query source
-    let (source_handle, source) = scope.new_collection();
-
-    // rule sources
-    let mut source_map = HashMap::new();
-    for rule in rules.iter() {
-        source_map.entry(rule.name.clone()).or_insert_with(|| scope.new_collection());
-    }
 
     scope.scoped(|nested| {
 
         let mut relation_map = HashMap::new();
         let mut result_map = HashMap::new();
 
-        for (rule_name, (_handle, collection)) in source_map.drain() {
-            println!("Registering {:?}", rule_name);
-            let rel = NamedRelation::from(&collection.enter(nested));
-
-            if relation_map.contains_key(&rule_name) {
-                panic!("Attempted to redefine relation {:?}.", rule_name);
+        // Step 1: Create new recursive variables for each rule.
+        for rule in rules.iter() {
+            if relation_map.contains_key(&rule.name) {
+                panic!("Attempted to redefine relation {:?}.", rule.name);
             }
-
-            relation_map.insert(rule_name.clone(), rel);
-            // @TODO add handle and trace to result_map?
+            else {
+                println!("Registering {:?}", rule.name);
+                relation_map.insert(rule.name.clone(), NamedRelation::new(nested, u64::max_value(), 1));
+            }
         }
 
-        let output_relation = NamedRelation::from(&source.enter(nested));
-        let output_trace = output_relation.variable.as_ref().unwrap()
-            .leave()
-            .consolidate()
-            .arrange_by_self()
-            .trace;
+        // Step 2: Create public arrangements for published relations.
 
-        if relation_map.contains_key(name) {
-            panic!("Query name clashes with rule name {:?}.", name);
+        // defend against silliness.
+        publish.sort();
+        publish.dedup();
+
+        for name in publish.into_iter() {
+            if let Some(relation) = relation_map.get(&name) {
+                let trace =
+                relation
+                    .leave()
+                    .arrange_by_self()
+                    .trace;
+
+                result_map.insert(name, trace);
+            }
+            else {
+                panic!("Attempted to publish undefined name {:?}", name);
+            }
         }
 
-        relation_map.insert(name.clone(), output_relation);
-
-        result_map.insert(name.clone(), RelationHandles { input: source_handle, trace: output_trace });
-
+        // Step 3: define the executions for each rule ...
+        let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
             println!("Planning {:?}", rule.name);
             let execution = implement_plan(&rule.plan, &impl_ctx, nested, &relation_map, queries);
-
-            relation_map.get_mut(&rule.name).expect("Rule should be in relation_map, but isn't")
-                .add_execution(&execution.tuples());
+            executions.push((rule.name.clone(), execution));
         }
 
-        println!("Planning query");
-        let execution = implement_plan(&plan, &impl_ctx, nested, &relation_map, queries);
-
-        relation_map
-            .get_mut(name).unwrap()
-            .add_execution(&execution.tuples());
+        // Step 4: set the executions for each rule, consuming the variable.
+        for (name, execution) in executions.drain(..) {
+            // @TODO `add_execution` could possibly be `Variable::set`, as we have only one.
+            relation_map
+                .remove(&name)
+                .expect("Rule should be in relation_map, but isn't")
+                .set(&execution.tuples().distinct());
+        }
 
         println!("Done");
         result_map
@@ -637,7 +646,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
                 Some(named) => {
                     SimpleRelation {
                         symbols: syms.clone(),
-                        tuples: named.variable.as_ref().unwrap().deref().map(|tuple| tuple.clone()),
+                        tuples: named.map(|tuple| tuple.clone()),
                     }
                 }
             }
@@ -666,12 +675,13 @@ pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, 
 pub fn register<A: Allocate, T: Timestamp+Lattice>(
     scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>,
-    name: &String,
-    plan: Plan,
-    rules: Vec<Rule>
-) -> HashMap<String, RelationHandles<T>> {
+    // name: &String,
+    // plan: Plan,
+    rules: Vec<Rule>,
+    publish: Vec<String>,
+) -> HashMap<String, RelationHandle<T>> {
 
-    let result_map = implement(name, plan, rules, scope, ctx);
+    let result_map = implement(rules, publish, scope, ctx);
 
     // @TODO store trace somewhere for re-use from other queries later
     // queries.insert(name.clone(), output_collection.arrange_by_self().trace);
