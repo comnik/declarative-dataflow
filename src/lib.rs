@@ -295,7 +295,6 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     })
 }
 
-
 //
 // PUBLIC API
 //
