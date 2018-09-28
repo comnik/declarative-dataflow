@@ -36,7 +36,6 @@ use differential_dataflow::operators::arrange::{ArrangeByKey, ArrangeBySelf, Tra
 use differential_dataflow::operators::group::{Group, Threshold, Count};
 use differential_dataflow::operators::join::{Join, JoinCore};
 use differential_dataflow::operators::iterate::Variable;
-use differential_dataflow::operators::Consolidate;
 
 //
 // TYPES
@@ -105,7 +104,7 @@ type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
 type QueryMap<T, R> = HashMap<String, TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, R>>;
-type RelationMap<'a, G> = HashMap<String, NamedRelation<'a, G>>;
+type RelationMap<'a, G> = HashMap<String, Variable<'a, G, Vec<Value>, u64, isize>>;
 
 //
 // CONTEXT
@@ -176,8 +175,10 @@ pub enum Plan {
     HasAttr(Var, Attribute, Var),
     /// Data pattern of the form [?e a v]
     Filter(Var, Attribute, Value),
-    /// Sources data from a named relation
+    /// Sources data from a query-local relation
     RuleExpr(String, Vec<Var>),
+    /// Sources data from a published relation
+    NameExpr(String, Vec<Var>),
 }
 
 /// A named relation.
@@ -212,13 +213,16 @@ trait Relation<'a, G: Scope> where G::Timestamp : Lattice {
     fn tuples_by_symbols(self, syms: Vec<Var>) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
 }
 
-/// Handles to inputs and traces.
-pub struct RelationHandles<T: Timestamp+Lattice> {
-    /// A handle to an interactive input session.
-    pub input: InputSession<T, Vec<Value>, isize>,
-    /// A handle to the corresponding arranged data.
-    pub trace: TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>,
-}
+/// A handle to an arranged relation.
+pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>;
+
+// /// Handles to inputs and traces.
+// pub struct RelationHandles<T: Timestamp+Lattice> {
+//     /// A handle to an interactive input session.
+//     pub input: InputSession<T, Vec<Value>, isize>,
+//     /// A handle to the corresponding arranged data.
+//     pub trace: TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>,
+// }
 
 struct SimpleRelation<'a, G: Scope> where G::Timestamp : Lattice {
     symbols: Vec<Var>,
@@ -266,31 +270,6 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
     }
 }
 
-struct NamedRelation<'a, G: Scope> where G::Timestamp : Lattice {
-    variable: Option<Variable<'a, G, Vec<Value>, u64, isize>>,
-    tuples: Collection<Child<'a, G, u64>, Vec<Value>, isize>,
-}
-
-impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
-    pub fn from(source: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) -> Self {
-        let variable = Variable::new_from(source.clone(), u64::max_value(), 1);
-        NamedRelation {
-            variable: Some(variable),
-            tuples: source.clone(),
-        }
-    }
-    pub fn add_execution(&mut self, execution: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) {
-        self.tuples = self.tuples.concat(execution);
-    }
-}
-
-impl<'a, G: Scope> Drop for NamedRelation<'a, G> where G::Timestamp : Lattice {
-    fn drop(&mut self) {
-        if let Some(variable) = self.variable.take() {
-            variable.set(&self.tuples.distinct());
-        }
-    }
-}
 
 //
 // QUERY PLAN IMPLEMENTATION
@@ -300,12 +279,12 @@ impl<'a, G: Scope> Drop for NamedRelation<'a, G> where G::Timestamp : Lattice {
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
 fn implement<A: Allocate, T: Timestamp+Lattice>(
-    name: &String,
-    plan: Plan,
-    rules: Vec<Rule>,
+    mut rules: Vec<Rule>,
+    publish: Vec<String>,
     scope: &mut Child<Worker<A>, T>,
-    ctx: &mut Context<T>
-) -> HashMap<String, RelationHandles<T>> {
+    ctx: &mut Context<T>,
+    probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
+) -> HashMap<String, RelationHandle<T>> {
 
     let db = &mut ctx.db;
     let queries = &mut ctx.queries;
@@ -316,65 +295,56 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         a_ev: db.a_ev.import(scope),
         ea_v: db.ea_v.import(scope),
         av_e: db.av_e.import(scope),
-
-        // input_map
     };
-
-    // query source
-    let (source_handle, source) = scope.new_collection();
-
-    // rule sources
-    let mut source_map = HashMap::new();
-    for rule in rules.iter() {
-        source_map.entry(rule.name.clone()).or_insert_with(|| scope.new_collection());
-    }
 
     scope.scoped(|nested| {
 
-        let mut relation_map = HashMap::new();
-        let mut result_map = HashMap::new();
+        let mut relation_map = RelationMap::new();
+        let mut result_map = QueryMap::new();
 
-        for (rule_name, (_handle, collection)) in source_map.drain() {
-            println!("Registering {:?}", rule_name);
-            let rel = NamedRelation::from(&collection.enter(nested));
-
-            if relation_map.contains_key(&rule_name) {
-                panic!("Attempted to redefine relation {:?}.", rule_name);
+        rules.sort_by(|x,y| x.name.cmp(&y.name));
+        for index in 1 .. rules.len() - 1 {
+            if rules[index].name == rules[index-1].name {
+                panic!("Duplicate rule definitions for rule {}", rules[index].name);
             }
-
-            relation_map.insert(rule_name.clone(), rel);
-            // @TODO add handle and trace to result_map?
         }
 
-        let output_relation = NamedRelation::from(&source.enter(nested));
-        let output_trace = output_relation.variable.as_ref().unwrap()
-            .leave()
-            .consolidate()
-            .arrange_by_self()
-            .trace;
-
-        if relation_map.contains_key(name) {
-            panic!("Query name clashes with rule name {:?}.", name);
+        // Step 1: Create new recursive variables for each rule.
+        for rule in rules.iter() {
+            relation_map.insert(rule.name.clone(), Variable::new(nested, u64::max_value(), 1));
         }
 
-        relation_map.insert(name.clone(), output_relation);
+        // Step 2: Create public arrangements for published relations.
+        for name in publish.into_iter() {
+            if let Some(relation) = relation_map.get(&name) {
+                let trace =
+                relation
+                    .leave()
+                    .probe_with(probe)
+                    .arrange_by_self()
+                    .trace;
 
-        result_map.insert(name.clone(), RelationHandles { input: source_handle, trace: output_trace });
+                result_map.insert(name, trace);
+            }
+            else {
+                panic!("Attempted to publish undefined name {:?}", name);
+            }
+        }
 
+        // Step 3: define the executions for each rule ...
+        let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
             println!("Planning {:?}", rule.name);
-            let execution = implement_plan(&rule.plan, &impl_ctx, nested, &relation_map, queries);
-
-            relation_map.get_mut(&rule.name).expect("Rule should be in relation_map, but isn't")
-                .add_execution(&execution.tuples());
+            executions.push(implement_plan(&rule.plan, &impl_ctx, nested, &relation_map, queries));
         }
 
-        println!("Planning query");
-        let execution = implement_plan(&plan, &impl_ctx, nested, &relation_map, queries);
-
-        relation_map
-            .get_mut(name).unwrap()
-            .add_execution(&execution.tuples());
+        // Step 4: complete named relations in a specific order (sorted by name).
+        for (rule, execution) in rules.iter().zip(executions.drain(..)) {
+            relation_map
+                .remove(&rule.name)
+                .expect("Rule should be in relation_map, but isn't")
+                .set(&execution.tuples().distinct());
+        }
 
         println!("Done");
         result_map
@@ -386,7 +356,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
     db: &ImplContext<Child<'a, Worker<A>, T>>,
     nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
     relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-    queries: &QueryMap<T, isize>
+    queries: &mut QueryMap<T, isize>
 ) -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
     use timely::dataflow::operators::ToStream;
@@ -629,7 +599,18 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
                 Some(named) => {
                     SimpleRelation {
                         symbols: syms.clone(),
-                        tuples: named.variable.as_ref().unwrap().deref().map(|tuple| tuple.clone()),
+                        tuples: named.map(|tuple| tuple.clone()),
+                    }
+                }
+            }
+        }
+        &Plan::NameExpr(ref name, ref syms) => {
+            match queries.get_mut(name) {
+                None => panic!("{:?} not in query map", name),
+                Some(named) => {
+                    SimpleRelation {
+                        symbols: syms.clone(),
+                        tuples: named.import(&nested.parent).enter(nested).as_collection(|tuple,_| tuple.clone()),
                     }
                 }
             }
@@ -659,12 +640,14 @@ pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, 
 pub fn register<A: Allocate, T: Timestamp+Lattice>(
     scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>,
-    name: &String,
-    plan: Plan,
-    rules: Vec<Rule>
-) -> HashMap<String, RelationHandles<T>> {
+    // name: &String,
+    // plan: Plan,
+    rules: Vec<Rule>,
+    publish: Vec<String>,
+    probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
+) -> HashMap<String, RelationHandle<T>> {
 
-    let result_map = implement(name, plan, rules, scope, ctx);
+    let result_map = implement(rules, publish, scope, ctx, probe);
 
     // @TODO store trace somewhere for re-use from other queries later
     // queries.insert(name.clone(), output_collection.arrange_by_self().trace);
