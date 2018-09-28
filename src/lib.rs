@@ -603,7 +603,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
             let tuple = (vec![Value::Eid(e), Value::Attribute(a)], Default::default(), 1);
             let ea_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
             let tuples = db.ea_v.enter(nested)
-                .join_core(&ea_in, |_,tuples,_| Some(tuples.clone()));
+                .join_core(&ea_in, |_,tuple,_| Some(tuple.clone()));
 
             SimpleRelation { symbols: vec![sym1], tuples }
         },
@@ -611,7 +611,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
             let tuple = (vec![Value::Eid(e)], Default::default(), 1);
             let e_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
             let tuples = db.e_av.enter(nested)
-                .join_core(&e_in, |_,tuples,_| Some(tuples.clone()));
+                .join_core(&e_in, |_,tuple,_| Some(tuple.clone()));
 
             SimpleRelation { symbols: vec![sym1, sym2], tuples }
         },
@@ -619,7 +619,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
             let tuple = (vec![Value::Attribute(a)], Default::default(), 1);
             let a_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
             let tuples = db.a_ev.enter(nested)
-                .join_core(&a_in, |_,tuples,_| Some(tuples.clone()));
+                .join_core(&a_in, |_,tuple,_| Some(tuple.clone()));
 
             SimpleRelation { symbols: vec![sym1, sym2], tuples }
         },
@@ -627,7 +627,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
             let tuple = (vec![Value::Attribute(a), v.clone()], Default::default(), 1);
             let av_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
             let tuples = db.av_e.enter(nested)
-                .join_core(&av_in, |_,tuples,_| Some(tuples.clone()));
+                .join_core(&av_in, |_,tuple,_| Some(tuple.clone()));
 
             SimpleRelation { symbols: vec![sym1], tuples }
         },
