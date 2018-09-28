@@ -16,9 +16,7 @@ extern crate abomonation;
 #[macro_use]
 extern crate serde_derive;
 
-use std::string::String;
 use std::boxed::Box;
-use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
 
 use timely::dataflow::*;
@@ -36,6 +34,9 @@ use differential_dataflow::operators::arrange::{ArrangeByKey, ArrangeBySelf, Tra
 use differential_dataflow::operators::group::{Group, Threshold, Count};
 use differential_dataflow::operators::join::{Join, JoinCore};
 use differential_dataflow::operators::iterate::Variable;
+
+pub mod plan;
+pub use plan::Implementable;
 
 //
 // TYPES
@@ -72,34 +73,6 @@ pub enum Value {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
 pub struct Datom(pub Entity, pub Attribute, pub Value);
 
-/// Permitted comparison predicates.
-#[derive(Deserialize, Clone, Debug)]
-pub enum Predicate {
-    /// Less than
-    LT,
-    /// Greater than
-    GT,
-    /// Less than or equal to
-    LTE,
-    /// Greater than or equal to
-    GTE,
-    /// Equal
-    EQ,
-    /// Not equal
-    NEQ,
-}
-
-/// Permitted aggregation function.
-#[derive(Deserialize, Clone, Debug)]
-pub enum AggregationFn {
-    /// Minimum
-    MIN,
-    /// Maximum
-    MAX,
-    /// Count
-    COUNT,
-}
-
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
@@ -126,7 +99,8 @@ pub struct DB<T: Timestamp+Lattice> {
     pub av_e: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
 }
 
-struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
+/// Live arrangements.
+pub struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
     // Imported traces
     e_av: Arrange<G, Vec<Value>, Vec<Value>, isize>,
     a_ev: Arrange<G, Vec<Value>, Vec<Value>, isize>,
@@ -156,7 +130,7 @@ pub enum Plan {
     /// Projection
     Project(Box<Plan>, Vec<Var>),
     /// Aggregation
-    Aggregate(AggregationFn, Box<Plan>, Vec<Var>),
+    Aggregate(plan::Aggregate),
     /// Union
     Union(Vec<Var>, Vec<Box<Plan>>),
     /// Equijoin
@@ -166,7 +140,7 @@ pub enum Plan {
     /// Negation
     Not(Box<Plan>),
     /// Filters bindings by one of the built-in predicates
-    PredExpr(Predicate, Vec<Var>, Box<Plan>),
+    PredExpr(plan::PredExpr),
     /// Data pattern of the form [e a ?v]
     Lookup(Entity, Attribute, Var),
     /// Data pattern of the form [e ?a ?v]
@@ -216,15 +190,8 @@ trait Relation<'a, G: Scope> where G::Timestamp : Lattice {
 /// A handle to an arranged relation.
 pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>;
 
-// /// Handles to inputs and traces.
-// pub struct RelationHandles<T: Timestamp+Lattice> {
-//     /// A handle to an interactive input session.
-//     pub input: InputSession<T, Vec<Value>, isize>,
-//     /// A handle to the corresponding arranged data.
-//     pub trace: TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>,
-// }
-
-struct SimpleRelation<'a, G: Scope> where G::Timestamp : Lattice {
+/// A collection and variable bindings.
+pub struct SimpleRelation<'a, G: Scope> where G::Timestamp : Lattice {
     symbols: Vec<Var>,
     tuples: Collection<Child<'a, G, u64>, Vec<Value>, isize>,
 }
@@ -270,14 +237,14 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
     }
 }
 
-// type NamedRelation<'a, G> = Variable<'a, G, Vec<Value>, u64, isize>;
-
-struct NamedRelation<'a, G: Scope> where G::Timestamp : Lattice {
+/// A recursively defined relation.
+pub struct NamedRelation<'a, G: Scope> where G::Timestamp : Lattice {
     variable: Variable<'a, G, Vec<Value>, u64, isize>,
     tuples: Collection<Child<'a, G, u64>, Vec<Value>, isize>,
 }
 
 impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
+    /// Creates an initially empty relation.
     pub fn new(scope: &mut Child<'a, G, u64>) -> Self {
         use differential_dataflow::AsCollection;
         NamedRelation {
@@ -285,9 +252,13 @@ impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
             tuples: ::timely::dataflow::operators::generic::operator::empty(scope).as_collection(),
         }
     }
+    /// Adds a new source of facts.
     pub fn add_execution(&mut self, execution: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) {
         self.tuples = self.tuples.concat(execution);
     }
+    /// Completes the specification of the relation.
+    ///
+    /// Failure to call `complete` results in a non-recursively defined relation.
     pub fn complete(self) {
         self.variable.set(&self.tuples.distinct());
     }
@@ -362,7 +333,7 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         // Step 3: define the executions for each rule ...
         for rule in rules.iter() {
             println!("Planning {:?}", rule.name);
-            let execution = implement_plan(&rule.plan, &impl_ctx, nested, &relation_map, queries);
+            let execution = rule.plan.implement(&impl_ctx, nested, &relation_map, queries);
             relation_map
                 .get_mut(&rule.name)
                 .expect("Rule should be in relation_map, but isn't")
@@ -374,280 +345,274 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         relations.sort_by(|x,y| x.0.cmp(&y.0));
         for (_name, relation) in relations.into_iter() { relation.complete(); }
 
-        // // Step 4: set the executions for each rule, consuming the variable.
-        // for (name, execution) in executions.drain(..) {
-        //     // @TODO `add_execution` could possibly be `Variable::set`, as we have only one.
-        //     relation_map
-        //         .remove(&name)
-        //         .expect("Rule should be in relation_map, but isn't")
-        //         .set(&execution.tuples().distinct());
-        // }
-
         println!("Done");
         result_map
     })
 }
 
-fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
-    plan: &Plan,
-    db: &ImplContext<Child<'a, Worker<A>, T>>,
-    nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-    relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-    queries: &mut QueryMap<T, isize>
-) -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
+impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for Plan {
+    fn implement(
+        &self,
+        db: &ImplContext<Child<'a, Worker<A>, T>>,
+        nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
+        relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
+        queries: &mut QueryMap<T, isize>
+    )
+    -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
-    use timely::dataflow::operators::ToStream;
-    use differential_dataflow::AsCollection;
+        use timely::dataflow::operators::ToStream;
+        use differential_dataflow::AsCollection;
 
-    match plan {
-        &Plan::Project(ref plan, ref symbols) => {
-            let mut relation = implement_plan(plan.deref(), db, nested, relation_map, queries);
-            let tuples = relation
-                .tuples_by_symbols(symbols.clone())
-                .map(|(key, _tuple)| key);
+        match self {
+            &Plan::Project(ref plan, ref symbols) => {
+                let mut relation = plan.implement(db, nested, relation_map, queries);
+                let tuples = relation
+                    .tuples_by_symbols(symbols.clone())
+                    .map(|(key, _tuple)| key);
 
-            SimpleRelation { symbols: symbols.to_vec(), tuples }
-        },
-        &Plan::Aggregate(ref aggregation_fn, ref plan, ref symbols) => {
-            let mut relation = implement_plan(plan.deref(), db, nested, relation_map, queries);
-            let mut tuples = relation.tuples_by_symbols(symbols.clone());
+                SimpleRelation { symbols: symbols.to_vec(), tuples }
+            },
+            &Plan::Aggregate(ref aggregate) => {
+                aggregate.implement(db, nested, relation_map, queries)
+                // let mut tuples = relation.tuples_by_symbols(symbols.clone());
 
-            match aggregation_fn {
-                &AggregationFn::MIN => {
-                    SimpleRelation {
-                        symbols: symbols.to_vec(),
-                        tuples: tuples
-                            // @TODO use rest of tuple as key
-                            .map(|(ref key, ref _tuple)| ((), match key[0] {
-                                Value::Number(v) => v,
-                                _ => panic!("MIN can only be applied on type Number.")
-                            }))
-                            .group(|_key, vals, output| {
-                                let mut min = vals[0].0;
-                                for &(val, _) in vals.iter() {
-                                    if min > val { min = val; }
-                                }
-                                // @TODO could preserve multiplicity of smallest value here
-                                output.push((*min, 1));
-                            })
-                            .map(|(_, min)| vec![Value::Number(min)])
-                    }
-                },
-                &AggregationFn::MAX => {
-                    SimpleRelation {
-                        symbols: symbols.to_vec(),
-                        tuples: tuples
-                        // @TODO use rest of tuple as key
-                            .map(|(ref key, ref _tuple)| ((), match key[0] {
-                                Value::Number(v) => v,
-                                _ => panic!("MAX can only be applied on type Number.")
-                            }))
-                            .group(|_key, vals, output| {
-                                let mut max = vals[0].0;
-                                for &(val, _) in vals.iter() {
-                                    if max < val { max = val; }
-                                }
-                                output.push((*max, 1));
-                            })
-                            .map(|(_, max)| vec![Value::Number(max)])
-                    }
-                },
-                &AggregationFn::COUNT => {
-                    SimpleRelation {
-                        symbols: symbols.to_vec(),
-                        tuples: tuples
-                        // @TODO use rest of tuple as key
-                            .map(|(ref _key, ref _tuple)| ())
-                            .count()
-                            .map(|(_, count)| vec![Value::Number(count as i64)])
-                    }
-                }
-            }
-        },
-        &Plan::Union(ref symbols, ref plans) => {
-            let first = plans.get(0).expect("Union requires at least one plan");
-            let mut first_rel = implement_plan(first.deref(), db, nested, relation_map, queries);
-            let mut tuples = if first_rel.symbols() == symbols {
-                first_rel.tuples()
-            } else {
-                first_rel.tuples_by_symbols(symbols.clone())
-                    .map(|(key, _tuple)| key)
-            };
-
-            for plan in plans.iter() {
-                let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
-                let mut plan_tuples = if rel.symbols() == symbols {
-                    rel.tuples()
+                // match aggregation_fn {
+                //     &AggregationFn::MIN => {
+                //         SimpleRelation {
+                //             symbols: symbols.to_vec(),
+                //             tuples: tuples
+                //                 // @TODO use rest of tuple as key
+                //                 .map(|(ref key, ref _tuple)| ((), match key[0] {
+                //                     Value::Number(v) => v,
+                //                     _ => panic!("MIN can only be applied on type Number.")
+                //                 }))
+                //                 .group(|_key, vals, output| {
+                //                     let mut min = vals[0].0;
+                //                     for &(val, _) in vals.iter() {
+                //                         if min > val { min = val; }
+                //                     }
+                //                     // @TODO could preserve multiplicity of smallest value here
+                //                     output.push((*min, 1));
+                //                 })
+                //                 .map(|(_, min)| vec![Value::Number(min)])
+                //         }
+                //     },
+                //     &AggregationFn::MAX => {
+                //         SimpleRelation {
+                //             symbols: symbols.to_vec(),
+                //             tuples: tuples
+                //             // @TODO use rest of tuple as key
+                //                 .map(|(ref key, ref _tuple)| ((), match key[0] {
+                //                     Value::Number(v) => v,
+                //                     _ => panic!("MAX can only be applied on type Number.")
+                //                 }))
+                //                 .group(|_key, vals, output| {
+                //                     let mut max = vals[0].0;
+                //                     for &(val, _) in vals.iter() {
+                //                         if max < val { max = val; }
+                //                     }
+                //                     output.push((*max, 1));
+                //                 })
+                //                 .map(|(_, max)| vec![Value::Number(max)])
+                //         }
+                //     },
+                //     &AggregationFn::COUNT => {
+                //         SimpleRelation {
+                //             symbols: symbols.to_vec(),
+                //             tuples: tuples
+                //             // @TODO use rest of tuple as key
+                //                 .map(|(ref _key, ref _tuple)| ())
+                //                 .count()
+                //                 .map(|(_, count)| vec![Value::Number(count as i64)])
+                //         }
+                //     }
+                // }
+            },
+            &Plan::Union(ref symbols, ref plans) => {
+                let first = plans.get(0).expect("Union requires at least one plan");
+                let mut first_rel = first.implement(db, nested, relation_map, queries);
+                let mut tuples = if first_rel.symbols() == symbols {
+                    first_rel.tuples()
                 } else {
-                    rel.tuples_by_symbols(symbols.clone())
+                    first_rel.tuples_by_symbols(symbols.clone())
                         .map(|(key, _tuple)| key)
                 };
 
-                tuples = tuples.concat(&plan_tuples);
-            }
+                for plan in plans.iter() {
+                    let mut rel = plan.implement(db, nested, relation_map, queries);
+                    let mut plan_tuples = if rel.symbols() == symbols {
+                        rel.tuples()
+                    } else {
+                        rel.tuples_by_symbols(symbols.clone())
+                            .map(|(key, _tuple)| key)
+                    };
 
-            SimpleRelation {
-                symbols: symbols.to_vec(),
-                tuples: tuples.distinct()
-            }
-        },
-        // @TODO specialized join for join on single variable
-        &Plan::Join(ref left_plan, ref right_plan, ref join_vars) => {
-            let mut left = implement_plan(left_plan.deref(), db, nested, relation_map, queries);
-            let mut right = implement_plan(right_plan.deref(), db, nested, relation_map, queries);
-
-            let mut left_syms: Vec<Var> = left.symbols().clone();
-            left_syms.retain(|&sym| {
-                match join_vars.iter().position(|&v| sym == v) {
-                    None => true,
-                    Some(_) => false
+                    tuples = tuples.concat(&plan_tuples);
                 }
-            });
 
-            let mut right_syms: Vec<Var> = right.symbols().clone();
-            right_syms.retain(|&sym| {
-                match join_vars.iter().position(|&v| sym == v) {
-                    None => true,
-                    Some(_) => false
+                SimpleRelation {
+                    symbols: symbols.to_vec(),
+                    tuples: tuples.distinct()
                 }
-            });
+            },
+            // @TODO specialized join for join on single variable
+            &Plan::Join(ref left_plan, ref right_plan, ref join_vars) => {
+                let mut left = left_plan.implement(db, nested, relation_map, queries);
+                let mut right = right_plan.implement(db, nested, relation_map, queries);
 
-            // useful for inspecting join inputs
-            //.inspect(|&((ref key, ref values), _, _)| { println!("right {:?} {:?}", key, values) })
-
-            let tuples = left.tuples_by_symbols(join_vars.clone())
-                .arrange_by_key()
-                .join_core(&right.tuples_by_symbols(join_vars.clone()).arrange_by_key(), |key, v1, v2| {
-                    let mut vstar = Vec::with_capacity(key.len() + v1.len() + v2.len());
-
-                    vstar.extend(key.iter().cloned());
-                    vstar.extend(v1.iter().cloned());
-                    vstar.extend(v2.iter().cloned());
-
-                    Some(vstar)
+                let mut left_syms: Vec<Var> = left.symbols().clone();
+                left_syms.retain(|&sym| {
+                    match join_vars.iter().position(|&v| sym == v) {
+                        None => true,
+                        Some(_) => false
+                    }
                 });
 
-            let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len() + right_syms.len());
-            symbols.extend(join_vars.iter().cloned());
-            symbols.append(&mut left_syms);
-            symbols.append(&mut right_syms);
-
-            // let debug_syms: Vec<String> = symbols.iter().map(|x| x.to_string()).collect();
-            // println!(debug_syms);
-
-            SimpleRelation { symbols, tuples }
-        },
-        &Plan::Antijoin(ref left_plan, ref right_plan, ref join_vars) => {
-            let mut left = implement_plan(left_plan.deref(), db, nested, relation_map, queries);
-            let mut right = implement_plan(right_plan.deref(), db, nested, relation_map, queries);
-
-            let mut left_syms: Vec<Var> = left.symbols().clone();
-            left_syms.retain(|&sym| {
-                match join_vars.iter().position(|&v| sym == v) {
-                    None => true,
-                    Some(_) => false
-                }
-            });
-
-            let tuples = left.tuples_by_symbols(join_vars.clone())
-                .distinct()
-                .antijoin(&right.tuples_by_symbols(join_vars.clone()).map(|(key, _)| key).distinct())
-                .map(|(key, tuple)| {
-                    let mut vstar = Vec::with_capacity(key.len() + tuple.len());
-                    vstar.extend(key.iter().cloned());
-                    vstar.extend(tuple.iter().cloned());
-
-                    vstar
+                let mut right_syms: Vec<Var> = right.symbols().clone();
+                right_syms.retain(|&sym| {
+                    match join_vars.iter().position(|&v| sym == v) {
+                        None => true,
+                        Some(_) => false
+                    }
                 });
 
-            let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len());
-            symbols.extend(join_vars.iter().cloned());
-            symbols.append(&mut left_syms);
+                // useful for inspecting join inputs
+                //.inspect(|&((ref key, ref values), _, _)| { println!("right {:?} {:?}", key, values) })
 
-            SimpleRelation { symbols, tuples }
-        },
-        &Plan::Not(ref plan) => {
-            let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
-            SimpleRelation {
-                symbols: rel.symbols().clone(),
-                tuples: rel.tuples().negate()
-            }
-        },
-        &Plan::PredExpr(ref predicate, ref syms, ref plan) => {
-            let mut rel = implement_plan(plan.deref(), db, nested, relation_map, queries);
+                let tuples = left.tuples_by_symbols(join_vars.clone())
+                    .arrange_by_key()
+                    .join_core(&right.tuples_by_symbols(join_vars.clone()).arrange_by_key(), |key, v1, v2| {
+                        let mut vstar = Vec::with_capacity(key.len() + v1.len() + v2.len());
 
-            let key_offsets: Vec<usize> = syms.iter()
-                .map(|sym| rel.symbols().iter().position(|&v| *sym == v).expect("Symbol not found."))
-                .collect();
+                        vstar.extend(key.iter().cloned());
+                        vstar.extend(v1.iter().cloned());
+                        vstar.extend(v2.iter().cloned());
 
-            SimpleRelation {
-                symbols: rel.symbols().to_vec(),
-                tuples: match predicate {
-                    &Predicate::LT => rel.tuples()
-                        .filter(move |tuple| tuple[key_offsets[0]] < tuple[key_offsets[1]]),
-                    &Predicate::LTE => rel.tuples()
-                        .filter(move |tuple| tuple[key_offsets[0]] <= tuple[key_offsets[1]]),
-                    &Predicate::GT => rel.tuples()
-                        .filter(move |tuple| tuple[key_offsets[0]] > tuple[key_offsets[1]]),
-                    &Predicate::GTE => rel.tuples()
-                        .filter(move |tuple| tuple[key_offsets[0]] >= tuple[key_offsets[1]]),
-                    &Predicate::EQ => rel.tuples()
-                        .filter(move |tuple| tuple[key_offsets[0]] == tuple[key_offsets[1]]),
-                    &Predicate::NEQ => rel.tuples()
-                        .filter(move |tuple| tuple[key_offsets[0]] != tuple[key_offsets[1]])
+                        Some(vstar)
+                    });
+
+                let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len() + right_syms.len());
+                symbols.extend(join_vars.iter().cloned());
+                symbols.append(&mut left_syms);
+                symbols.append(&mut right_syms);
+
+                // let debug_syms: Vec<String> = symbols.iter().map(|x| x.to_string()).collect();
+                // println!(debug_syms);
+
+                SimpleRelation { symbols, tuples }
+            },
+            &Plan::Antijoin(ref left_plan, ref right_plan, ref join_vars) => {
+                let mut left = left_plan.implement(db, nested, relation_map, queries);
+                let mut right = right_plan.implement(db, nested, relation_map, queries);
+
+                let mut left_syms: Vec<Var> = left.symbols().clone();
+                left_syms.retain(|&sym| {
+                    match join_vars.iter().position(|&v| sym == v) {
+                        None => true,
+                        Some(_) => false
+                    }
+                });
+
+                let tuples = left.tuples_by_symbols(join_vars.clone())
+                    .distinct()
+                    .antijoin(&right.tuples_by_symbols(join_vars.clone()).map(|(key, _)| key).distinct())
+                    .map(|(key, tuple)| {
+                        let mut vstar = Vec::with_capacity(key.len() + tuple.len());
+                        vstar.extend(key.iter().cloned());
+                        vstar.extend(tuple.iter().cloned());
+
+                        vstar
+                    });
+
+                let mut symbols: Vec<Var> = Vec::with_capacity(join_vars.len() + left_syms.len());
+                symbols.extend(join_vars.iter().cloned());
+                symbols.append(&mut left_syms);
+
+                SimpleRelation { symbols, tuples }
+            },
+            &Plan::Not(ref plan) => {
+                let mut rel = plan.implement(db, nested, relation_map, queries);
+                SimpleRelation {
+                    symbols: rel.symbols().clone(),
+                    tuples: rel.tuples().negate()
                 }
-            }
-        },
-        &Plan::Lookup(e, a, sym1) => {
-            let tuple = (vec![Value::Eid(e), Value::Attribute(a)], Default::default(), 1);
-            let ea_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
-            let tuples = db.ea_v.enter(nested)
-                .join_core(&ea_in, |_,tuple,_| Some(tuple.clone()));
+            },
+            &Plan::PredExpr(ref pred_expr) => {
+                pred_expr.implement(db, nested, relation_map, queries)
 
-            SimpleRelation { symbols: vec![sym1], tuples }
-        },
-        &Plan::Entity(e, sym1, sym2) => {
-            let tuple = (vec![Value::Eid(e)], Default::default(), 1);
-            let e_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
-            let tuples = db.e_av.enter(nested)
-                .join_core(&e_in, |_,tuple,_| Some(tuple.clone()));
+                // let key_offsets: Vec<usize> = syms.iter()
+                //     .map(|sym| rel.symbols().iter().position(|&v| *sym == v).expect("Symbol not found."))
+                //     .collect();
 
-            SimpleRelation { symbols: vec![sym1, sym2], tuples }
-        },
-        &Plan::HasAttr(sym1, a, sym2) => {
-            let tuple = (vec![Value::Attribute(a)], Default::default(), 1);
-            let a_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
-            let tuples = db.a_ev.enter(nested)
-                .join_core(&a_in, |_,tuple,_| Some(tuple.clone()));
+                // SimpleRelation {
+                //     symbols: rel.symbols().to_vec(),
+                //     tuples: match predicate {
+                //         &Predicate::LT => rel.tuples()
+                //             .filter(move |tuple| tuple[key_offsets[0]] < tuple[key_offsets[1]]),
+                //         &Predicate::LTE => rel.tuples()
+                //             .filter(move |tuple| tuple[key_offsets[0]] <= tuple[key_offsets[1]]),
+                //         &Predicate::GT => rel.tuples()
+                //             .filter(move |tuple| tuple[key_offsets[0]] > tuple[key_offsets[1]]),
+                //         &Predicate::GTE => rel.tuples()
+                //             .filter(move |tuple| tuple[key_offsets[0]] >= tuple[key_offsets[1]]),
+                //         &Predicate::EQ => rel.tuples()
+                //             .filter(move |tuple| tuple[key_offsets[0]] == tuple[key_offsets[1]]),
+                //         &Predicate::NEQ => rel.tuples()
+                //             .filter(move |tuple| tuple[key_offsets[0]] != tuple[key_offsets[1]])
+                //     }
+                // }
+            },
+            &Plan::Lookup(e, a, sym1) => {
+                let tuple = (vec![Value::Eid(e), Value::Attribute(a)], Default::default(), 1);
+                let ea_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
+                let tuples = db.ea_v.enter(nested)
+                    .join_core(&ea_in, |_,tuple,_| Some(tuple.clone()));
 
-            SimpleRelation { symbols: vec![sym1, sym2], tuples }
-        },
-        &Plan::Filter(sym1, a, ref v) => {
-            let tuple = (vec![Value::Attribute(a), v.clone()], Default::default(), 1);
-            let av_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
-            let tuples = db.av_e.enter(nested)
-                .join_core(&av_in, |_,tuple,_| Some(tuple.clone()));
+                SimpleRelation { symbols: vec![sym1], tuples }
+            },
+            &Plan::Entity(e, sym1, sym2) => {
+                let tuple = (vec![Value::Eid(e)], Default::default(), 1);
+                let e_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
+                let tuples = db.e_av.enter(nested)
+                    .join_core(&e_in, |_,tuple,_| Some(tuple.clone()));
 
-            SimpleRelation { symbols: vec![sym1], tuples }
-        },
-        &Plan::RuleExpr(ref name, ref syms) => {
-            match relation_map.get(name) {
-                None => panic!("{:?} not in relation map", name),
-                Some(named) => {
-                    SimpleRelation {
-                        symbols: syms.clone(),
-                        tuples: named.variable.map(|tuple| tuple.clone()),
+                SimpleRelation { symbols: vec![sym1, sym2], tuples }
+            },
+            &Plan::HasAttr(sym1, a, sym2) => {
+                let tuple = (vec![Value::Attribute(a)], Default::default(), 1);
+                let a_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
+                let tuples = db.a_ev.enter(nested)
+                    .join_core(&a_in, |_,tuple,_| Some(tuple.clone()));
+
+                SimpleRelation { symbols: vec![sym1, sym2], tuples }
+            },
+            &Plan::Filter(sym1, a, ref v) => {
+                let tuple = (vec![Value::Attribute(a), v.clone()], Default::default(), 1);
+                let av_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
+                let tuples = db.av_e.enter(nested)
+                    .join_core(&av_in, |_,tuple,_| Some(tuple.clone()));
+
+                SimpleRelation { symbols: vec![sym1], tuples }
+            },
+            &Plan::RuleExpr(ref name, ref syms) => {
+                match relation_map.get(name) {
+                    None => panic!("{:?} not in relation map", name),
+                    Some(named) => {
+                        SimpleRelation {
+                            symbols: syms.clone(),
+                            tuples: named.variable.map(|tuple| tuple.clone()),
+                        }
                     }
                 }
             }
-        }
-        &Plan::NameExpr(ref name, ref syms) => {
-            match queries.get_mut(name) {
-                None => panic!("{:?} not in query map", name),
-                Some(named) => {
-                    SimpleRelation {
-                        symbols: syms.clone(),
-                        tuples: named.import(&nested.parent).enter(nested).as_collection(|tuple,_| tuple.clone()),
+            &Plan::NameExpr(ref name, ref syms) => {
+                match queries.get_mut(name) {
+                    None => panic!("{:?} not in query map", name),
+                    Some(named) => {
+                        SimpleRelation {
+                            symbols: syms.clone(),
+                            tuples: named.import(&nested.parent).enter(nested).as_collection(|tuple,_| tuple.clone()),
+                        }
                     }
                 }
             }
