@@ -46,8 +46,8 @@ impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for 
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
-        let mut relation = self.plan.implement(db, nested, relation_map, queries);
-        let mut tuples = relation.tuples_by_symbols(self.variables.clone());
+        let relation = self.plan.implement(db, nested, relation_map, queries);
+        let tuples = relation.tuples_by_symbols(self.variables.clone());
 
         match self.aggregation_fn {
             AggregationFn::MIN => {

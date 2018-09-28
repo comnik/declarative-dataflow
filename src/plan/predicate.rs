@@ -51,7 +51,7 @@ impl<'a, 'b, A: Allocate, T: Timestamp+Lattice> Implementable<'a, 'b, A, T> for 
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
-        let mut rel = self.plan.implement(db, nested, relation_map, queries);
+        let rel = self.plan.implement(db, nested, relation_map, queries);
 
         let key_offsets: Vec<usize> = self.variables.iter()
             .map(|sym| rel.symbols().iter().position(|&v| *sym == v).expect("Symbol not found."))

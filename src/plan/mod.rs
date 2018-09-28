@@ -11,9 +11,17 @@ use super::{ImplContext, RelationMap, QueryMap, SimpleRelation};
 
 pub mod predicate;
 pub mod aggregate;
+pub mod project;
+pub mod union;
+pub mod join;
+pub mod antijoin;
 
 pub use self::predicate::PredExpr;
 pub use self::aggregate::Aggregate;
+pub use self::project::Projection;
+pub use self::union::Union;
+pub use self::join::Join;
+pub use self::antijoin::Antijoin;
 
 /// A type that can be implemented as a simple relation.
 pub trait Implementable<'a, 'b, A: Allocate, T: Timestamp+Lattice> {
