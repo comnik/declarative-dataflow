@@ -21,7 +21,6 @@ use std::boxed::Box;
 use std::ops::Deref;
 use std::collections::{HashMap, HashSet};
 
-// use timely::*;
 use timely::dataflow::*;
 use timely::dataflow::scopes::Child;
 use timely::progress::timestamp::{Timestamp, RootTimestamp};
@@ -113,8 +112,6 @@ pub enum AggregationFn {
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
-// type ArrangeSelf<G, K, R> = Arranged<G, K, (), R, TraceKeyHandle<K, <G as ScopeParent>::Timestamp, R>>;
-// type InputMap<G> = HashMap<(Option<Entity>, Option<Attribute>, Option<Value>), ArrangeSelf<G, Vec<Value>, isize>>;
 type QueryMap<T, R> = HashMap<String, TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, R>>;
 type RelationMap<'a, G> = HashMap<String, NamedRelation<'a, G>>;
 
@@ -144,12 +141,6 @@ struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
     a_ev: Arrange<G, Vec<Value>, Vec<Value>, isize>,
     ea_v: Arrange<G, Vec<Value>, Vec<Value>, isize>,
     av_e: Arrange<G, Vec<Value>, Vec<Value>, isize>,
-
-    // Parameter inputs
-    // input_map: InputMap<G>,
-
-    // Collection variables for recursion
-    // variable_map: RelationMap<'a, G>,
 }
 
 // @TODO move input_handle into server, get rid of all this and use DB
@@ -327,17 +318,6 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     let db = &mut ctx.db;
     let queries = &mut ctx.queries;
 
-    // // query input
-    // let mut input_map = create_inputs(&plan, scope);
-
-    // // rule inputs
-    // for rule in rules.iter() {
-    //     let mut rule_inputs = create_inputs(&rule.plan, scope);
-    //     for (k, v) in rule_inputs.drain() {
-    //         input_map.insert(k, v);
-    //     }
-    // }
-
     // @TODO Only import those we need for the query?
     let impl_ctx: ImplContext<Child<Worker<A>, T>> = ImplContext {
         e_av: db.e_av.import(scope),
@@ -408,74 +388,6 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         result_map
     })
 }
-
-// fn create_inputs<'a, A: Allocate, T: Timestamp+Lattice>(
-//     plan: &Plan,
-//     scope: &mut Child<'a, Worker<A>, T>
-// ) -> InputMap<Child<'a, Worker<A>, T>> {
-//
-//     match plan {
-//         &Plan::Project(ref plan, _) => { create_inputs(plan.deref(), scope) },
-//         &Plan::Aggregate(_, ref plan, _) => { create_inputs(plan.deref(), scope) },
-//         &Plan::Union(_, ref plans) => {
-//             let mut inputs = HashMap::new();
-//
-//             for plan in plans.iter() {
-//                 let mut plan_inputs = create_inputs(plan.deref(), scope);
-//
-//                 for (k, v) in plan_inputs.drain() {
-//                     inputs.insert(k, v);
-//                 }
-//             }
-//
-//             inputs
-//         },
-//         &Plan::Join(ref left_plan, ref right_plan, _) => {
-//             let mut left_inputs = create_inputs(left_plan.deref(), scope);
-//             let mut right_inputs = create_inputs(right_plan.deref(), scope);
-//
-//             for (k, v) in right_inputs.drain() {
-//                 left_inputs.insert(k, v);
-//             }
-//
-//             left_inputs
-//         },
-//         &Plan::Antijoin(ref left_plan, ref right_plan, _) => {
-//             let mut left_inputs = create_inputs(left_plan.deref(), scope);
-//             let mut right_inputs = create_inputs(right_plan.deref(), scope);
-//
-//             for (k, v) in right_inputs.drain() {
-//                 left_inputs.insert(k, v);
-//             }
-//
-//             left_inputs
-//         },
-//         &Plan::Not(ref plan) => { create_inputs(plan.deref(), scope) },
-//         &Plan::PredExpr(_, _, ref plan) => { create_inputs(plan.deref(), scope) },
-//         &Plan::Lookup(e, a, _) => {
-//             let mut inputs = HashMap::new();
-//             inputs.insert((Some(e), Some(a), None), scope.new_collection_from(vec![vec![Value::Eid(e), Value::Attribute(a)]]).1.arrange_by_self());
-//             inputs
-//         },
-//         &Plan::Entity(e, _, _) => {
-//             let mut inputs = HashMap::new();
-//             inputs.insert((Some(e), None, None), scope.new_collection_from(vec![vec![Value::Eid(e)]]).1.arrange_by_self());
-//             inputs
-//         },
-//         &Plan::HasAttr(_, a, _) => {
-//             let mut inputs = HashMap::new();
-//             inputs.insert((None, Some(a), None), scope.new_collection_from(vec![vec![Value::Attribute(a)]]).1.arrange_by_self());
-//             inputs
-//         },
-//         &Plan::Filter(_, a, ref v) => {
-//             let mut inputs = HashMap::new();
-//             inputs.insert((None, Some(a), Some(v.clone())), scope.new_collection_from(vec![vec![Value::Attribute(a), v.clone()]]).1.arrange_by_self());
-//             inputs
-//         },
-//         &Plan::RuleExpr(_, _) => { HashMap::new() }
-//     }
-// }
-
 
 fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
     plan: &Plan,
