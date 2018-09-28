@@ -72,7 +72,10 @@ pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
 enum Request {
     Transact { tx: Option<usize>, tx_data: Vec<TxData> },
     Register { query_name: String, plan: Plan, rules: Vec<Rule> },
-    // RegisterAlt { rules: Vec<Rule>, publish: Vec<String> },
+    /// Registers multiple named relations.
+    RegisterAlt { rules: Vec<Rule>, publish: Vec<String> },
+    /// Expresses interest in a named relation.
+    Interest { name: String }
     // LoadData { filename: String, max_lines: usize },
 }
 
@@ -427,6 +430,14 @@ fn main() {
 
                                     rules.push(Rule { name: query_name.clone(), plan: plan });
                                     let mut rel_map = register(scope, &mut ctx, rules, vec![query_name.clone()]);
+                                    for (name, trace) in rel_map.drain() {
+                                        if ctx.queries.contains_key(&name) {
+                                            panic!("Attempted to re-register a named relation");
+                                        }
+                                        else {
+                                            ctx.queries.insert(name, trace);
+                                        }
+                                    }
 
                                     // let mut rel_map = register(scope, &mut ctx, &query_name, plan, rules);
 
@@ -452,8 +463,72 @@ fn main() {
 
                                     probes.push(probe);
                                 });
-                            }
-                        }
+                            },
+                            Request::RegisterAlt { rules, publish } => {
+
+                                worker.dataflow::<usize, _, _>(|scope| {
+
+                                    let mut rel_map = register(scope, &mut ctx, rules, publish);
+                                    for (name, trace) in rel_map.drain() {
+                                        if ctx.queries.contains_key(&name) {
+                                            panic!("Attempted to re-register a named relation");
+                                        }
+                                        else {
+                                            ctx.queries.insert(name, trace);
+                                        }
+                                    }
+
+                                });
+                            },
+                            Request::Interest { name } => {
+
+                                if command.owner == worker.index() {
+
+                                    // we are the owning worker and thus have to
+                                    // keep track of this client's new interest
+
+                                    match command.client {
+                                        None => { },
+                                        Some(client) => {
+                                            let client_token = Token(client);
+                                            interests.entry(name.clone())
+                                                .or_insert(Vec::new())
+                                                .push(client_token);
+                                        }
+                                    }
+                                }
+
+                                let send_results_handle = send_results.clone();
+
+                                worker.dataflow::<usize, _, _>(|scope| {
+
+                                    let probe =
+                                    ctx .queries
+                                        .get_mut(&name)
+                                        .expect(&format!("Could not find relation {:?}", name))
+                                        .import(scope)
+                                        .as_collection(|tuple,_| tuple.clone())
+                                        .inner
+                                        .map(|x| Out(x.0.clone(), x.2))
+                                        .unary_notify(
+                                            timely::dataflow::channels::pact::Exchange::new(move |_: &Out| command.owner as u64),
+                                            "OutputsRecv",
+                                            Vec::new(),
+                                            move |input, _output: &mut OutputHandle<_, Out, _>, _notificator| {
+
+                                                // due to the exchange pact, this closure is only
+                                                // executed by the owning worker
+
+                                                input.for_each(|_time, data| {
+                                                    let out: Vec<Out> = data.to_vec();
+                                                    send_results_handle.send((name.clone(), out)).unwrap();
+                                                });
+                                            })
+                                        .probe();
+
+                                    probes.push(probe);
+                                });
+                            },                        }
                     }
                 }
             }
