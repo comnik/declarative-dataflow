@@ -104,7 +104,7 @@ type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
 type QueryMap<T, R> = HashMap<String, TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, R>>;
-type RelationMap<'a, G> = HashMap<String, NamedRelation<'a, G>>;
+type RelationMap<'a, G> = HashMap<String, Variable<'a, G, Vec<Value>, u64, isize>>;
 
 //
 // CONTEXT
@@ -270,28 +270,6 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
     }
 }
 
-// type NamedRelation<'a, G> = Variable<'a, G, Vec<Value>, u64, isize>;
-
-struct NamedRelation<'a, G: Scope> where G::Timestamp : Lattice {
-    variable: Variable<'a, G, Vec<Value>, u64, isize>,
-    tuples: Collection<Child<'a, G, u64>, Vec<Value>, isize>,
-}
-
-impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
-    pub fn new(scope: &mut Child<'a, G, u64>) -> Self {
-        use differential_dataflow::AsCollection;
-        NamedRelation {
-            variable: Variable::new(scope, u64::max_value(), 1),
-            tuples: ::timely::dataflow::operators::generic::operator::empty(scope).as_collection(),
-        }
-    }
-    pub fn add_execution(&mut self, execution: &Collection<Child<'a, G, u64>, Vec<Value>, isize>) {
-        self.tuples = self.tuples.concat(execution);
-    }
-    pub fn complete(self) {
-        self.variable.set(&self.tuples.distinct());
-    }
-}
 
 //
 // QUERY PLAN IMPLEMENTATION
@@ -301,10 +279,8 @@ impl<'a, G: Scope> NamedRelation<'a, G> where G::Timestamp : Lattice {
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
 fn implement<A: Allocate, T: Timestamp+Lattice>(
-    // name: &String,
-    // plan: Plan,
-    rules: Vec<Rule>,
-    mut publish: Vec<String>,
+    mut rules: Vec<Rule>,
+    publish: Vec<String>,
     scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>,
     probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
@@ -323,30 +299,26 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
 
     scope.scoped(|nested| {
 
-        let mut relation_map = HashMap::new();
-        let mut result_map = HashMap::new();
+        let mut relation_map = RelationMap::new();
+        let mut result_map = QueryMap::new();
+
+        rules.sort_by(|x,y| x.name.cmp(&y.name));
+        for index in 1 .. rules.len() - 1 {
+            if rules[index].name == rules[index-1].name {
+                panic!("Duplicate rule definitions for rule {}", rules[index].name);
+            }
+        }
 
         // Step 1: Create new recursive variables for each rule.
         for rule in rules.iter() {
-            relation_map
-                .entry(rule.name.clone())
-                .or_insert_with(|| {
-                    println!("Registering {:?}", rule.name);
-                    NamedRelation::new(nested)
-                });
+            relation_map.insert(rule.name.clone(), Variable::new(nested, u64::max_value(), 1));
         }
 
         // Step 2: Create public arrangements for published relations.
-
-        // defend against silliness.
-        publish.sort();
-        publish.dedup();
-
         for name in publish.into_iter() {
             if let Some(relation) = relation_map.get(&name) {
                 let trace =
                 relation
-                    .variable
                     .leave()
                     .probe_with(probe)
                     .arrange_by_self()
@@ -360,28 +332,19 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
         }
 
         // Step 3: define the executions for each rule ...
+        let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
             println!("Planning {:?}", rule.name);
-            let execution = implement_plan(&rule.plan, &impl_ctx, nested, &relation_map, queries);
-            relation_map
-                .get_mut(&rule.name)
-                .expect("Rule should be in relation_map, but isn't")
-                .add_execution(&execution.tuples());
+            executions.push(implement_plan(&rule.plan, &impl_ctx, nested, &relation_map, queries));
         }
 
         // Step 4: complete named relations in a specific order (sorted by name).
-        let mut relations = relation_map.drain().collect::<Vec<_>>();
-        relations.sort_by(|x,y| x.0.cmp(&y.0));
-        for (_name, relation) in relations.into_iter() { relation.complete(); }
-
-        // // Step 4: set the executions for each rule, consuming the variable.
-        // for (name, execution) in executions.drain(..) {
-        //     // @TODO `add_execution` could possibly be `Variable::set`, as we have only one.
-        //     relation_map
-        //         .remove(&name)
-        //         .expect("Rule should be in relation_map, but isn't")
-        //         .set(&execution.tuples().distinct());
-        // }
+        for (rule, execution) in rules.iter().zip(executions.drain(..)) {
+            relation_map
+                .remove(&rule.name)
+                .expect("Rule should be in relation_map, but isn't")
+                .set(&execution.tuples().distinct());
+        }
 
         println!("Done");
         result_map
@@ -636,7 +599,7 @@ fn implement_plan<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
                 Some(named) => {
                     SimpleRelation {
                         symbols: syms.clone(),
-                        tuples: named.variable.map(|tuple| tuple.clone()),
+                        tuples: named.map(|tuple| tuple.clone()),
                     }
                 }
             }
