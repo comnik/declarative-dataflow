@@ -313,13 +313,11 @@ pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, 
     (input_handle, db)
 }
 
-/// Synthesizes a query plan and set's up the resulting collection to
+/// Synthesizes a query plan and sets up the resulting collection to
 /// be available via a globally unique name.
 pub fn register<A: Allocate, T: Timestamp+Lattice>(
     scope: &mut Child<Worker<A>, T>,
     ctx: &mut Context<T>,
-    // name: &String,
-    // plan: Plan,
     rules: Vec<Rule>,
     publish: Vec<String>,
     probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
