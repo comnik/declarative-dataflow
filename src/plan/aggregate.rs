@@ -23,7 +23,9 @@ pub enum AggregationFn {
     COUNT,
 }
 
-/// A predicate expression plan stage.
+/// [WIP]
+/// A plan stage applying the specified aggregation function to
+/// bindings for the specified symbols. Very WIP.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Aggregate<P: Implementable> {
     /// Logical predicate to apply.

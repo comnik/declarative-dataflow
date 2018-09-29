@@ -11,7 +11,9 @@ use Relation;
 use plan::Implementable;
 use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
-/// A predicate expression plan stage.
+/// A plan stage projecting its source to only the specified sequence
+/// of symbols. Throws on unbound symbols. Frontends are responsible
+/// for ensuring that the source binds all requested symbols.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Project<P: Implementable> {
     /// TODO

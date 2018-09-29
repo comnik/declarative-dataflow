@@ -12,7 +12,9 @@ use Relation;
 use plan::Implementable;
 use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
-/// A predicate expression plan stage.
+/// A plan stage taking the union over its sources. Frontends are
+/// responsible to ensure that the sources are union-compatible
+/// (i.e. bind all of the same symbols in the same order).
 #[derive(Deserialize, Clone, Debug)]
 pub struct Union<P: Implementable> {
     /// TODO

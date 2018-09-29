@@ -51,7 +51,7 @@ pub enum Plan {
     /// Antijoin
     Antijoin(Antijoin<Plan,Plan>),
     /// Negation
-    Not(Box<Plan>),
+    Negate(Box<Plan>),
     /// Filters bindings by one of the built-in predicates
     Filter(Filter<Plan>),
     /// Data pattern of the form [e a ?v]
@@ -91,7 +91,7 @@ impl Implementable for Plan {
             // @TODO specialized join for join on single variable
             &Plan::Join(ref join)           => join.implement(db, nested, relation_map, queries),
             &Plan::Antijoin(ref antijoin)   => antijoin.implement(db, nested, relation_map, queries),
-            &Plan::Not(ref plan)            => {
+            &Plan::Negate(ref plan)         => {
                 let mut rel = plan.implement(db, nested, relation_map, queries);
                 SimpleRelation {
                     symbols: rel.symbols().to_vec(),

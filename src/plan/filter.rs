@@ -28,7 +28,9 @@ pub enum Predicate {
     NEQ,
 }
 
-/// A predicate expression plan stage.
+/// A plan stage filtering source tuples by the specified
+/// predicate. Frontends are responsible for ensuring that the source
+/// binds the argument symbols.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Filter<P: Implementable> {
     /// Logical predicate to apply.

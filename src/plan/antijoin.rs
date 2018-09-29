@@ -13,7 +13,9 @@ use Relation;
 use plan::Implementable;
 use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
-/// A predicate expression plan stage.
+/// A plan stage anti-joining both its sources on the specified
+/// symbols. Throws if the sources are not union-compatible, i.e. bind
+/// all of the same symbols in the same order.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Antijoin<P1: Implementable, P2: Implementable> {
     /// Plan for the left input.

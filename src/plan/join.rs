@@ -12,7 +12,9 @@ use Relation;
 use plan::Implementable;
 use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
-/// A predicate expression plan stage.
+/// A plan stage joining two source relations on the specified
+/// symbols. Throws if any of the join symbols isn't bound by both
+/// sources.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Join<P1: Implementable, P2: Implementable> {
     /// Plan for the left input.
