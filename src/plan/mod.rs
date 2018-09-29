@@ -94,7 +94,7 @@ impl Implementable for Plan {
             &Plan::Not(ref plan)            => {
                 let mut rel = plan.implement(db, nested, relation_map, queries);
                 SimpleRelation {
-                    symbols: rel.symbols().clone(),
+                    symbols: rel.symbols().to_vec(),
                     tuples: rel.tuples().negate()
                 }
             },

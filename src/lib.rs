@@ -144,7 +144,7 @@ type Var = u32;
 /// these vectors.
 trait Relation<'a, G: Scope> where G::Timestamp : Lattice {
     /// List the variable identifiers.
-    fn symbols(&self) -> &Vec<Var>;
+    fn symbols(&self) -> &[Var];
     /// A collection containing all tuples.
     fn tuples(self) -> Collection<Child<'a, G, u64>, Vec<Value>, isize>;
     /// A collection with tuples partitioned by `syms`.
@@ -164,7 +164,7 @@ pub struct SimpleRelation<'a, G: Scope> where G::Timestamp : Lattice {
 }
 
 impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp : Lattice {
-    fn symbols(&self) -> &Vec<Var> { &self.symbols }
+    fn symbols(&self) -> &[Var] { &self.symbols }
     fn tuples(self) -> Collection<Child<'a, G, u64>, Vec<Value>, isize> { self.tuples }
 
     /// Separates tuple fields by those in `syms` and those not.
