@@ -122,6 +122,17 @@ fn main() {
             Context { db, input_handle, queries: HashMap::new(), }
         });
 
+        if config.enable_history == false {
+
+            // decline the capability for that trace handle to subset
+            // its view of the data
+            
+            ctx.db.e_av.distinguish_since(&[]);
+            ctx.db.a_ev.distinguish_since(&[]);
+            ctx.db.ea_v.distinguish_since(&[]);
+            ctx.db.av_e.distinguish_since(&[]);
+        }
+
         // A probe for the transaction id time domain.
         let mut probe = ProbeHandle::new();
 
@@ -408,10 +419,12 @@ fn main() {
                                     ctx.db.ea_v.advance_by(frontier);
                                     ctx.db.av_e.advance_by(frontier);
 
-                                    ctx.db.e_av.distinguish_since(frontier);
-                                    ctx.db.a_ev.distinguish_since(frontier);
-                                    ctx.db.ea_v.distinguish_since(frontier);
-                                    ctx.db.av_e.distinguish_since(frontier);
+                                    // handled once during context setup
+                                    //
+                                    // ctx.db.e_av.distinguish_since(frontier);
+                                    // ctx.db.a_ev.distinguish_since(frontier);
+                                    // ctx.db.ea_v.distinguish_since(frontier);
+                                    // ctx.db.av_e.distinguish_since(frontier);
                                 }
                             },
                             Request::Register { query_name, plan, mut rules } => {
