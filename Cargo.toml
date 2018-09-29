@@ -1,5 +1,5 @@
 [package]
-name = "declarative_server"
+name = "declarative_dataflow"
 version = "0.1.0"
 authors = ["Frank McSherry <fmcsherry@me.com>", "Nikolas Göbel <me@nikolasgoebel.com>"]
 

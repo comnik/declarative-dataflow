@@ -56,7 +56,7 @@ version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
-name = "declarative_server"
+name = "declarative_dataflow"
 version = "0.1.0"
 dependencies = [
  "abomonation 0.7.0 (registry+https://github.com/rust-lang/crates.io-index)",

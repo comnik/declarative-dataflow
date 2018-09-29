@@ -1,6 +1,6 @@
 extern crate timely;
 extern crate differential_dataflow;
-extern crate declarative_server;
+extern crate declarative_dataflow;
 extern crate serde_json;
 extern crate mio;
 extern crate slab;
@@ -39,7 +39,7 @@ use slab::Slab;
 
 use ws::connection::{Connection, ConnEvent};
 
-use declarative_server::{Context, Plan, Rule, Entity, Attribute, Value, Datom, setup_db, register};
+use declarative_dataflow::{Context, Plan, Rule, Entity, Attribute, Value, Datom, setup_db, implement};
 
 // mod sequencer;
 // use sequencer::{Sequencer};
