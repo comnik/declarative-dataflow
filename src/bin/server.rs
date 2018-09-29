@@ -379,8 +379,13 @@ fn main() {
                         match req {
                             Request::Transact { tx, tx_data } => {
 
-                                for TxData(op, e, a, v) in tx_data {
-                                    ctx.input_handle.update(Datom(e, a, v), op);
+                                if command.owner == worker.index() {
+
+                                    // only the owner should actually introduce new inputs
+
+                                    for TxData(op, e, a, v) in tx_data {
+                                        ctx.input_handle.update(Datom(e, a, v), op);
+                                    }
                                 }
 
                                 let next_tx = match tx {
