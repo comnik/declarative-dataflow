@@ -442,7 +442,7 @@ fn main() {
                                         }
                                     }
 
-                                    rel_map.get_mut(&query_name).unwrap().import(scope)
+                                    ctx.queries.get_mut(&query_name).unwrap().import(scope)
                                         .as_collection(|tuple,_| tuple.clone())
                                         .inner
                                         .map(|x| Out(x.0.clone(), x.2))
