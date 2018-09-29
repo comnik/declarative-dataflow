@@ -122,16 +122,13 @@ fn main() {
             Context { db, input_handle, queries: HashMap::new(), }
         });
 
-        if config.enable_history == false {
-
-            // decline the capability for that trace handle to subset
-            // its view of the data
-            
-            ctx.db.e_av.distinguish_since(&[]);
-            ctx.db.a_ev.distinguish_since(&[]);
-            ctx.db.ea_v.distinguish_since(&[]);
-            ctx.db.av_e.distinguish_since(&[]);
-        }
+        // decline the capability for that trace handle to subset
+        // its view of the data
+        
+        ctx.db.e_av.distinguish_since(&[]);
+        ctx.db.a_ev.distinguish_since(&[]);
+        ctx.db.ea_v.distinguish_since(&[]);
+        ctx.db.av_e.distinguish_since(&[]);
 
         // A probe for the transaction id time domain.
         let mut probe = ProbeHandle::new();
@@ -450,7 +447,7 @@ fn main() {
                                 worker.dataflow::<usize, _, _>(|scope| {
 
                                     rules.push(Rule { name: query_name.clone(), plan: plan });
-                                    let mut rel_map = register(scope, &mut ctx, rules, vec![query_name.clone()], &mut probe);
+                                    let mut rel_map = implement(rules, vec![query_name.clone()], scope, &mut ctx, &mut probe);
                                     for (name, trace) in rel_map.drain() {
                                         if ctx.queries.contains_key(&name) {
                                             panic!("Attempted to re-register a named relation");
@@ -485,7 +482,7 @@ fn main() {
 
                                 worker.dataflow::<usize, _, _>(|scope| {
 
-                                    let rel_map = register(scope, &mut ctx, rules, publish, &mut probe);
+                                    let rel_map = implement(rules, publish, scope, &mut ctx, &mut probe);
                                     for (name, trace) in rel_map.into_iter() {
                                         if ctx.queries.contains_key(&name) {
                                             panic!("Attempted to re-register a named relation");

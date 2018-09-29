@@ -221,7 +221,7 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
 /// Takes a query plan and turns it into a differential dataflow. The
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
-fn implement<A: Allocate, T: Timestamp+Lattice>(
+pub fn implement<A: Allocate, T: Timestamp+Lattice>(
     mut rules: Vec<Rule>,
     publish: Vec<String>,
     scope: &mut Child<Worker<A>, T>,
@@ -295,10 +295,6 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
     })
 }
 
-//
-// PUBLIC API
-//
-
 /// Create a new DB instance and interactive session.
 pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
     let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
@@ -310,22 +306,4 @@ pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, 
     };
 
     (input_handle, db)
-}
-
-/// Synthesizes a query plan and sets up the resulting collection to
-/// be available via a globally unique name.
-pub fn register<A: Allocate, T: Timestamp+Lattice>(
-    scope: &mut Child<Worker<A>, T>,
-    ctx: &mut Context<T>,
-    rules: Vec<Rule>,
-    publish: Vec<String>,
-    probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
-) -> HashMap<String, RelationHandle<T>> {
-
-    let result_map = implement(rules, publish, scope, ctx, probe);
-
-    // @TODO store trace somewhere for re-use from other queries later
-    // queries.insert(name.clone(), output_collection.arrange_by_self().trace);
-
-    result_map
 }
