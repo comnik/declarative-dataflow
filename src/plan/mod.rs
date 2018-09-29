@@ -100,34 +100,34 @@ impl Implementable for Plan {
             },
             &Plan::PredExpr(ref pred_expr)  => pred_expr.implement(db, nested, relation_map, queries),
             &Plan::Lookup(e, a, sym1)       => {
-                let tuple = (vec![Value::Eid(e), Value::Attribute(a)], Default::default(), 1);
+                let tuple = ((e, a), Default::default(), 1);
                 let ea_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
                 let tuples = db.ea_v.enter(nested)
-                    .join_core(&ea_in, |_,tuple,_| Some(tuple.clone()));
+                    .join_core(&ea_in, |_,tuple,()| Some(vec![tuple.clone()]));
 
                 SimpleRelation { symbols: vec![sym1], tuples }
             },
             &Plan::Entity(e, sym1, sym2)    => {
-                let tuple = (vec![Value::Eid(e)], Default::default(), 1);
+                let tuple = (e, Default::default(), 1);
                 let e_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
                 let tuples = db.e_av.enter(nested)
-                    .join_core(&e_in, |_,tuple,_| Some(tuple.clone()));
+                    .join_core(&e_in, |_,(a,v),()| Some(vec![Value::Attribute(a.clone()), v.clone()]));
 
                 SimpleRelation { symbols: vec![sym1, sym2], tuples }
             },
             &Plan::HasAttr(sym1, a, sym2)   => {
-                let tuple = (vec![Value::Attribute(a)], Default::default(), 1);
+                let tuple = (a, Default::default(), 1);
                 let a_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
                 let tuples = db.a_ev.enter(nested)
-                    .join_core(&a_in, |_,tuple,_| Some(tuple.clone()));
+                    .join_core(&a_in, |_,(e,v),()| Some(vec![Value::Eid(e.clone()), v.clone()]));
 
                 SimpleRelation { symbols: vec![sym1, sym2], tuples }
             },
             &Plan::Filter(sym1, a, ref v)   => {
-                let tuple = (vec![Value::Attribute(a), v.clone()], Default::default(), 1);
+                let tuple = ((a, v.clone()), Default::default(), 1);
                 let av_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
                 let tuples = db.av_e.enter(nested)
-                    .join_core(&av_in, |_,tuple,_| Some(tuple.clone()));
+                    .join_core(&av_in, |_,e,_| Some(vec![Value::Eid(e.clone())]));
 
                 SimpleRelation { symbols: vec![sym1], tuples }
             },

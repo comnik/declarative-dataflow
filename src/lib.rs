@@ -88,22 +88,22 @@ type RelationMap<'a, G> = HashMap<String, Variable<'a, G, Vec<Value>, u64, isize
 /// need access to the common data.
 pub struct DB<T: Timestamp+Lattice> {
     /// Indexed by entity.
-    pub e_av: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    pub e_av: TraceValHandle<Entity, (Attribute, Value), Product<RootTimestamp, T>, isize>,
     /// Indexed by attribute.
-    pub a_ev: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    pub a_ev: TraceValHandle<Attribute, (Entity, Value), Product<RootTimestamp, T>, isize>,
     /// Indexed by (entity, attribute).
-    pub ea_v: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    pub ea_v: TraceValHandle<(Entity, Attribute), Value, Product<RootTimestamp, T>, isize>,
     /// Indexed by (attribute, value).
-    pub av_e: TraceValHandle<Vec<Value>, Vec<Value>, Product<RootTimestamp, T>, isize>,
+    pub av_e: TraceValHandle<(Attribute, Value), Entity, Product<RootTimestamp, T>, isize>,
 }
 
 /// Live arrangements.
 pub struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
     // Imported traces
-    e_av: Arrange<G, Vec<Value>, Vec<Value>, isize>,
-    a_ev: Arrange<G, Vec<Value>, Vec<Value>, isize>,
-    ea_v: Arrange<G, Vec<Value>, Vec<Value>, isize>,
-    av_e: Arrange<G, Vec<Value>, Vec<Value>, isize>,
+    e_av: Arrange<G, Entity, (Attribute, Value), isize>,
+    a_ev: Arrange<G, Attribute, (Entity, Value), isize>,
+    ea_v: Arrange<G, (Entity, Attribute), Value, isize>,
+    av_e: Arrange<G, (Attribute, Value), Entity, isize>,
 }
 
 // @TODO move input_handle into server, get rid of all this and use DB
@@ -303,10 +303,10 @@ fn implement<A: Allocate, T: Timestamp+Lattice>(
 pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
     let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
     let db = DB {
-        e_av: datoms.map(|Datom(e, a, v)| (vec![Value::Eid(e)], vec![Value::Attribute(a), v])).arrange_by_key().trace,
-        a_ev: datoms.map(|Datom(e, a, v)| (vec![Value::Attribute(a)], vec![Value::Eid(e), v])).arrange_by_key().trace,
-        ea_v: datoms.map(|Datom(e, a, v)| (vec![Value::Eid(e), Value::Attribute(a)], vec![v])).arrange_by_key().trace,
-        av_e: datoms.map(|Datom(e, a, v)| (vec![Value::Attribute(a), v], vec![Value::Eid(e)])).arrange_by_key().trace,
+        e_av: datoms.map(|Datom(e, a, v)| (e, (a, v))).arrange_by_key().trace,
+        a_ev: datoms.map(|Datom(e, a, v)| (a, (e, v))).arrange_by_key().trace,
+        ea_v: datoms.map(|Datom(e, a, v)| ((e, a), v)).arrange_by_key().trace,
+        av_e: datoms.map(|Datom(e, a, v)| ((a, v), e)).arrange_by_key().trace,
     };
 
     (input_handle, db)
