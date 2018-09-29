@@ -10,16 +10,16 @@ use differential_dataflow::lattice::Lattice;
 use {ImplContext, RelationMap, QueryMap, SimpleRelation, Relation};
 use {Value, Var, Entity, Attribute};
 
-pub mod predicate;
+pub mod filter;
 pub mod aggregate;
 pub mod project;
 pub mod union;
 pub mod join;
 pub mod antijoin;
 
-pub use self::predicate::PredExpr;
+pub use self::filter::Filter;
 pub use self::aggregate::Aggregate;
-pub use self::project::Projection;
+pub use self::project::Project;
 pub use self::union::Union;
 pub use self::join::Join;
 pub use self::antijoin::Antijoin;
@@ -41,7 +41,7 @@ pub trait Implementable {
 #[derive(Deserialize, Clone, Debug)]
 pub enum Plan {
     /// Projection
-    Project(Projection<Plan>),
+    Project(Project<Plan>),
     /// Aggregation
     Aggregate(Aggregate<Plan>),
     /// Union
@@ -53,15 +53,15 @@ pub enum Plan {
     /// Negation
     Not(Box<Plan>),
     /// Filters bindings by one of the built-in predicates
-    PredExpr(PredExpr<Plan>),
+    Filter(Filter<Plan>),
     /// Data pattern of the form [e a ?v]
-    Lookup(Entity, Attribute, Var),
+    MatchEA(Entity, Attribute, Var),
     /// Data pattern of the form [e ?a ?v]
-    Entity(Entity, Var, Var),
+    MatchE(Entity, Var, Var),
     /// Data pattern of the form [?e a ?v]
-    HasAttr(Var, Attribute, Var),
+    MatchA(Var, Attribute, Var),
     /// Data pattern of the form [?e a v]
-    Filter(Var, Attribute, Value),
+    MatchAV(Var, Attribute, Value),
     /// Sources data from a query-local relation
     RuleExpr(String, Vec<Var>),
     /// Sources data from a published relation
@@ -98,8 +98,8 @@ impl Implementable for Plan {
                     tuples: rel.tuples().negate()
                 }
             },
-            &Plan::PredExpr(ref pred_expr)  => pred_expr.implement(db, nested, relation_map, queries),
-            &Plan::Lookup(e, a, sym1)       => {
+            &Plan::Filter(ref filter)       => filter.implement(db, nested, relation_map, queries),
+            &Plan::MatchEA(e, a, sym1)      => {
                 let tuple = ((e, a), Default::default(), 1);
                 let ea_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
                 let tuples = db.ea_v.enter(nested)
@@ -107,7 +107,7 @@ impl Implementable for Plan {
 
                 SimpleRelation { symbols: vec![sym1], tuples }
             },
-            &Plan::Entity(e, sym1, sym2)    => {
+            &Plan::MatchE(e, sym1, sym2)    => {
                 let tuple = (e, Default::default(), 1);
                 let e_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
                 let tuples = db.e_av.enter(nested)
@@ -115,7 +115,7 @@ impl Implementable for Plan {
 
                 SimpleRelation { symbols: vec![sym1, sym2], tuples }
             },
-            &Plan::HasAttr(sym1, a, sym2)   => {
+            &Plan::MatchA(sym1, a, sym2)    => {
                 let tuple = (a, Default::default(), 1);
                 let a_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
                 let tuples = db.a_ev.enter(nested)
@@ -123,7 +123,7 @@ impl Implementable for Plan {
 
                 SimpleRelation { symbols: vec![sym1, sym2], tuples }
             },
-            &Plan::Filter(sym1, a, ref v)   => {
+            &Plan::MatchAV(sym1, a, ref v)  => {
                 let tuple = ((a, v.clone()), Default::default(), 1);
                 let av_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
                 let tuples = db.av_e.enter(nested)

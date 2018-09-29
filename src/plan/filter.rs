@@ -30,7 +30,7 @@ pub enum Predicate {
 
 /// A predicate expression plan stage.
 #[derive(Deserialize, Clone, Debug)]
-pub struct PredExpr<P: Implementable> {
+pub struct Filter<P: Implementable> {
     /// Logical predicate to apply.
     pub predicate: Predicate,
     /// TODO
@@ -39,7 +39,7 @@ pub struct PredExpr<P: Implementable> {
     pub plan: Box<P>
 }
 
-impl<P: Implementable> Implementable for PredExpr<P> {
+impl<P: Implementable> Implementable for Filter<P> {
 
     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,

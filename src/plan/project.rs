@@ -13,14 +13,14 @@ use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 
 /// A predicate expression plan stage.
 #[derive(Deserialize, Clone, Debug)]
-pub struct Projection<P: Implementable> {
+pub struct Project<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
     /// Plan for the data source.
     pub plan: Box<P>
 }
 
-impl<P: Implementable> Implementable for Projection<P> {
+impl<P: Implementable> Implementable for Project<P> {
 
     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
