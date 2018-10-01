@@ -33,10 +33,10 @@ pub enum Predicate {
 /// binds the argument symbols.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Filter<P: Implementable> {
-    /// Logical predicate to apply.
-    pub predicate: Predicate,
     /// TODO
     pub variables: Vec<Var>,
+    /// Logical predicate to apply.
+    pub predicate: Predicate,
     /// Plan for the data source.
     pub plan: Box<P>
 }

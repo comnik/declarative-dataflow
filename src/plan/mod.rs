@@ -63,9 +63,9 @@ pub enum Plan {
     /// Data pattern of the form [?e a v]
     MatchAV(Var, Attribute, Value),
     /// Sources data from a query-local relation
-    RuleExpr(String, Vec<Var>),
+    RuleExpr(Vec<Var>, String),
     /// Sources data from a published relation
-    NameExpr(String, Vec<Var>),
+    NameExpr(Vec<Var>, String),
 }
 
 
@@ -131,7 +131,7 @@ impl Implementable for Plan {
 
                 SimpleRelation { symbols: vec![sym1], tuples }
             },
-            &Plan::RuleExpr(ref name, ref syms) => {
+            &Plan::RuleExpr(ref syms, ref name) => {
                 match relation_map.get(name) {
                     None => panic!("{:?} not in relation map", name),
                     Some(named) => {
@@ -142,7 +142,7 @@ impl Implementable for Plan {
                     }
                 }
             }
-            &Plan::NameExpr(ref name, ref syms) => {
+            &Plan::NameExpr(ref syms, ref name) => {
                 match queries.get_mut(name) {
                     None => panic!("{:?} not in query map", name),
                     Some(named) => {

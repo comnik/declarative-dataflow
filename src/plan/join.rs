@@ -17,12 +17,12 @@ use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
 /// sources.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Join<P1: Implementable, P2: Implementable> {
+    /// TODO
+    pub variables: Vec<Var>,
     /// Plan for the left input.
     pub left_plan: Box<P1>,
     /// Plan for the right input.
     pub right_plan: Box<P2>,
-    /// TODO
-    pub variables: Vec<Var>,
 }
 
 impl<P1: Implementable, P2: Implementable> Implementable for Join<P1,P2> {

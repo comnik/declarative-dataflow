@@ -28,12 +28,12 @@ pub enum AggregationFn {
 /// bindings for the specified symbols. Very WIP.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Aggregate<P: Implementable> {
-    /// Logical predicate to apply.
-    pub aggregation_fn: AggregationFn,
     /// TODO
     pub variables: Vec<Var>,
     /// Plan for the data source.
-    pub plan: Box<P>
+    pub plan: Box<P>,
+    /// Logical predicate to apply.
+    pub aggregation_fn: AggregationFn,
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
