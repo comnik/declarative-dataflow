@@ -296,7 +296,7 @@ pub fn implement<A: Allocate, T: Timestamp+Lattice>(
 }
 
 /// Create a new DB instance and interactive session.
-pub fn setup_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
+pub fn create_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
     let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
     let db = DB {
         e_av: datoms.map(|Datom(e, a, v)| (e, (a, v))).arrange_by_key().trace,

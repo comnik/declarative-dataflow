@@ -24,51 +24,33 @@ The server executable accepts two sets of arguments separated by `--`,
 one for [configuring timely dataflow](https://github.com/frankmcsherry/timely-dataflow)
 and the other for configuring the server.
 
-Server configuration:
+## Configuration
 
-    OPTION       | DESCRIPTION                | DEFAULT
-    --port       | port to listen at          | 6262
-    --enable-cli | accept commands via stdin? | false
+    OPTION           | DESCRIPTION                | DEFAULT
+    --port           | port to listen at          | 6262
+    --enable-cli     | accept commands via stdin? | false
+    --enable-history | keep full traces           | false
 
 Logging at a specific level can be enabled by setting the `RUST_LOG`
-environment variable to
-
-    RUST_LOG=server=info
+environment variable to `RUST_LOG=server=info`.
 
 ## Documentation
 
-Read the [high-level motivation for this project](https://www.nikolasgoebel.com/2018/09/13/incremental-datalog.html).
+Read the [high-level motivation for this
+project](https://www.nikolasgoebel.com/2018/09/13/incremental-datalog.html).
 
-Architectural decisions are documented in the [docs/adr/](docs/adr/)
-sub-directory.
+Important architectural decisions are documented in the
+[docs/adr/](docs/adr/) sub-directory.
 
-The synthesizer supports the following operators:
+Documentation for this package can be built via `cargo doc --no-deps`
+and viewed in a browser via `cargo doc --no-deps --open`. Please refer
+to `declarative_dataflow::plan::Plan` for documentation on the
+available operators. The [tests/](tests/) directory contains usage
+examples.
 
-```
-Plan := Project Plan Var
-        | 'Union Var Plan+
-        | 'Join Plan Plan Var
-        | 'Not Plan
-        | 'Lookup Entity Attribute Var
-        | 'Entity Entity Var Var
-        | 'HasAttr Var Attribute Var
-        | 'Filter Var Attribute Value
-        | 'RuleExpr String Var+
-```
+## Front ends
 
-The following sample plan is intended to be an examples of what a
-non-trivial query plan looks like. It also illustrates that query
-plans are cumbersome to write manually (i.e. without a parser like
-[clj-3df](https://github.com/comnik/clj-3df)), because symbols and
-attributes are encoded by numerical ids.
-
-``` json
-{"Union": [[0, 1]
-           [{"HasAttr": [0, 600, 1]}
-            {"Join": [{"HasAttr": [2, 400, 1]}
-            {"RuleExpr": ["propagate", [0, 2]]} 2]}]]}
-```
-
-Please also refer to the [clj-3df
-repository](https://github.com/comnik/clj-3df) for a roadmap of
-planned features.
+Query plans are rather cumbersome to write manually and do not map to
+any interesting, higher-level semantics. Currently we provide a
+[Datalog front end](https://github.com/comnik/clj-3df) written in
+Clojure.

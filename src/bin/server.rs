@@ -39,7 +39,7 @@ use slab::Slab;
 
 use ws::connection::{Connection, ConnEvent};
 
-use declarative_dataflow::{Context, Plan, Rule, Entity, Attribute, Value, Datom, setup_db, implement};
+use declarative_dataflow::{Context, Plan, Rule, Entity, Attribute, Value, Datom, create_db, implement};
 
 // mod sequencer;
 // use sequencer::{Sequencer};
@@ -117,7 +117,7 @@ fn main() {
 
         // setup interpreter context
         let mut ctx = worker.dataflow(|scope| {
-            let (input_handle, db) = setup_db(scope);
+            let (input_handle, db) = create_db(scope);
 
             Context { db, input_handle, queries: HashMap::new(), }
         });
