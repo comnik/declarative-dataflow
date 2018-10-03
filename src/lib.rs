@@ -36,6 +36,8 @@ use differential_dataflow::operators::iterate::Variable;
 pub mod plan;
 pub use plan::{Plan, Implementable};
 
+pub mod sources;
+
 //
 // TYPES
 //

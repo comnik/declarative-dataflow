@@ -564,47 +564,6 @@ fn main() {
 //     .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
 //     .probe();
 
-// fn handle_load_data(filename: String, max_lines: usize) {
-//     let load_timer = ::std::time::Instant::now();
-//     let peers = worker.peers();
-//     let file = BufReader::new(File::open(filename).unwrap());
-//     let mut line_count: usize = 0;
-
-//     let attr_node: Attribute = 100;
-//     let attr_edge: Attribute = 200;
-
-//     for readline in file.lines() {
-//         let line = readline.ok().expect("read error");
-
-//         if line_count > max_lines { break; };
-//         line_count += 1;
-
-//         if !line.starts_with('#') && line.len() > 0 {
-//             let mut elts = line[..].split_whitespace();
-//             let src: u64 = elts.next().unwrap().parse().ok().expect("malformed src");
-
-//             if (src as usize) % peers == index {
-//                 let dst: u64 = elts.next().unwrap().parse().ok().expect("malformed dst");
-//                 let typ: &str = elts.next().unwrap();
-//                 match typ {
-//                     "n" => { ctx.input_handle.update(Datom(src, attr_node, Value::Eid(dst)), 1); },
-//                     "e" => { ctx.input_handle.update(Datom(src, attr_edge, Value::Eid(dst)), 1); },
-//                     unk => { panic!("unknown type: {}", unk)},
-//                 }
-//             }
-//         }
-//     }
-
-//     if index == 0 {
-//         println!("{:?}:\tData loaded", load_timer.elapsed());
-//         println!("{:?}", ::std::time::Instant::now());
-//     }
-
-//     next_tx = next_tx + 1;
-//     ctx.input_handle.advance_to(next_tx);
-//     ctx.input_handle.flush();
-// }
-
 // fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
 
 //     let send_handle = &command_channel;
