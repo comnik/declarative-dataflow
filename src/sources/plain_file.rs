@@ -8,6 +8,8 @@ use std::path::{Path};
 
 use timely::dataflow::{Scope, Stream};
 use timely::dataflow::operators::generic;
+use timely::progress::timestamp::{RootTimestamp};
+use timely::progress::nested::product::{Product};
 
 use {Value};
 
@@ -22,7 +24,7 @@ pub struct PlainFile {
 
 impl Sourceable for PlainFile {
 
-    fn source<G: Scope>(&self, scope: &G) -> Stream<G, (Vec<Value>, usize, isize)> {
+    fn source<G: Scope>(&self, scope: &G) -> Stream<G, (Vec<Value>, Product<RootTimestamp, usize>, isize)> {
 
         let filename = self.path.clone();
         
@@ -50,7 +52,7 @@ impl Sourceable for PlainFile {
                             let v: i64 = elts.next().unwrap().parse().ok().expect("malformed value");
 
                             // if (datum_idx % num_workers == worker_index) && line.len() > 0 {
-                            output.session(&cap).give((vec![Value::Number(e), Value::Number(v)], 0, 1));
+                            output.session(&cap).give((vec![Value::Number(e), Value::Number(v)], RootTimestamp::new(0), 1));
                             // }
                             
                             // datum_idx += 1;
