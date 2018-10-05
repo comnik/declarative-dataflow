@@ -14,7 +14,7 @@ use timely::worker::{Worker};
 use differential_dataflow::{AsCollection};
 use differential_dataflow::lattice::{Lattice};
 
-use {Value, Implementable, SimpleRelation, QueryMap, RelationMap, ImplContext};
+use {Value, Implementable, SimpleRelation, QueryMap, RelationMap};
 
 pub mod plain_file;
 pub use self::plain_file::{PlainFile};
@@ -49,10 +49,9 @@ impl Sourceable for Source {
 // impl Implementable for Source {
 //     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
 //         &self,
-//         db: &ImplContext<Child<'a, Worker<A>, T>>,
 //         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-//         relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-//         queries: &mut QueryMap<T, isize>
+//         local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
+//         global_arrangements: &mut QueryMap<T, isize>
 //     ) -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 //         SimpleRelation {
 //             symbols: vec![], // @TODO

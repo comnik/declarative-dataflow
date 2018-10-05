@@ -45,7 +45,7 @@ pub mod sources;
 /// A unique entity identifier.
 pub type Entity = u64;
 /// A unique attribute identifier.
-pub type Attribute = u32;
+pub type Attribute = String; // u32
 
 /// Possible data values.
 ///
@@ -99,14 +99,14 @@ pub struct DB<T: Timestamp+Lattice> {
     pub av_e: TraceValHandle<(Attribute, Value), Entity, Product<RootTimestamp, T>, isize>,
 }
 
-/// Live arrangements.
-pub struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
-    // Imported traces
-    e_av: Arrange<G, Entity, (Attribute, Value), isize>,
-    a_ev: Arrange<G, Attribute, (Entity, Value), isize>,
-    ea_v: Arrange<G, (Entity, Attribute), Value, isize>,
-    av_e: Arrange<G, (Attribute, Value), Entity, isize>,
-}
+// /// Live arrangements.
+// pub struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
+//     // Imported traces
+//     e_av: Arrange<G, Entity, (Attribute, Value), isize>,
+//     a_ev: Arrange<G, Attribute, (Entity, Value), isize>,
+//     ea_v: Arrange<G, (Entity, Attribute), Value, isize>,
+//     av_e: Arrange<G, (Attribute, Value), Entity, isize>,
+// }
 
 // @TODO move input_handle into server, get rid of all this and use DB
 // struct directly
@@ -231,20 +231,20 @@ pub fn implement<A: Allocate, T: Timestamp+Lattice>(
     probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
 ) -> HashMap<String, RelationHandle<T>> {
 
-    let db = &mut ctx.db;
-    let queries = &mut ctx.queries;
+    // let db = &mut ctx.db;
+    let global_arrangements = &mut ctx.queries;
 
-    // @TODO Only import those we need for the query?
-    let impl_ctx: ImplContext<Child<Worker<A>, T>> = ImplContext {
-        e_av: db.e_av.import(scope),
-        a_ev: db.a_ev.import(scope),
-        ea_v: db.ea_v.import(scope),
-        av_e: db.av_e.import(scope),
-    };
+    // // @TODO Only import those we need for the query?
+    // let impl_ctx: ImplContext<Child<Worker<A>, T>> = ImplContext {
+    //     e_av: db.e_av.import(scope),
+    //     a_ev: db.a_ev.import(scope),
+    //     ea_v: db.ea_v.import(scope),
+    //     av_e: db.av_e.import(scope),
+    // };
 
     scope.scoped(|nested| {
 
-        let mut relation_map = RelationMap::new();
+        let mut local_arrangements = RelationMap::new();
         let mut result_map = QueryMap::new();
 
         // Step 0: Canonicalize, check uniqueness of bindings.
@@ -257,12 +257,12 @@ pub fn implement<A: Allocate, T: Timestamp+Lattice>(
 
         // Step 1: Create new recursive variables for each rule.
         for rule in rules.iter() {
-            relation_map.insert(rule.name.clone(), Variable::new(nested, u64::max_value(), 1));
+            local_arrangements.insert(rule.name.clone(), Variable::new(nested, u64::max_value(), 1));
         }
 
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
-            if let Some(relation) = relation_map.get(&name) {
+            if let Some(relation) = local_arrangements.get(&name) {
                 let trace =
                 relation
                     .leave()
@@ -281,14 +281,14 @@ pub fn implement<A: Allocate, T: Timestamp+Lattice>(
         let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
             println!("Planning {:?}", rule.name);
-            executions.push(rule.plan.implement(&impl_ctx, nested, &relation_map, queries));
+            executions.push(rule.plan.implement(nested, &local_arrangements, global_arrangements));
         }
 
         // Step 4: complete named relations in a specific order (sorted by name).
         for (rule, execution) in rules.iter().zip(executions.drain(..)) {
-            relation_map
+            local_arrangements
                 .remove(&rule.name)
-                .expect("Rule should be in relation_map, but isn't")
+                .expect("Rule should be in local_arrangements, but isn't")
                 .set(&execution.tuples().distinct());
         }
 

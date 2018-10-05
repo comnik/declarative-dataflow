@@ -10,7 +10,7 @@ use differential_dataflow::operators::{Group, Count};
 
 use Relation;
 use plan::Implementable;
-use {ImplContext, RelationMap, QueryMap, SimpleRelation, Value, Var};
+use {RelationMap, QueryMap, SimpleRelation, Value, Var};
 
 /// Permitted aggregation function.
 #[derive(Deserialize, Clone, Debug)]
@@ -40,14 +40,13 @@ impl<P: Implementable> Implementable for Aggregate<P> {
 
     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
-        db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-        relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-        queries: &mut QueryMap<T, isize>
+        local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
+        global_arrangements: &mut QueryMap<T, isize>
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
-        let relation = self.plan.implement(db, nested, relation_map, queries);
+        let relation = self.plan.implement(nested, local_arrangements, global_arrangements);
         let tuples = relation.tuples_by_symbols(&self.variables);
 
         match self.aggregation_fn {

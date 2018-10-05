@@ -10,7 +10,7 @@ use differential_dataflow::operators::Join as JoinMap;
 
 use Relation;
 use plan::Implementable;
-use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
+use {RelationMap, QueryMap, SimpleRelation, Var};
 
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
@@ -29,15 +29,14 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1,P2> {
 
     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
-        db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-        relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-        queries: &mut QueryMap<T, isize>
+        local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
+        global_arrangements: &mut QueryMap<T, isize>
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
-        let left = self.left_plan.implement(db, nested, relation_map, queries);
-        let right = self.right_plan.implement(db, nested, relation_map, queries);
+        let left = self.left_plan.implement(nested, local_arrangements, global_arrangements);
+        let right = self.right_plan.implement(nested, local_arrangements, global_arrangements);
 
         // useful for inspecting join inputs
         //.inspect(|&((ref key, ref values), _, _)| { println!("right {:?} {:?}", key, values) })

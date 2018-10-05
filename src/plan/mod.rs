@@ -7,7 +7,7 @@ use timely::worker::Worker;
 
 use differential_dataflow::lattice::Lattice;
 
-use {ImplContext, RelationMap, QueryMap, SimpleRelation, Relation};
+use {RelationMap, QueryMap, SimpleRelation, Relation};
 use {Value, Var, Entity, Attribute};
 
 pub mod filter;
@@ -29,10 +29,9 @@ pub trait Implementable {
     /// Implements the type as a simple relation.
     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
-        db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-        relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-        queries: &mut QueryMap<T, isize>
+        local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
+        global_arrangements: &mut QueryMap<T, isize>
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>>;
 }
@@ -54,12 +53,12 @@ pub enum Plan {
     Negate(Box<Plan>),
     /// Filters bindings by one of the built-in predicates
     Filter(Filter<Plan>),
-    /// Data pattern of the form [e a ?v]
-    MatchEA(Entity, Attribute, Var),
-    /// Data pattern of the form [e ?a ?v]
-    MatchE(Entity, Var, Var),
+    // /// Data pattern of the form [e ?a ?v]
+    // MatchE(Entity, Var, Var),
     /// Data pattern of the form [?e a ?v]
     MatchA(Var, Attribute, Var),
+    /// Data pattern of the form [e a ?v]
+    MatchEA(Entity, Attribute, Var),
     /// Data pattern of the form [?e a v]
     MatchAV(Var, Attribute, Value),
     /// Sources data from a query-local relation
@@ -72,67 +71,68 @@ pub enum Plan {
 impl Implementable for Plan {
     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
-        db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-        relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-        queries: &mut QueryMap<T, isize>
+        local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
+        global_arrangements: &mut QueryMap<T, isize>
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
-        use timely::dataflow::operators::ToStream;
         use differential_dataflow::AsCollection;
-        use differential_dataflow::operators::arrange::ArrangeBySelf;
-        use differential_dataflow::operators::JoinCore;
+        // use timely::dataflow::operators::ToStream;
+        // use differential_dataflow::operators::arrange::ArrangeBySelf;
+        // use differential_dataflow::operators::JoinCore;
 
         match self {
-            &Plan::Project(ref projection)  => projection.implement(db, nested, relation_map, queries),
-            &Plan::Aggregate(ref aggregate) => aggregate.implement(db, nested, relation_map, queries),
-            &Plan::Union(ref union)         => union.implement(db, nested, relation_map, queries),
-            // @TODO specialized join for join on single variable
-            &Plan::Join(ref join)           => join.implement(db, nested, relation_map, queries),
-            &Plan::Antijoin(ref antijoin)   => antijoin.implement(db, nested, relation_map, queries),
+            &Plan::Project(ref projection)  => projection.implement(nested, local_arrangements, global_arrangements),
+            &Plan::Aggregate(ref aggregate) => aggregate.implement(nested, local_arrangements, global_arrangements),
+            &Plan::Union(ref union)         => union.implement(nested, local_arrangements, global_arrangements),
+            &Plan::Join(ref join)           => join.implement(nested, local_arrangements, global_arrangements),
+            &Plan::Antijoin(ref antijoin)   => antijoin.implement(nested, local_arrangements, global_arrangements),
             &Plan::Negate(ref plan)         => {
-                let mut rel = plan.implement(db, nested, relation_map, queries);
+                let mut rel = plan.implement(nested, local_arrangements, global_arrangements);
                 SimpleRelation {
                     symbols: rel.symbols().to_vec(),
                     tuples: rel.tuples().negate()
                 }
             },
-            &Plan::Filter(ref filter)       => filter.implement(db, nested, relation_map, queries),
-            &Plan::MatchEA(e, a, sym1)      => {
-                let tuple = ((e, a), Default::default(), 1);
-                let ea_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
-                let tuples = db.ea_v.enter(nested)
-                    .join_core(&ea_in, |_,tuple,()| Some(vec![tuple.clone()]));
+            &Plan::Filter(ref filter)       => filter.implement(nested, local_arrangements, global_arrangements),
+            &Plan::MatchA(sym1, ref a, sym2)    => {
+                let tuples = match global_arrangements.get_mut(a) {
+                    None => panic!("attribute {:?} does not exist", a),
+                    Some(named) => {
+                        named.import(&nested.parent).enter(nested).as_collection(|tuple,_| tuple.clone())
+                    }
+                };
 
+                SimpleRelation { symbols: vec![sym1, sym2], tuples }
+            },
+            &Plan::MatchEA(e, ref a, sym1)      => {
+                let tuples = match global_arrangements.get_mut(a) {
+                    None => panic!("attribute {:?} does not exist", a),
+                    Some(named) => {
+                        named.import(&nested.parent).enter(nested)
+                            .as_collection(|tuple,_| tuple.clone())
+                            .filter(move |tuple| tuple[0] == Value::Eid(e))
+                    }
+                };
+                
                 SimpleRelation { symbols: vec![sym1], tuples }
             },
-            &Plan::MatchE(e, sym1, sym2)    => {
-                let tuple = (e, Default::default(), 1);
-                let e_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
-                let tuples = db.e_av.enter(nested)
-                    .join_core(&e_in, |_,(a,v),()| Some(vec![Value::Attribute(a.clone()), v.clone()]));
-
-                SimpleRelation { symbols: vec![sym1, sym2], tuples }
-            },
-            &Plan::MatchA(sym1, a, sym2)    => {
-                let tuple = (a, Default::default(), 1);
-                let a_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
-                let tuples = db.a_ev.enter(nested)
-                    .join_core(&a_in, |_,(e,v),()| Some(vec![Value::Eid(e.clone()), v.clone()]));
-
-                SimpleRelation { symbols: vec![sym1, sym2], tuples }
-            },
-            &Plan::MatchAV(sym1, a, ref v)  => {
-                let tuple = ((a, v.clone()), Default::default(), 1);
-                let av_in = Some(tuple).to_stream(nested).as_collection().arrange_by_self();
-                let tuples = db.av_e.enter(nested)
-                    .join_core(&av_in, |_,e,_| Some(vec![Value::Eid(e.clone())]));
+            &Plan::MatchAV(sym1, ref a, ref v)  => {
+                let tuples = match global_arrangements.get_mut(a) {
+                    None => panic!("attribute {:?} does not exist", a),
+                    Some(named) => {
+                        let v = v.clone();
+                        named.import(&nested.parent).enter(nested)
+                            .as_collection(|tuple,_| tuple.clone())
+                            .filter(move |tuple| tuple[2] == v)
+                    }
+                };
 
                 SimpleRelation { symbols: vec![sym1], tuples }
             },
             &Plan::RuleExpr(ref syms, ref name) => {
-                match relation_map.get(name) {
+                match local_arrangements.get(name) {
                     None => panic!("{:?} not in relation map", name),
                     Some(named) => {
                         SimpleRelation {
@@ -143,7 +143,7 @@ impl Implementable for Plan {
                 }
             }
             &Plan::NameExpr(ref syms, ref name) => {
-                match queries.get_mut(name) {
+                match global_arrangements.get_mut(name) {
                     None => panic!("{:?} not in query map", name),
                     Some(named) => {
                         SimpleRelation {

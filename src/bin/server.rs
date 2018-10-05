@@ -422,13 +422,6 @@ fn main() {
                                         ctx.db.a_ev.advance_by(frontier);
                                         ctx.db.ea_v.advance_by(frontier);
                                         ctx.db.av_e.advance_by(frontier);
-
-                                        // handled once during context setup
-                                        //
-                                        // ctx.db.e_av.distinguish_since(frontier);
-                                        // ctx.db.a_ev.distinguish_since(frontier);
-                                        // ctx.db.ea_v.distinguish_since(frontier);
-                                        // ctx.db.av_e.distinguish_since(frontier);
                                     }
                                 },
                                 Request::Register { rules, publish } => {
@@ -523,13 +516,6 @@ fn main() {
 
     }).unwrap(); // asserts error-free execution
 }
-
-// output for experiments
-// let probe = rel_map.get_mut(&query_name).unwrap().trace.import(scope)
-//     .as_collection(|_,_| ())
-//     .consolidate()
-//     .inspect(move |x| println!("Nodes: {:?} (at {:?})", x.2, ::std::time::Instant::now()))
-//     .probe();
 
 // fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
 

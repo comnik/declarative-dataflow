@@ -10,7 +10,7 @@ use differential_dataflow::operators::Threshold;
 
 use Relation;
 use plan::Implementable;
-use {ImplContext, RelationMap, QueryMap, SimpleRelation, Var};
+use {RelationMap, QueryMap, SimpleRelation, Var};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -27,10 +27,9 @@ impl<P: Implementable> Implementable for Union<P> {
 
     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
         &self,
-        db: &ImplContext<Child<'a, Worker<A>, T>>,
         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-        relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-        queries: &mut QueryMap<T, isize>
+        local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
+        global_arrangements: &mut QueryMap<T, isize>
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
@@ -40,7 +39,7 @@ impl<P: Implementable> Implementable for Union<P> {
         let mut scope = nested.clone();
         let streams =
         self.plans.iter().map(|plan|
-            plan.implement(db, &mut scope, relation_map, queries)
+            plan.implement(&mut scope, local_arrangements, global_arrangements)
                 .tuples_by_symbols(&self.variables)
                 .map(|(key,_vals)| key).inner
         );
