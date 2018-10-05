@@ -107,8 +107,11 @@ fn main() {
         let config = match opts.parse(server_args) {
             Err(err) => panic!(err),
             Ok(matches) => {
+
+                let starting_port = matches.opt_str("port").map(|x| x.parse().unwrap_or(6262)).unwrap_or(6262);
+                
                 Config {
-                    port: matches.opt_str("port").map(|x| x.parse().unwrap_or(6262)).unwrap_or(6262),
+                    port: starting_port + (worker.index() as u16),
                     enable_cli: matches.opt_present("enable-cli"),
                     enable_history: matches.opt_present("enable-history"),
                 }

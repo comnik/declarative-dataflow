@@ -35,6 +35,9 @@ impl Sourceable for PlainFile {
             
                 let mut cap = Some(capability);
 
+                let worker_index = scope.index();
+                let num_workers = scope.peers();
+
                 move |output| {
                     if let Some(cap) = cap.as_mut() {
                         
@@ -42,21 +45,27 @@ impl Sourceable for PlainFile {
                         let file = File::open(&path).unwrap();
                         let reader = BufReader::new(file);
 
-                        // let mut datum_idx = 0;
+                        let mut num_datums_read = 0;
+                        let mut datum_index = 0;
 
                         for readline in reader.lines() {
 
                             let line = readline.ok().expect("read error");
-                            let mut elts = line[..].split_whitespace();
-                            let e: i64 = elts.next().unwrap().parse().ok().expect("malformed key");
-                            let v: i64 = elts.next().unwrap().parse().ok().expect("malformed value");
-
-                            // if (datum_idx % num_workers == worker_index) && line.len() > 0 {
-                            output.session(&cap).give((vec![Value::Number(e), Value::Number(v)], RootTimestamp::new(0), 1));
-                            // }
                             
-                            // datum_idx += 1;
+                            if (datum_index % num_workers == worker_index) && line.len() > 0 {
+
+                                let mut elts = line[..].split_whitespace();
+                                let e: i64 = elts.next().unwrap().parse().ok().expect("malformed key");
+                                let v: i64 = elts.next().unwrap().parse().ok().expect("malformed value");
+
+                                output.session(&cap).give((vec![Value::Number(e), Value::Number(v)], RootTimestamp::new(0), 1));
+                                num_datums_read += 1;
+                            }
+                            
+                            datum_index += 1;
                         }
+
+                        println!("[WORKER {}] read {} out of {} datums", worker_index, num_datums_read, datum_index);
                     }
 
                     cap = None;
