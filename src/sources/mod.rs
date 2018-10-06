@@ -3,18 +3,11 @@
 extern crate timely;
 extern crate differential_dataflow;
 
-use timely::communication::{Allocate};
 use timely::dataflow::{Scope, Stream};
-use timely::dataflow::scopes::{Child};
-use timely::dataflow::operators::{Leave};
-use timely::progress::timestamp::{Timestamp, RootTimestamp};
+use timely::progress::timestamp::{RootTimestamp};
 use timely::progress::nested::product::{Product};
-use timely::worker::{Worker};
 
-use differential_dataflow::{AsCollection};
-use differential_dataflow::lattice::{Lattice};
-
-use {Value, Implementable, SimpleRelation, QueryMap, RelationMap, ImplContext};
+use {Value};
 
 pub mod plain_file;
 pub use self::plain_file::{PlainFile};
@@ -47,12 +40,11 @@ impl Sourceable for Source {
 // Default.
 //
 // impl Implementable for Source {
-//     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
+//     fn implement<'a, 'b, A: Allocate>(
 //         &self,
-//         db: &ImplContext<Child<'a, Worker<A>, T>>,
 //         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-//         relation_map: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-//         queries: &mut QueryMap<T, isize>
+//         local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
+//         global_arrangements: &mut QueryMap<T, isize>
 //     ) -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 //         SimpleRelation {
 //             symbols: vec![], // @TODO
