@@ -18,7 +18,7 @@ use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::{TraceReader};
 use differential_dataflow::operators::arrange::{ArrangeBySelf};
 
-use {QueryMap, Rule, Entity, Attribute, Value, implement};
+use {QueryMap, TraceKeyHandle, Rule, Entity, Attribute, Value, implement};
 use sources::{Source, Sourceable};
 
 /// Server configuration.
@@ -134,6 +134,18 @@ impl Server {
         }
     }
 
+    fn register_global_arrangement(
+        &mut self,
+        name: String,
+        mut trace: TraceKeyHandle<Vec<Value>, Product<RootTimestamp, usize>, isize>
+    ) {
+        // decline the capability for that trace handle to subset its
+        // view of the data
+        trace.distinguish_since(&[]);
+
+        self.global_arrangements.insert(name, trace);
+    }
+
     /// Handle a Transact request.
     pub fn transact(&mut self, req: Transact, owner: usize, worker_index: usize) {
 
@@ -215,11 +227,7 @@ impl Server {
             if self.global_arrangements.contains_key(&name) {
                 panic!("Attempted to re-register a named relation");
             } else {
-                // decline the capability for that trace handle to subset
-                // its view of the data
-                trace.distinguish_since(&[]);
-
-                self.global_arrangements.insert(name, trace);
+                self.register_global_arrangement(name, trace);
             }
         }
     }
@@ -238,13 +246,8 @@ impl Server {
         if self.global_arrangements.contains_key(&name) {
             panic!("Source name clashes with registered relation.");
         } else {
-            let mut trace = datoms.arrange_by_self().trace;
-
-            // decline the capability for that trace handle to subset
-            // its view of the data
-            trace.distinguish_since(&[]);
-            
-            self.global_arrangements.insert(name, trace);
+            let trace = datoms.arrange_by_self().trace;
+            self.register_global_arrangement(name, trace);
         }
     }
 
@@ -261,13 +264,9 @@ impl Server {
             panic!("Input name clashes with existing trace.");
         } else {
             let (handle, tuples) = scope.new_collection::<Vec<Value>, isize>();
-            let mut trace = tuples.arrange_by_self().trace;
-            
-            // decline the capability for that trace handle to subset
-            // its view of the data
-            trace.distinguish_since(&[]);
-            
-            self.global_arrangements.insert(name.clone(), trace);
+            let trace = tuples.arrange_by_self().trace;
+
+            self.register_global_arrangement(name.clone(), trace);
             self.input_handles.insert(name, handle);
         }
     }

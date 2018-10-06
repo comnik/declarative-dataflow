@@ -23,7 +23,6 @@ use std::time::{Instant, Duration};
 
 use getopts::Options;
 
-use timely::dataflow::ProbeHandle;
 use timely::dataflow::operators::{Operator};
 use timely::dataflow::operators::generic::{OutputHandle};
 use timely::synchronization::Sequencer;
