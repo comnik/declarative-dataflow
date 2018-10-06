@@ -15,9 +15,6 @@ extern crate env_logger;
 extern crate abomonation_derive;
 extern crate abomonation;
 
-#[macro_use]
-extern crate serde_derive;
-
 use std::{thread, usize};
 use std::collections::{HashMap};
 use std::io::{BufRead};
@@ -27,13 +24,9 @@ use std::time::{Instant, Duration};
 use getopts::Options;
 
 use timely::dataflow::ProbeHandle;
-use timely::dataflow::operators::{Probe, Map, Operator};
+use timely::dataflow::operators::{Operator};
 use timely::dataflow::operators::generic::{OutputHandle};
 use timely::synchronization::Sequencer;
-
-use differential_dataflow::{Collection, AsCollection};
-use differential_dataflow::trace::{TraceReader};
-use differential_dataflow::operators::arrange::{ArrangeBySelf};
 
 use mio::*;
 use mio::net::{TcpListener};
@@ -42,15 +35,8 @@ use slab::Slab;
 
 use ws::connection::{Connection, ConnEvent};
 
-use declarative_dataflow::{Context, Plan, Rule, Entity, Attribute, Value, Datom, create_db, implement};
-use declarative_dataflow::sources::{Source, Sourceable};
-
-#[derive(Debug)]
-struct Config {
-    port: u16,
-    enable_cli: bool,
-    enable_history: bool,
-}
+use declarative_dataflow::{Value};
+use declarative_dataflow::server::{Config, Request, Server};
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug)]
 struct Command {
@@ -64,25 +50,8 @@ struct Command {
     cmd: String,
 }
 
-/// Transaction data. Conceptually a pair (Datom, diff) but it's kept
-/// intentionally flat to be more directly compatible with Datomic.
-#[derive(Deserialize, Debug)]
-pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
-
-#[derive(Deserialize, Debug)]
-enum Request {
-    Transact { tx: Option<usize>, tx_data: Vec<TxData> },
-    /// Registers one or more named relations.
-    Register { rules: Vec<Rule>, publish: Vec<String> },
-    /// Expresses interest in a named relation.
-    Interest { name: String },
-    /// Registers an external data source.
-    RegisterSource { name: String, source: Source },
-}
-
-/// Single output (tuple, diff), as sent back to external clients.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize)]
-pub struct Out(pub Vec<Value>, pub isize);
+/// (tuple, diff) as sent back to external clients.
+pub type Output = (Vec<Value>, isize);
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
@@ -104,11 +73,14 @@ fn main() {
 
         // read configuration
         let server_args = args.iter().rev().take_while(|arg| arg.to_string() != "--");
+        let default_config: Config = Default::default();
         let config = match opts.parse(server_args) {
             Err(err) => panic!(err),
             Ok(matches) => {
 
-                let starting_port = matches.opt_str("port").map(|x| x.parse().unwrap_or(6262)).unwrap_or(6262);
+                let starting_port = matches.opt_str("port")
+                    .map(|x| x.parse().unwrap_or(default_config.port))
+                    .unwrap_or(default_config.port);
                 
                 Config {
                     port: starting_port + (worker.index() as u16),
@@ -118,23 +90,8 @@ fn main() {
             }
         };
 
-        // setup interpreter context
-        let mut ctx = worker.dataflow(|scope| {
-            let (input_handle, db) = create_db(scope);
-
-            Context { db, input_handle, queries: HashMap::new(), }
-        });
-
-        // decline the capability for that trace handle to subset
-        // its view of the data
-        
-        ctx.db.e_av.distinguish_since(&[]);
-        ctx.db.a_ev.distinguish_since(&[]);
-        ctx.db.ea_v.distinguish_since(&[]);
-        ctx.db.av_e.distinguish_since(&[]);
-
-        // A probe for the transaction id time domain.
-        let mut probe = ProbeHandle::new();
+        // setup interpretation context
+        let mut server = Server::new(config.clone());
 
         // mapping from query names to interested client tokens
         let mut interests: HashMap<String, Vec<Token>> = HashMap::new();
@@ -156,7 +113,7 @@ fn main() {
 
         // setup server socket
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
-        let server = TcpListener::bind(&addr).unwrap();
+        let server_socket = TcpListener::bind(&addr).unwrap();
         let mut connections = Slab::with_capacity(ws_settings.max_connections);
         let mut next_connection_id: u32 = 0;
 
@@ -179,7 +136,7 @@ fn main() {
         }
 
         poll.register(&recv_results, RESULTS, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
-        poll.register(&server, SERVER, Ready::readable(), PollOpt::level()).unwrap();
+        poll.register(&server_socket, SERVER, Ready::readable(), PollOpt::level()).unwrap();
 
         info!("[WORKER {}] running with config {:?}", worker.index(), config);
 
@@ -227,7 +184,7 @@ fn main() {
                     SERVER => {
                         if event.readiness().is_readable() {
                             // new connection arrived on the server socket
-                            match server.accept() {
+                            match server_socket.accept() {
                                 Err(err) => error!("[WORKER {}] error while accepting connection {:?}", worker.index(), err),
                                 Ok((socket, addr)) => {
                                     info!("[WORKER {}] new tcp connection from {}", worker.index(), addr);
@@ -268,7 +225,7 @@ fn main() {
                             match interests.get(&query_name) {
                                 None => { /* @TODO unregister this flow */ },
                                 Some(tokens) => {
-                                    let serialized = serde_json::to_string::<(String, Vec<Out>)>(&(query_name, results))
+                                    let serialized = serde_json::to_string::<(String, Vec<Output>)>(&(query_name, results))
                                         .expect("failed to serialize outputs");
                                     let msg = ws::Message::text(serialized);
 
@@ -390,57 +347,12 @@ fn main() {
                         for req in requests.drain(..) {
 
                             let owner = command.owner.clone();
+
+                            // @TODO only create a single dataflow, but only if req != Transact
                             
                             match req {
-                                Request::Transact { tx, tx_data } => {
-
-                                    if owner == worker.index() {
-
-                                        // only the owner should actually introduce new inputs
-
-                                        for TxData(op, e, a, v) in tx_data {
-                                            ctx.input_handle.update(Datom(e, a, v), op);
-                                        }
-                                    }
-
-                                    let next_tx = match tx {
-                                        None => ctx.input_handle.epoch() + 1,
-                                        Some(tx) => tx + 1
-                                    };
-
-                                    ctx.input_handle.advance_to(next_tx);
-                                    ctx.input_handle.flush();
-
-                                    if config.enable_history == false {
-
-                                        // if historical queries don't matter, we should advance
-                                        // the index traces to allow them to compact
-
-                                        let frontier = &[ctx.input_handle.time().clone()];
-
-                                        ctx.db.e_av.advance_by(frontier);
-                                        ctx.db.a_ev.advance_by(frontier);
-                                        ctx.db.ea_v.advance_by(frontier);
-                                        ctx.db.av_e.advance_by(frontier);
-                                    }
-                                },
-                                Request::Register { rules, publish } => {
-
-                                    worker.dataflow::<usize, _, _>(|scope| {
-
-                                        let rel_map = implement(rules, publish, scope, &mut ctx, &mut probe);
-
-                                        for (name, trace) in rel_map.into_iter() {
-                                            if ctx.queries.contains_key(&name) {
-                                                panic!("Attempted to re-register a named relation");
-                                            }
-                                            else {
-                                                ctx.queries.insert(name, trace);
-                                            }
-                                        }
-                                    });
-                                },
-                                Request::Interest { name } => {
+                                Request::Transact(req) => { server.transact(req, owner, worker.index()); },
+                                Request::Interest(req) => {
 
                                     if owner == worker.index() {
 
@@ -451,7 +363,7 @@ fn main() {
                                             None => { },
                                             Some(client) => {
                                                 let client_token = Token(client);
-                                                interests.entry(name.clone())
+                                                interests.entry(req.name.clone())
                                                     .or_insert(Vec::new())
                                                     .push(client_token);
                                             }
@@ -460,42 +372,44 @@ fn main() {
 
                                     let send_results_handle = send_results.clone();
 
-                                    worker.dataflow::<usize, _, _>(|scope| {
+                                    worker.dataflow::<usize, _, _>(|mut scope| {
 
-                                        ctx .queries
-                                            .get_mut(&name)
-                                            .expect(&format!("Could not find relation {:?}", name))
-                                            .import(scope)
-                                            .as_collection(|tuple,_| tuple.clone())
+                                        let name = req.name.clone();
+
+                                        server.interest(req, &mut scope)
                                             .inner
-                                            .map(|x| Out(x.0, x.2))
                                             .unary_notify(
-                                                timely::dataflow::channels::pact::Exchange::new(move |_: &Out| owner as u64),
+                                                timely::dataflow::channels::pact::Exchange::new(move |_| owner as u64),
                                                 "OutputsRecv",
                                                 Vec::new(),
-                                                move |input, _output: &mut OutputHandle<_, Out, _>, _notificator| {
+                                                move |input, _output: &mut OutputHandle<_, Output, _>, _notificator| {
 
                                                     // due to the exchange pact, this closure is only
                                                     // executed by the owning worker
 
                                                     input.for_each(|_time, data| {
-                                                        let out: Vec<Out> = data.to_vec();
+                                                        let out: Vec<Output> = data.iter()
+                                                            .map(|(tuple, _t, diff)| (tuple.clone(), *diff))
+                                                            .collect();
+                                                        
                                                         send_results_handle.send((name.clone(), out)).unwrap();
                                                     });
-                                                })
-                                            .probe_with(&mut probe);
+                                                });
                                     });
                                 },
-                                Request::RegisterSource { name, source } => {
-                                    worker.dataflow::<usize, _, _>(|scope| {
-                                        let datoms = source.source(scope)
-                                            .as_collection();
-
-                                        if ctx.queries.contains_key(&name) {
-                                            panic!("Source name clashes with registered relation.");
-                                        } else {
-                                            ctx.queries.insert(name, datoms.arrange_by_self().trace);
-                                        }
+                                Request::Register(req) => {
+                                    worker.dataflow::<usize, _, _>(|mut scope| {
+                                        server.register(req, &mut scope);
+                                    });
+                                },
+                                Request::RegisterSource(req) => {
+                                    worker.dataflow::<usize, _, _>(|mut scope| {
+                                        server.register_source(req, &mut scope);
+                                    });
+                                },
+                                Request::CreateInput(req) => {
+                                    worker.dataflow::<usize, _, _>(|mut scope| {
+                                        server.create_input(req, &mut scope);
                                     });
                                 }
                             }
@@ -507,8 +421,11 @@ fn main() {
             // ensure work continues, even if no queries registered,
             // s.t. the sequencer continues issuing commands
             worker.step();
-            while probe.less_than(ctx.input_handle.time()) {
-                worker.step();
+
+            for handle in server.input_handles.values() {
+                while server.probe.less_than(handle.time()) {
+                    worker.step();
+                }
             }
         }
 
@@ -517,7 +434,7 @@ fn main() {
     }).unwrap(); // asserts error-free execution
 }
 
-// fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Out>)>) {
+// fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Output>)>) {
 
 //     let send_handle = &command_channel;
 
@@ -539,7 +456,7 @@ fn main() {
 //                     match results_channel.recv() {
 //                         Err(_err) => break,
 //                         Ok(results) => {
-//                             let serialized = serde_json::to_string::<(String, Vec<Out>)>(&results)
+//                             let serialized = serde_json::to_string::<(String, Vec<Output>)>(&results)
 //                                 .expect("failed to serialize outputs");
 
 //                             writer.write(serialized.as_bytes()).expect("failed to send output");

@@ -3,18 +3,11 @@
 extern crate timely;
 extern crate differential_dataflow;
 
-use timely::communication::{Allocate};
 use timely::dataflow::{Scope, Stream};
-use timely::dataflow::scopes::{Child};
-use timely::dataflow::operators::{Leave};
-use timely::progress::timestamp::{Timestamp, RootTimestamp};
+use timely::progress::timestamp::{RootTimestamp};
 use timely::progress::nested::product::{Product};
-use timely::worker::{Worker};
 
-use differential_dataflow::{AsCollection};
-use differential_dataflow::lattice::{Lattice};
-
-use {Value, Implementable, SimpleRelation, QueryMap, RelationMap};
+use {Value};
 
 pub mod plain_file;
 pub use self::plain_file::{PlainFile};
@@ -47,7 +40,7 @@ impl Sourceable for Source {
 // Default.
 //
 // impl Implementable for Source {
-//     fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
+//     fn implement<'a, 'b, A: Allocate>(
 //         &self,
 //         nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
 //         local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,

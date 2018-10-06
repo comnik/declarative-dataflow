@@ -27,9 +27,8 @@ use timely::worker::Worker;
 
 use differential_dataflow::collection::{Collection};
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::implementations::ord::{OrdValSpine, OrdKeySpine};
-use differential_dataflow::operators::arrange::{ArrangeByKey, ArrangeBySelf, TraceAgent, Arranged};
+use differential_dataflow::operators::arrange::{ArrangeBySelf, TraceAgent};
 use differential_dataflow::operators::group::{Threshold};
 use differential_dataflow::operators::iterate::Variable;
 
@@ -37,6 +36,7 @@ pub mod plan;
 pub use plan::{Plan, Implementable};
 
 pub mod sources;
+pub mod server;
 
 //
 // TYPES
@@ -75,8 +75,9 @@ pub struct Datom(pub Entity, pub Attribute, pub Value);
 
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
-type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
-type QueryMap<T, R> = HashMap<String, TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, R>>;
+// type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
+/// A map from global names to registered traces.
+pub type QueryMap<T, R> = HashMap<String, TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, R>>;
 type RelationMap<'a, G> = HashMap<String, Variable<'a, G, Vec<Value>, u64, isize>>;
 
 //
@@ -107,18 +108,6 @@ pub struct DB<T: Timestamp+Lattice> {
 //     ea_v: Arrange<G, (Entity, Attribute), Value, isize>,
 //     av_e: Arrange<G, (Attribute, Value), Entity, isize>,
 // }
-
-// @TODO move input_handle into server, get rid of all this and use DB
-// struct directly
-/// Context maintained by the query processor.
-pub struct Context<T: Timestamp+Lattice> {
-    /// Input handle to the collection of all Datoms in the system.
-    pub input_handle: InputSession<T, Datom, isize>,
-    /// Maintained indices.
-    pub db: DB<T>,
-    /// Named relations.
-    pub queries: QueryMap<T, isize>,
-}
 
 //
 // QUERY PLAN GRAMMAR
@@ -227,20 +216,9 @@ pub fn implement<A: Allocate, T: Timestamp+Lattice>(
     mut rules: Vec<Rule>,
     publish: Vec<String>,
     scope: &mut Child<Worker<A>, T>,
-    ctx: &mut Context<T>,
+    global_arrangements: &mut QueryMap<T, isize>,
     probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
 ) -> HashMap<String, RelationHandle<T>> {
-
-    // let db = &mut ctx.db;
-    let global_arrangements = &mut ctx.queries;
-
-    // // @TODO Only import those we need for the query?
-    // let impl_ctx: ImplContext<Child<Worker<A>, T>> = ImplContext {
-    //     e_av: db.e_av.import(scope),
-    //     a_ev: db.a_ev.import(scope),
-    //     ea_v: db.ea_v.import(scope),
-    //     av_e: db.av_e.import(scope),
-    // };
 
     scope.scoped(|nested| {
 
@@ -297,15 +275,15 @@ pub fn implement<A: Allocate, T: Timestamp+Lattice>(
     })
 }
 
-/// Create a new DB instance and interactive session.
-pub fn create_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
-    let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
-    let db = DB {
-        e_av: datoms.map(|Datom(e, a, v)| (e, (a, v))).arrange_by_key().trace,
-        a_ev: datoms.map(|Datom(e, a, v)| (a, (e, v))).arrange_by_key().trace,
-        ea_v: datoms.map(|Datom(e, a, v)| ((e, a), v)).arrange_by_key().trace,
-        av_e: datoms.map(|Datom(e, a, v)| ((a, v), e)).arrange_by_key().trace,
-    };
+// /// Create a new DB instance and interactive session.
+// pub fn create_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
+//     let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
+//     let db = DB {
+//         e_av: datoms.map(|Datom(e, a, v)| (e, (a, v))).arrange_by_key().trace,
+//         a_ev: datoms.map(|Datom(e, a, v)| (a, (e, v))).arrange_by_key().trace,
+//         ea_v: datoms.map(|Datom(e, a, v)| ((e, a), v)).arrange_by_key().trace,
+//         av_e: datoms.map(|Datom(e, a, v)| ((a, v), e)).arrange_by_key().trace,
+//     };
 
-    (input_handle, db)
-}
+//     (input_handle, db)
+// }

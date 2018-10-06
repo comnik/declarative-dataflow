@@ -77,7 +77,7 @@ impl Implementable for Plan {
     )
     -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
 
-        use differential_dataflow::AsCollection;
+        // use differential_dataflow::AsCollection;
         // use timely::dataflow::operators::ToStream;
         // use differential_dataflow::operators::arrange::ArrangeBySelf;
         // use differential_dataflow::operators::JoinCore;
@@ -113,6 +113,7 @@ impl Implementable for Plan {
                         named.import(&nested.parent).enter(nested)
                             .as_collection(|tuple,_| tuple.clone())
                             .filter(move |tuple| tuple[0] == Value::Eid(e))
+                            .map(|tuple| vec![tuple[1].clone()])
                     }
                 };
                 
@@ -125,7 +126,8 @@ impl Implementable for Plan {
                         let v = v.clone();
                         named.import(&nested.parent).enter(nested)
                             .as_collection(|tuple,_| tuple.clone())
-                            .filter(move |tuple| tuple[2] == v)
+                            .filter(move |tuple| tuple[1] == v)
+                            .map(|tuple| vec![tuple[0].clone()])
                     }
                 };
 
