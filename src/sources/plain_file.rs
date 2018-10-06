@@ -19,7 +19,7 @@ use sources::{Sourceable};
 #[derive(Deserialize, Clone, Debug)]
 pub struct PlainFile {
     /// Path to a file on each workers local filesystem.
-    path: String,
+    pub path: String,
 }
 
 impl Sourceable for PlainFile {

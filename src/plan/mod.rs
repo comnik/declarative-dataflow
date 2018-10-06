@@ -18,7 +18,7 @@ pub mod join;
 pub mod antijoin;
 
 pub use self::filter::Filter;
-pub use self::aggregate::Aggregate;
+pub use self::aggregate::{Aggregate, AggregationFn};
 pub use self::project::Project;
 pub use self::union::Union;
 pub use self::join::Join;
