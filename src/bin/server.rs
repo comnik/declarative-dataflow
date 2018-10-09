@@ -427,9 +427,6 @@ fn main() {
                 }
             }
         }
-
-        info!("[WORKER {}] exited command loop", worker.index());
-
     }).unwrap(); // asserts error-free execution
 }
 

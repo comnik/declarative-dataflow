@@ -162,18 +162,18 @@ impl Server {
                     .expect(&format!("Attribute {} does not exist.", a));
 
                 handle.update(vec![Value::Eid(e), v], op);
-
-                let next_tx = match tx {
-                    None => handle.epoch() + 1,
-                    Some(tx) => tx + 1
-                };
-
-                handle.advance_to(next_tx);
             }
         }
 
         // @TODO do this smarter, e.g. only for handles that received inputs
         for handle in self.input_handles.values_mut() {
+            let next_tx = match tx {
+                None => handle.epoch() + 1,
+                Some(tx) => tx + 1
+            };
+
+            // @TODO only advance handles that received input? 
+            handle.advance_to(next_tx);
             handle.flush();
         }
 
