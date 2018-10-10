@@ -79,8 +79,8 @@ pub struct Register {
 /// and publishing it under a globally unique name.
 #[derive(Deserialize, Debug)]
 pub struct RegisterSource {
-    /// A globally unique name.
-    pub name: String,
+    /// One or more globally unique names.
+    pub names: Vec<String>,
     /// A source configuration.
     pub source: Source
 }
@@ -239,15 +239,38 @@ impl Server {
         scope: &mut Child<Worker<A>, usize>,
     ) {
 
-        let RegisterSource { name, source } = req;
+        let RegisterSource { mut names, source } = req;
 
-        let datoms = source.source(scope).as_collection();
+        if names.len() == 1 {
 
-        if self.global_arrangements.contains_key(&name) {
-            panic!("Source name clashes with registered relation.");
-        } else {
-            let trace = datoms.arrange_by_self().trace;
-            self.register_global_arrangement(name, trace);
+            let name = names.pop().unwrap();
+            let datoms = source.source(scope).as_collection();
+
+            if self.global_arrangements.contains_key(&name) {
+                panic!("Source name clashes with registered relation.");
+            } else {
+                let trace = datoms.arrange_by_self().trace;
+                self.register_global_arrangement(name, trace);
+            }
+        } else if names.len() > 1 {
+
+            let datoms = source.source(scope).as_collection();
+
+            // @TODO 'intern' attribute names with offset in names vector 
+            
+            for name in names.iter() {
+                if self.global_arrangements.contains_key(name) {
+                    panic!("Source name clashes with registered relation.");
+                } else {
+                    let name_str = name.to_string();
+                    let trace = datoms
+                        .filter(move |tuple| match tuple[1] { Value::String(ref v) => *v == name_str, _ => panic!("expected a string") })
+                        .map(|tuple| vec![tuple[0].clone(), tuple[2].clone()])
+                        .arrange_by_self().trace;
+                    
+                    self.register_global_arrangement(name.to_string(), trace);
+                }
+            }
         }
     }
 

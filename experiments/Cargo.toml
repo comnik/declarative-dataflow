@@ -5,12 +5,7 @@ authors = ["Nikolas Göbel <me@nikolasgoebel.com>"]
 
 [dependencies]
 timely = "0.7"
-declarative_dataflow = { path = ".." }
 
-[[bin]]
-name = "labelprop_prepare"
-path = "src/bin/labelprop/prepare.rs"
-
-[[bin]]
-name = "labelprop"
-path = "src/bin/labelprop/main.rs"
+[dependencies.declarative_dataflow]
+path = ".."
+features = ["json-source"]

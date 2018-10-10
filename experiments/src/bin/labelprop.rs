@@ -13,7 +13,7 @@ use declarative_dataflow::sources::{Source, PlainFile};
 use declarative_dataflow::server::{Server, Interest, Register, RegisterSource};
 
 fn main() {
-    timely::execute(Configuration::Thread, move |worker| {
+    timely::execute(Configuration::Process(4), move |worker| {
 
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
@@ -38,6 +38,7 @@ fn main() {
                 name: "labelprop".to_string(),
                 plan: Plan::Aggregate(Aggregate {
                     variables: vec![x, y],
+                    key_symbols: vec![x, y],
                     plan: Box::new(Plan::RuleExpr(vec![x, y], "label".to_string())),
                     aggregation_fn: AggregationFn::COUNT
                 })

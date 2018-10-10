@@ -11,6 +11,8 @@ use {Value};
 
 pub mod plain_file;
 pub use self::plain_file::{PlainFile};
+pub mod json_file;
+pub use self::json_file::{JsonFile};
 
 /// An external data source that can provide Datoms.
 pub trait Sourceable {
@@ -24,12 +26,16 @@ pub trait Sourceable {
 pub enum Source {
     /// Plain files
     PlainFile(PlainFile),
+    /// Files containing json objects
+    JsonFile(JsonFile),
+    
 }
 
 impl Sourceable for Source {
     fn source<G: Scope>(&self, scope: &G) -> Stream<G, (Vec<Value>, Product<RootTimestamp, usize>, isize)> {
         match self {
             &Source::PlainFile(ref source) => source.source(scope),
+            &Source::JsonFile(ref source) => source.source(scope),
         }
     }
 }
