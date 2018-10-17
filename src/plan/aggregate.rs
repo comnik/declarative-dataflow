@@ -23,6 +23,8 @@ pub enum AggregationFn {
     MAX,
     /// Count
     COUNT,
+    /// Sum
+    SUM,
 }
 
 /// [WIP]
@@ -105,12 +107,22 @@ impl<P: Implementable> Implementable for Aggregate<P> {
             AggregationFn::COUNT => {
                 SimpleRelation {
                     symbols: self.variables.to_vec(),
+                    tuples: tuples,
+                        .map(|(ref _key, ref _tuple)| ())
+                        .count()
+                        .map(|(_, count)| vec![Value::Number(count as i64)])
+                }
+            },
+            AggregationFn::SUM => {
+                SimpleRelation {
+                    symbols: self.variables.to_vec(),
                     tuples: tuples
                         .explode(|(ref key, ref tuple)| {
                             let v = match tuple[0] {
                                 Value::Number(num) => num as isize,
                                 _ => panic!("COUNT can only be applied to numbers")
                             };
+                            // @todo clone?
                             Some((key.clone(), v))
                         })
                         .consolidate()
