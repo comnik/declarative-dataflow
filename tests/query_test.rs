@@ -114,14 +114,34 @@ fn count() {
 
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
+        let send_results_copy = send_results.clone();
+        let send_results_copy_2 = send_results.clone();
+
+        // [:find (count ?amount) :where [?e :amount ?amount]]
+        let (e, amount) = (1, 2);
+        let plan = Plan::Aggregate(Aggregate {
+            variables: vec![e, amount ],
+            plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+            aggregation_fn: AggregationFn::COUNT,
+            key_symbols: vec![],
+        });
 
         // [:find ?e (count ?amount) :where [?e :amount ?amount]]
         let (e, amount) = (1, 2);
-        let plan = Plan::Aggregate(Aggregate {
-            variables: vec![e, amount],
+        let plan_group_sing = Plan::Aggregate(Aggregate {
+            variables: vec![e, amount ],
             plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
             aggregation_fn: AggregationFn::COUNT,
             key_symbols: vec![e],
+        });
+
+        // [:find ?e ?amount (count ?amount) :where [?e :amount ?amount]]
+        let (e, amount) = (1, 2);
+        let plan_group_mult = Plan::Aggregate(Aggregate {
+            variables: vec![e, amount],
+            plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+            aggregation_fn: AggregationFn::COUNT,
+            key_symbols: vec![e, amount],
         });
         
         worker.dataflow::<usize, _, _>(|mut scope| {
@@ -135,6 +155,24 @@ fn count() {
 
             server.interest(Interest { name: query_name.to_string() }, &mut scope)
                 .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
+
+            let query_name = "count_group_single_key";
+            server.register(Register {
+                rules: vec![Rule { name: query_name.to_string(), plan: plan_group_sing }],
+                publish: vec![query_name.to_string()],
+            }, &mut scope);
+
+            server.interest(Interest { name: query_name.to_string() }, &mut scope)
+                .inspect(move |x| { send_results_copy.send((x.0.clone(), x.2)).unwrap(); });
+
+            let query_name = "count_group_multiple_keys";
+            server.register(Register {
+                rules: vec![Rule { name: query_name.to_string(), plan: plan_group_mult }],
+                publish: vec![query_name.to_string()],
+            }, &mut scope);
+
+            server.interest(Interest { name: query_name.to_string() }, &mut scope)
+                .inspect(move |x| { send_results_copy_2.send((x.0.clone(), x.2)).unwrap(); });
         });
 
         server.transact(Transact {
@@ -156,8 +194,14 @@ fn count() {
         }
         
         thread::spawn(move || {
+            assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
             assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(4)], 1));
             assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(1)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(2), Value::Number(1)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(4), Value::Number(1)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(5), Value::Number(1)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(6), Value::Number(1)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10), Value::Number(1)], 1));
         }).join().unwrap();
     }).unwrap();
 }
@@ -168,10 +212,19 @@ fn max() {
 
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
+        let send_results_copy = send_results.clone();
 
-        // [:find ?e (max ?amount) :where [?e :amount ?amount]]
+        // [:find (max ?amount) :where [?e :amount ?amount]]
         let (e, amount) = (1, 2);
         let plan = Plan::Aggregate(Aggregate {
+            variables: vec![e, amount],
+            plan: Box::new(Plan::Project(Project {variables : vec![amount], plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount))})),
+            aggregation_fn: AggregationFn::MAX,
+            key_symbols: vec![],
+        });
+
+        // [:find ?e (max ?amount) :where [?e :amount ?amount]]
+        let plan_group = Plan::Aggregate(Aggregate {
             variables: vec![e, amount],
             plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
             aggregation_fn: AggregationFn::MAX,
@@ -189,6 +242,15 @@ fn max() {
 
             server.interest(Interest { name: query_name.to_string() }, &mut scope)
                 .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
+
+            let query_name = "max_group";
+            server.register(Register {
+                rules: vec![Rule { name: query_name.to_string(), plan: plan_group }],
+                publish: vec![query_name.to_string()],
+            }, &mut scope);
+
+            server.interest(Interest { name: query_name.to_string() }, &mut scope)
+                .inspect(move |x| { send_results_copy.send((x.0.clone(), x.2)).unwrap(); });
         });
 
         server.transact(Transact {
@@ -212,6 +274,7 @@ fn max() {
         thread::spawn(move || {
             assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(6)], 1));
             assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Number(10)], 1));
         }).join().unwrap();
     }).unwrap();
 }
@@ -222,10 +285,19 @@ fn min() {
 
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
+        let send_results_copy = send_results.clone();
 
-        // [:find ?e (min ?amount) :where [?e :amount ?amount]]
+        // [:find (min ?amount) :where [?e :amount ?amount]]
         let (e, amount) = (1, 2);
         let plan = Plan::Aggregate(Aggregate {
+            variables: vec![e, amount],
+            plan: Box::new(Plan::Project(Project {variables : vec![amount], plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount))})),
+            aggregation_fn: AggregationFn::MIN,
+            key_symbols: vec![],
+        });
+
+        // [:find ?e (min ?amount) :where [?e :amount ?amount]]
+        let plan_group = Plan::Aggregate(Aggregate {
             variables: vec![e, amount],
             plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
             aggregation_fn: AggregationFn::MIN,
@@ -243,6 +315,15 @@ fn min() {
 
             server.interest(Interest { name: query_name.to_string() }, &mut scope)
                 .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
+
+            let query_name = "min_group";
+            server.register(Register {
+                rules: vec![Rule { name: query_name.to_string(), plan: plan_group }],
+                publish: vec![query_name.to_string()],
+            }, &mut scope);
+
+            server.interest(Interest { name: query_name.to_string() }, &mut scope)
+                .inspect(move |x| { send_results_copy.send((x.0.clone(), x.2)).unwrap(); });
         });
 
         server.transact(Transact {
@@ -266,6 +347,83 @@ fn min() {
         thread::spawn(move || {
             assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(2)], 1));
             assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Number(2)], 1));
+        }).join().unwrap();
+    }).unwrap();
+}
+
+#[test]
+fn sum() {
+    timely::execute(Configuration::Thread, move |worker| {
+
+        let mut server = Server::new(Default::default());
+        let (send_results, results) = channel();
+        let send_results_copy = send_results.clone();
+
+        // [:find (sum ?amount) :where [?e :amount ?amount]]
+        let (e, amount) = (1, 2);
+        let plan = Plan::Aggregate(Aggregate {
+            variables: vec![e, amount, amount],
+            plan: Box::new(Plan::Project(Project {variables : vec![amount], plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount))})),
+            aggregation_fn: AggregationFn::SUM,
+            key_symbols: vec![],
+        });
+
+        // [:find ?e (sum ?amount) :where [?e :amount ?amount]]
+        let plan_group = Plan::Aggregate(Aggregate {
+            variables: vec![e, amount],
+            plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+            aggregation_fn: AggregationFn::SUM,
+            key_symbols: vec![e],
+        });
+        
+        
+        worker.dataflow::<usize, _, _>(|mut scope| {
+            server.create_input(CreateInput { name: ":amount".to_string() }, &mut scope);
+            
+            let query_name = "sum";
+            server.register(Register {
+                rules: vec![Rule { name: query_name.to_string(), plan: plan }],
+                publish: vec![query_name.to_string()],
+            }, &mut scope);
+
+            server.interest(Interest { name: query_name.to_string() }, &mut scope)
+                .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
+
+            let query_name = "sum_group";
+            server.register(Register {
+                rules: vec![Rule { name: query_name.to_string(), plan: plan_group }],
+                publish: vec![query_name.to_string()],
+            }, &mut scope);
+
+            server.interest(Interest { name: query_name.to_string() }, &mut scope)
+                .inspect(move |x| { send_results_copy.send((x.0.clone(), x.2)).unwrap(); });
+
+        });
+
+        server.transact(Transact {
+            tx: Some(0),
+            tx_data: vec![
+                TxData(1, 1, ":amount".to_string(), Value::Number(5)),
+                TxData(1, 2, ":amount".to_string(), Value::Number(10)),
+                TxData(1, 2, ":amount".to_string(), Value::Number(10)),
+                TxData(1, 1, ":amount".to_string(), Value::Number(2)),
+                TxData(1, 1, ":amount".to_string(), Value::Number(4)),
+                TxData(1, 1, ":amount".to_string(), Value::Number(6)),
+            ],
+        }, 0, 0);
+
+        for handle in server.input_handles.values() {
+            while server.probe.less_than(handle.time()) {
+                worker.step();
+            }
+        }
+
+        
+        thread::spawn(move || {
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(17)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Number(27)], 1));
         }).join().unwrap();
     }).unwrap();
 }
