@@ -75,9 +75,12 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                             // @TODO could preserve multiplicity of smallest value here
                             output.push((*min, 1));
                         })
-                        .map(|(key, min)| key.iter().cloned()
-                             .chain([Value::Number(min)].iter().cloned())
-                             .collect())
+                        .map(|(key, min)| {
+                            let m = min as i64;
+                            let mut v = key.clone();
+                            v.push(Value::Number(m));
+                            v
+                        })
                 }
             },
             AggregationFn::MAX => {
@@ -99,9 +102,13 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                             // @TODO could preserve multiplicity of largest value here
                             output.push((*max, 1));
                         })
-                        .map(|(key, max)| key.iter().cloned()
-                             .chain([Value::Number(max)].iter().cloned())
-                             .collect())
+                        .map(|(key, max)| {
+                            let m = max as i64;
+                            let mut v = key.clone();
+                            v.push(Value::Number(m));
+                            v
+                        })
+
                 }
             },
             AggregationFn::COUNT => {
@@ -125,6 +132,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 SimpleRelation {
                     symbols: self.variables.to_vec(),
                     tuples: tuples
+                        .distinct()
                         .explode(|(ref key, ref tuple)| {
                             let v = match tuple[0] {
                                 Value::Number(num) => num as isize,
