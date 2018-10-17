@@ -156,8 +156,8 @@ fn count() {
         }
         
         thread::spawn(move || {
-            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(17)], 1));
-            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(20)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(4)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(1)], 1));
         }).join().unwrap();
     }).unwrap();
 }

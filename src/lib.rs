@@ -168,6 +168,9 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
         if syms == &self.symbols()[..] {
             self.tuples().map(|x| (x, Vec::new()))
         }
+        else if syms.is_empty() {
+            self.tuples().map(|x| (Vec::new(), x))
+        }
         else {
             let key_length = syms.len();
             let values_length = self.symbols().len() - key_length;

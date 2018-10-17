@@ -107,10 +107,18 @@ impl<P: Implementable> Implementable for Aggregate<P> {
             AggregationFn::COUNT => {
                 SimpleRelation {
                     symbols: self.variables.to_vec(),
-                    tuples: tuples,
-                        .map(|(ref _key, ref _tuple)| ())
-                        .count()
-                        .map(|(_, count)| vec![Value::Number(count as i64)])
+                    tuples: tuples
+                        .consolidate()
+                        .distinct()
+                        .group(|_key, input, output| {
+                           let count = input.len();
+                           output.push((count, 1))})
+                        .map(|(key, count)| {
+                            let c = count as i64;
+                            let mut v = key.clone();
+                            v.push(Value::Number(c));
+                            v
+                        })
                 }
             },
             AggregationFn::SUM => {
