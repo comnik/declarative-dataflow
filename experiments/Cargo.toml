@@ -5,6 +5,7 @@ authors = ["Nikolas Göbel <me@nikolasgoebel.com>"]
 
 [dependencies]
 timely = "0.7"
+differential-dataflow = "0.7"
 
 [dependencies.declarative_dataflow]
 path = ".."
