@@ -1,11 +1,13 @@
-extern crate timely;
-extern crate differential_dataflow;
 extern crate declarative_dataflow;
-extern crate serde_json;
-extern crate mio;
-extern crate slab;
-extern crate ws;
+extern crate differential_dataflow;
 extern crate getopts;
+extern crate mio;
+extern crate serde_json;
+#[macro_use]
+extern crate serde_derive;
+extern crate slab;
+extern crate timely;
+extern crate ws;
 
 #[macro_use]
 extern crate log;
@@ -15,29 +17,31 @@ extern crate env_logger;
 extern crate abomonation_derive;
 extern crate abomonation;
 
+use std::collections::HashMap;
+use std::io::BufRead;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::time::{Duration, Instant};
 use std::{thread, usize};
-use std::collections::{HashMap};
-use std::io::{BufRead};
-use std::net::{SocketAddr, IpAddr, Ipv4Addr};
-use std::time::{Instant, Duration};
 
 use getopts::Options;
 
-use timely::dataflow::operators::{Operator};
-use timely::dataflow::operators::generic::{OutputHandle};
+use timely::dataflow::operators::generic::OutputHandle;
+use timely::dataflow::operators::Operator;
 use timely::synchronization::Sequencer;
 
+use mio::net::TcpListener;
 use mio::*;
-use mio::net::{TcpListener};
 
 use slab::Slab;
 
-use ws::connection::{Connection, ConnEvent};
+use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::{Value};
 use declarative_dataflow::server::{Config, Request, Server};
+use declarative_dataflow::Value;
 
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug)]
+#[derive(
+    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug,
+)]
 struct Command {
     id: usize,
     // the worker (typically a controller) that issued this command
@@ -57,7 +61,6 @@ const RESULTS: Token = Token(usize::MAX - 2);
 const CLI: Token = Token(usize::MAX - 3);
 
 fn main() {
-
     env_logger::init();
 
     let mut opts = Options::new();
@@ -80,7 +83,7 @@ fn main() {
                 let starting_port = matches.opt_str("port")
                     .map(|x| x.parse().unwrap_or(default_config.port))
                     .unwrap_or(default_config.port);
-                
+
                 Config {
                     port: starting_port + (worker.index() as u16),
                     enable_cli: matches.opt_present("enable-cli"),
@@ -348,7 +351,7 @@ fn main() {
                             let owner = command.owner.clone();
 
                             // @TODO only create a single dataflow, but only if req != Transact
-                            
+
                             match req {
                                 Request::Transact(req) => { server.transact(req, owner, worker.index()); },
                                 Request::Interest(req) => {
@@ -371,7 +374,7 @@ fn main() {
 
                                     let send_results_handle = send_results.clone();
 
-                                    worker.dataflow::<usize, _, _>(|mut scope| {
+                                    worker.dataflow::<u64, _, _>(|mut scope| {
 
                                         let name = req.name.clone();
 
@@ -390,24 +393,24 @@ fn main() {
                                                         let out: Vec<Output> = data.iter()
                                                             .map(|(tuple, _t, diff)| (tuple.clone(), *diff))
                                                             .collect();
-                                                        
+
                                                         send_results_handle.send((name.clone(), out)).unwrap();
                                                     });
                                                 });
                                     });
                                 },
                                 Request::Register(req) => {
-                                    worker.dataflow::<usize, _, _>(|mut scope| {
+                                    worker.dataflow::<u64, _, _>(|mut scope| {
                                         server.register(req, &mut scope);
                                     });
                                 },
                                 Request::RegisterSource(req) => {
-                                    worker.dataflow::<usize, _, _>(|mut scope| {
+                                    worker.dataflow::<u64, _, _>(|mut scope| {
                                         server.register_source(req, &mut scope);
                                     });
                                 },
                                 Request::CreateInput(req) => {
-                                    worker.dataflow::<usize, _, _>(|mut scope| {
+                                    worker.dataflow::<u64, _, _>(|mut scope| {
                                         server.create_input(req, &mut scope);
                                     });
                                 }

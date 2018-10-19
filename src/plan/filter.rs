@@ -1,15 +1,12 @@
 //! Predicate expression plan.
 
-use timely::dataflow::scopes::Child;
-use timely::progress::timestamp::Timestamp;
 use timely::communication::Allocate;
+use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::worker::Worker;
 
-use differential_dataflow::lattice::Lattice;
-
-use Relation;
 use plan::Implementable;
-use {RelationMap, QueryMap, SimpleRelation, Var};
+use Relation;
+use {QueryMap, RelationMap, SimpleRelation, Var};
 
 /// Permitted comparison predicates.
 #[derive(Deserialize, Clone, Debug)]
@@ -38,41 +35,52 @@ pub struct Filter<P: Implementable> {
     /// Logical predicate to apply.
     pub predicate: Predicate,
     /// Plan for the data source.
-    pub plan: Box<P>
+    pub plan: Box<P>,
 }
 
 impl<P: Implementable> Implementable for Filter<P> {
-
-    fn implement<'a, 'b, A: Allocate, T: Timestamp+Lattice>(
+    fn implement<'a, 'b, A: Allocate>(
         &self,
-        nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-        local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-        global_arrangements: &mut QueryMap<T, isize>
-    )
-    -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
+        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
+        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        global_arrangements: &mut QueryMap<isize>,
+    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
+        let rel = self
+            .plan
+            .implement(nested, local_arrangements, global_arrangements);
 
-        let rel = self.plan.implement(nested, local_arrangements, global_arrangements);
-
-        let key_offsets: Vec<usize> = self.variables.iter()
-            .map(|sym| rel.symbols().iter().position(|&v| *sym == v).expect("Symbol not found."))
-            .collect();
+        let key_offsets: Vec<usize> = self
+            .variables
+            .iter()
+            .map(|sym| {
+                rel.symbols()
+                    .iter()
+                    .position(|&v| *sym == v)
+                    .expect("Symbol not found.")
+            }).collect();
 
         SimpleRelation {
             symbols: rel.symbols().to_vec(),
             tuples: match self.predicate {
-                Predicate::LT => rel.tuples()
+                Predicate::LT => rel
+                    .tuples()
                     .filter(move |tuple| tuple[key_offsets[0]] < tuple[key_offsets[1]]),
-                Predicate::LTE => rel.tuples()
+                Predicate::LTE => rel
+                    .tuples()
                     .filter(move |tuple| tuple[key_offsets[0]] <= tuple[key_offsets[1]]),
-                Predicate::GT => rel.tuples()
+                Predicate::GT => rel
+                    .tuples()
                     .filter(move |tuple| tuple[key_offsets[0]] > tuple[key_offsets[1]]),
-                Predicate::GTE => rel.tuples()
+                Predicate::GTE => rel
+                    .tuples()
                     .filter(move |tuple| tuple[key_offsets[0]] >= tuple[key_offsets[1]]),
-                Predicate::EQ => rel.tuples()
+                Predicate::EQ => rel
+                    .tuples()
                     .filter(move |tuple| tuple[key_offsets[0]] == tuple[key_offsets[1]]),
-                Predicate::NEQ => rel.tuples()
-                    .filter(move |tuple| tuple[key_offsets[0]] != tuple[key_offsets[1]])
-            }
+                Predicate::NEQ => rel
+                    .tuples()
+                    .filter(move |tuple| tuple[key_offsets[0]] != tuple[key_offsets[1]]),
+            },
         }
     }
 }

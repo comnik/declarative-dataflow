@@ -3,12 +3,10 @@ use std::collections::BinaryHeap;
 
 use timely::communication::Allocate;
 use timely::dataflow::operators::Map;
-use timely::dataflow::scopes::Child;
-use timely::progress::timestamp::Timestamp;
+use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::worker::Worker;
 
-use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
+use differential_dataflow::operators::{Consolidate, Group, Threshold};
 use differential_dataflow::AsCollection;
 
 use plan::Implementable;
@@ -52,22 +50,24 @@ pub struct Aggregate<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
-    fn implement<'a, 'b, A: Allocate, T: Timestamp + Lattice>(
+    fn implement<'a, 'b, A: Allocate>(
         &self,
-        nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-        local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-        global_arrangements: &mut QueryMap<T, isize>,
-    ) -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
-        let relation = self.plan
+        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
+        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        global_arrangements: &mut QueryMap<isize>,
+    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
+        let relation = self
+            .plan
             .implement(nested, local_arrangements, global_arrangements);
         let tuples = relation.tuples_by_symbols(&self.key_symbols);
 
         let prepare_unary = |(key, tuple): (Vec<Value>, Vec<Value>)| {
-                            let v = match tuple[0] {
-                                Value::Number(num) => num,
-                                _ => panic!("Can only be applied on type Number."),
-                            };
-                            (key.clone(), v) };
+            let v = match tuple[0] {
+                Value::Number(num) => num,
+                _ => panic!("Can only be applied on type Number."),
+            };
+            (key.clone(), v)
+        };
 
         match self.aggregation_fn {
             AggregationFn::MIN => {
@@ -76,6 +76,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                     tuples: tuples
                         .map(prepare_unary)
                         .group(|_key, vals, output| {
+                            // @TODO vals is ordered, take the first
                             let mut min = vals[0].0;
                             for &(val, _) in vals.iter() {
                                 if min > val {
@@ -84,8 +85,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                             }
                             // @TODO could preserve multiplicity of smallest value here
                             output.push((*min, 1));
-                        })
-                        .map(|(key, min)| {
+                        }).map(|(key, min)| {
                             let mut v = key.clone();
                             v.push(Value::Number(min as i64));
                             v
@@ -98,6 +98,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                     tuples: tuples
                         .map(prepare_unary)
                         .group(|_key, vals, output| {
+                            // @TODO vals is sorted, just take the last
                             let mut max = vals[0].0;
                             for &(val, _) in vals.iter() {
                                 if max < val {
@@ -106,8 +107,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                             }
                             // @TODO could preserve multiplicity of largest value here
                             output.push((*max, 1));
-                        })
-                        .map(|(key, max)| {
+                        }).map(|(key, max)| {
                             let mut v = key.clone();
                             v.push(Value::Number(max as i64));
                             v
@@ -121,8 +121,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                     .group(|_key, input, output| {
                         let count = input.len();
                         output.push((count, 1))
-                    })
-                    .map(|(key, count)| {
+                    }).map(|(key, count)| {
                         let mut v = key.clone();
                         v.push(Value::Number(count as i64));
                         v
@@ -141,8 +140,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                             };
                             // @todo clone?
                             Some((key.clone(), v))
-                        })
-                        .consolidate()
+                        }).consolidate()
                         .inner
                         .map(|(data, time, delta)| {
                             let mut v = data.clone();
@@ -164,8 +162,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         }
                         let avg = sum / vals.len() as i64;
                         output.push((avg, 1));
-                    })
-                    .map(|(key, avg)| {
+                    }).map(|(key, avg)| {
                         let mut v = key.clone();
                         v.push(Value::Number(avg as i64));
                         v
@@ -190,12 +187,11 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         }
                         var = var / vals.len() as i64;
                         output.push((var, 1));
-                    })
-                    .map(|(key, var)| {
+                    }).map(|(key, var)| {
                         let mut v = key.clone();
                         v.push(Value::Number(var as i64));
                         v
-                    })
+                    }),
             },
             AggregationFn::STDDEV => SimpleRelation {
                 symbols: self.variables.to_vec(),
@@ -217,12 +213,11 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         var = var / vals.len() as i64;
                         let std = (var as f64).sqrt() as i64;
                         output.push((std, 1));
-                    })
-                    .map(|(key, std)| {
+                    }).map(|(key, std)| {
                         let mut v = key.clone();
                         v.push(Value::Number(std as i64));
                         v
-                    })
+                    }),
             },
             AggregationFn::MEDIAN => SimpleRelation {
                 symbols: self.variables.to_vec(),
@@ -240,12 +235,11 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         let median = heap.into_sorted_vec()[index];
 
                         output.push((median, 1));
-                    })
-                    .map(|(key, med)| {
+                    }).map(|(key, med)| {
                         let mut v = key.clone();
                         v.push(Value::Number(med as i64));
                         v
-                    })
+                    }),
             },
         }
     }

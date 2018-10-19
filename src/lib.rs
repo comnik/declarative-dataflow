@@ -6,8 +6,8 @@
 
 #![forbid(missing_docs)]
 
-extern crate timely;
 extern crate differential_dataflow;
+extern crate timely;
 
 #[macro_use]
 extern crate abomonation_derive;
@@ -16,27 +16,29 @@ extern crate abomonation;
 #[macro_use]
 extern crate serde_derive;
 
+extern crate num_rational;
+
 use std::collections::{HashMap, HashSet};
 
-use timely::dataflow::*;
-use timely::dataflow::scopes::Child;
-use timely::progress::timestamp::{Timestamp, RootTimestamp};
-use timely::progress::nested::product::Product;
 use timely::communication::Allocate;
+use timely::dataflow::scopes::child::{Child, Iterative};
+use timely::dataflow::*;
+use timely::progress::nested::product::Product;
 use timely::worker::Worker;
 
-use differential_dataflow::collection::{Collection};
-use differential_dataflow::lattice::Lattice;
-use differential_dataflow::trace::implementations::ord::{OrdValSpine, OrdKeySpine};
+use differential_dataflow::collection::Collection;
 use differential_dataflow::operators::arrange::{ArrangeBySelf, TraceAgent};
-use differential_dataflow::operators::group::{Threshold};
+use differential_dataflow::operators::group::Threshold;
 use differential_dataflow::operators::iterate::Variable;
+use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
+
+// pub use num_rational::{Rational32};
 
 pub mod plan;
-pub use plan::{Plan, Implementable};
+pub use plan::{Implementable, Plan};
 
-pub mod sources;
 pub mod server;
+pub mod sources;
 
 //
 // TYPES
@@ -51,7 +53,9 @@ pub type Attribute = String; // u32
 ///
 /// This enum captures the currently supported data types, and is the least common denominator
 /// for the types of records moved around.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
+#[derive(
+    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize,
+)]
 pub enum Value {
     /// An attribute identifier
     Attribute(Attribute),
@@ -61,25 +65,29 @@ pub enum Value {
     Bool(bool),
     /// A 64 bit signed integer
     Number(i64),
+    // A 32 bit rational
+    // Rational32(Rational32),
     /// An entity identifier
     Eid(Entity),
     /// Milliseconds since midnight, January 1, 1970 UTC
     Instant(u64),
     /// A 16 byte unique identifier.
-    Uuid([u8; 16])
+    Uuid([u8; 16]),
 }
 
 /// An entity, attribute, value triple.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize)]
+#[derive(
+    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize,
+)]
 pub struct Datom(pub Entity, pub Attribute, pub Value);
 
 /// A handle to a collection trace.
-pub type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
-type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
+pub type TraceKeyHandle<K, R> = TraceAgent<K, (), u64, R, OrdKeySpine<K, u64, R>>;
+type TraceValHandle<K, V, R> = TraceAgent<K, V, u64, R, OrdValSpine<K, V, u64, R>>;
 // type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
 /// A map from global names to registered traces.
-pub type QueryMap<T, R> = HashMap<String, TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, R>>;
-type RelationMap<'a, G> = HashMap<String, Variable<'a, G, Vec<Value>, u64, isize>>;
+pub type QueryMap<R> = HashMap<String, TraceKeyHandle<Vec<Value>, R>>;
+type RelationMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
 
 //
 // CONTEXT
@@ -90,15 +98,15 @@ type RelationMap<'a, G> = HashMap<String, Variable<'a, G, Vec<Value>, u64, isize
 /// A `DB` contains multiple indices for (entity, attribute, value) triples, by various
 /// subsets of these three fields. These indices can be shared between all queries that
 /// need access to the common data.
-pub struct DB<T: Timestamp+Lattice> {
+pub struct DB {
     /// Indexed by entity.
-    pub e_av: TraceValHandle<Entity, (Attribute, Value), Product<RootTimestamp, T>, isize>,
+    pub e_av: TraceValHandle<Entity, (Attribute, Value), isize>,
     /// Indexed by attribute.
-    pub a_ev: TraceValHandle<Attribute, (Entity, Value), Product<RootTimestamp, T>, isize>,
+    pub a_ev: TraceValHandle<Attribute, (Entity, Value), isize>,
     /// Indexed by (entity, attribute).
-    pub ea_v: TraceValHandle<(Entity, Attribute), Value, Product<RootTimestamp, T>, isize>,
+    pub ea_v: TraceValHandle<(Entity, Attribute), Value, isize>,
     /// Indexed by (attribute, value).
-    pub av_e: TraceValHandle<(Attribute, Value), Entity, Product<RootTimestamp, T>, isize>,
+    pub av_e: TraceValHandle<(Attribute, Value), Entity, isize>,
 }
 
 // /// Live arrangements.
@@ -134,44 +142,52 @@ type Var = u32;
 /// A relation is internally a collection of records of type `Vec<Value>` each of a
 /// common length, and a mapping from variable identifiers to positions in each of
 /// these vectors.
-trait Relation<'a, G: Scope> where G::Timestamp : Lattice {
+trait Relation<'a, G: Scope> {
     /// List the variable identifiers.
     fn symbols(&self) -> &[Var];
     /// A collection containing all tuples.
-    fn tuples(self) -> Collection<Child<'a, G, u64>, Vec<Value>, isize>;
+    fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
     /// A collection with tuples partitioned by `syms`.
     ///
     /// Variables present in `syms` are collected in order and populate a first "key"
     /// `Vec<Value>`, followed by those variables not present in `syms`.
-    fn tuples_by_symbols(self, syms: &[Var]) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
+    fn tuples_by_symbols(
+        self,
+        syms: &[Var],
+    ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
 }
 
 /// A handle to an arranged relation.
-pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, Product<RootTimestamp, T>, isize>;
+pub type RelationHandle = TraceKeyHandle<Vec<Value>, isize>;
 
 /// A collection and variable bindings.
-pub struct SimpleRelation<'a, G: Scope> where G::Timestamp : Lattice {
+pub struct SimpleRelation<'a, G: Scope> {
     symbols: Vec<Var>,
-    tuples: Collection<Child<'a, G, u64>, Vec<Value>, isize>,
+    tuples: Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
 }
 
-impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp : Lattice {
-    fn symbols(&self) -> &[Var] { &self.symbols }
-    fn tuples(self) -> Collection<Child<'a, G, u64>, Vec<Value>, isize> { self.tuples }
+impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> {
+    fn symbols(&self) -> &[Var] {
+        &self.symbols
+    }
+    fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
+        self.tuples
+    }
 
     /// Separates tuple fields by those in `syms` and those not.
     ///
     /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)` containing first exactly
     /// those symbols in `syms` in that order, followed by the remaining values in their
     /// original order.
-    fn tuples_by_symbols(self, syms: &[Var]) -> Collection<Child<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>{
+    fn tuples_by_symbols(
+        self,
+        syms: &[Var],
+    ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize> {
         if syms == &self.symbols()[..] {
             self.tuples().map(|x| (x, Vec::new()))
-        }
-        else if syms.is_empty() {
+        } else if syms.is_empty() {
             self.tuples().map(|x| (Vec::new(), x))
-        }
-        else {
+        } else {
             let key_length = syms.len();
             let values_length = self.symbols().len() - key_length;
 
@@ -197,14 +213,13 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
             // println!("key offsets: {:?}", debug_keys);
             // println!("value offsets: {:?}", debug_values);
 
-            self.tuples()
-                .map(move |tuple| {
-                    let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
-                    // @TODO second clone not really neccessary
-                    let values: Vec<Value> = value_offsets.iter().map(|i| tuple[*i].clone()).collect();
+            self.tuples().map(move |tuple| {
+                let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
+                // @TODO second clone not really neccessary
+                let values: Vec<Value> = value_offsets.iter().map(|i| tuple[*i].clone()).collect();
 
-                    (key, values)
-                })
+                (key, values)
+            })
         }
     }
 }
@@ -216,45 +231,37 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> where G::Timestamp 
 /// Takes a query plan and turns it into a differential dataflow. The
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
-pub fn implement<A: Allocate, T: Timestamp+Lattice>(
+pub fn implement<A: Allocate>(
     mut rules: Vec<Rule>,
     publish: Vec<String>,
-    scope: &mut Child<Worker<A>, T>,
-    global_arrangements: &mut QueryMap<T, isize>,
-    probe: &mut ProbeHandle<Product<RootTimestamp, T>>,
-) -> HashMap<String, RelationHandle<T>> {
-
-    scope.scoped(|nested| {
-
+    scope: &mut Child<Worker<A>, u64>,
+    global_arrangements: &mut QueryMap<isize>,
+    probe: &mut ProbeHandle<u64>,
+) -> HashMap<String, RelationHandle> {
+    scope.iterative::<u64, _, _>(|nested| {
         let mut local_arrangements = RelationMap::new();
         let mut result_map = QueryMap::new();
 
         // Step 0: Canonicalize, check uniqueness of bindings.
-        rules.sort_by(|x,y| x.name.cmp(&y.name));
-        for index in 1 .. rules.len() - 1 {
-            if rules[index].name == rules[index-1].name {
+        rules.sort_by(|x, y| x.name.cmp(&y.name));
+        for index in 1..rules.len() - 1 {
+            if rules[index].name == rules[index - 1].name {
                 panic!("Duplicate rule definitions for rule {}", rules[index].name);
             }
         }
 
         // Step 1: Create new recursive variables for each rule.
         for rule in rules.iter() {
-            local_arrangements.insert(rule.name.clone(), Variable::new(nested, u64::max_value(), 1));
+            local_arrangements.insert(rule.name.clone(), Variable::new(nested, Product::new(0, 1)));
         }
 
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
             if let Some(relation) = local_arrangements.get(&name) {
-                let trace =
-                relation
-                    .leave()
-                    .probe_with(probe)
-                    .arrange_by_self()
-                    .trace;
+                let trace = relation.leave().probe_with(probe).arrange_by_self().trace;
 
                 result_map.insert(name, trace);
-            }
-            else {
+            } else {
                 panic!("Attempted to publish undefined name {:?}", name);
             }
         }
@@ -263,7 +270,10 @@ pub fn implement<A: Allocate, T: Timestamp+Lattice>(
         let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
             println!("Planning {:?}", rule.name);
-            executions.push(rule.plan.implement(nested, &local_arrangements, global_arrangements));
+            executions.push(
+                rule.plan
+                    .implement(nested, &local_arrangements, global_arrangements),
+            );
         }
 
         // Step 4: complete named relations in a specific order (sorted by name).

@@ -1,25 +1,23 @@
 //! Server logic for driving the library via commands.
 
-extern crate timely;
 extern crate differential_dataflow;
+extern crate timely;
 
-use std::collections::{HashMap};
+use std::collections::HashMap;
 
-use timely::dataflow::{ProbeHandle};
-use timely::dataflow::scopes::Child;
-use timely::progress::timestamp::{RootTimestamp};
-use timely::progress::nested::product::Product;
 use timely::communication::Allocate;
+use timely::dataflow::scopes::Child;
+use timely::dataflow::ProbeHandle;
 use timely::worker::Worker;
 
-use differential_dataflow::{AsCollection};
-use differential_dataflow::collection::{Collection};
+use differential_dataflow::collection::Collection;
 use differential_dataflow::input::{Input, InputSession};
-use differential_dataflow::trace::{TraceReader};
-use differential_dataflow::operators::arrange::{ArrangeBySelf};
+use differential_dataflow::operators::arrange::ArrangeBySelf;
+use differential_dataflow::trace::TraceReader;
+use differential_dataflow::AsCollection;
 
-use {QueryMap, TraceKeyHandle, Rule, Entity, Attribute, Value, implement};
 use sources::{Source, Sourceable};
+use {implement, Attribute, Entity, QueryMap, Rule, TraceKeyHandle, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -52,9 +50,9 @@ pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
 #[derive(Deserialize, Debug)]
 pub struct Transact {
     /// The timestamp at which this transaction occured.
-    pub tx: Option<usize>,
+    pub tx: Option<u64>,
     /// A sequence of additions and retractions.
-    pub tx_data: Vec<TxData>
+    pub tx_data: Vec<TxData>,
 }
 
 /// A request expressing interest in receiving results published under
@@ -62,7 +60,7 @@ pub struct Transact {
 #[derive(Deserialize, Debug)]
 pub struct Interest {
     /// The name of a previously registered dataflow.
-    pub name: String
+    pub name: String,
 }
 
 /// A request with the intent of synthesising one or more new rules
@@ -72,7 +70,7 @@ pub struct Register {
     /// A list of rules to synthesise in order.
     pub rules: Vec<Rule>,
     /// The names of rules that should be published.
-    pub publish: Vec<String>
+    pub publish: Vec<String>,
 }
 
 /// A request with the intent of attaching to an external data source
@@ -82,7 +80,7 @@ pub struct RegisterSource {
     /// One or more globally unique names.
     pub names: Vec<String>,
     /// A source configuration.
-    pub source: Source
+    pub source: Source,
 }
 
 /// A request with the intent of creating a new named, globally
@@ -91,7 +89,7 @@ pub struct RegisterSource {
 pub struct CreateInput {
     /// A globally unique name under which to publish data sent via
     /// this input.
-    pub name: String
+    pub name: String,
 }
 
 /// Possible request types.
@@ -115,15 +113,14 @@ pub struct Server {
     /// Server configuration.
     pub config: Config,
     /// Input handles to global arrangements.
-    pub input_handles: HashMap<String, InputSession<usize, Vec<Value>, isize>>,
+    pub input_handles: HashMap<String, InputSession<u64, Vec<Value>, isize>>,
     /// Named relations.
-    pub global_arrangements: QueryMap<usize, isize>,
+    pub global_arrangements: QueryMap<isize>,
     /// A probe for the transaction id time domain.
-    pub probe: ProbeHandle<Product<RootTimestamp, usize>>,
+    pub probe: ProbeHandle<u64>,
 }
 
 impl Server {
-
     /// Creates a new server state from a configuration.
     pub fn new(config: Config) -> Self {
         Server {
@@ -137,7 +134,7 @@ impl Server {
     fn register_global_arrangement(
         &mut self,
         name: String,
-        mut trace: TraceKeyHandle<Vec<Value>, Product<RootTimestamp, usize>, isize>
+        mut trace: TraceKeyHandle<Vec<Value>, isize>,
     ) {
         // decline the capability for that trace handle to subset its
         // view of the data
@@ -148,17 +145,16 @@ impl Server {
 
     /// Handle a Transact request.
     pub fn transact(&mut self, req: Transact, owner: usize, worker_index: usize) {
-
         let Transact { tx, tx_data } = req;
-        
-        if owner == worker_index {
 
+        if owner == worker_index {
             // only the owner should actually introduce new inputs
 
             // @TODO do this smarter, e.g. grouped by handle
             for TxData(op, e, a, v) in tx_data {
-
-                let handle = self.input_handles.get_mut(&a)
+                let handle = self
+                    .input_handles
+                    .get_mut(&a)
                     .expect(&format!("Attribute {} does not exist.", a));
 
                 handle.update(vec![Value::Eid(e), v], op);
@@ -169,16 +165,15 @@ impl Server {
         for handle in self.input_handles.values_mut() {
             let next_tx = match tx {
                 None => handle.epoch() + 1,
-                Some(tx) => tx + 1
+                Some(tx) => tx + 1,
             };
 
-            // @TODO only advance handles that received input? 
+            // @TODO only advance handles that received input?
             handle.advance_to(next_tx);
             handle.flush();
         }
 
         if self.config.enable_history == false {
-
             // if historical queries don't matter, we should advance
             // the index traces to allow them to compact
 
@@ -199,29 +194,29 @@ impl Server {
     pub fn interest<'a, A: Allocate>(
         &mut self,
         req: Interest,
-        scope: &mut Child<'a, Worker<A>, usize>
-    ) -> Collection<Child<'a, Worker<A>, usize>, Vec<Value>, isize> {
-
+        scope: &mut Child<'a, Worker<A>, u64>,
+    ) -> Collection<Child<'a, Worker<A>, u64>, Vec<Value>, isize> {
         let Interest { name } = req;
 
         self.global_arrangements
             .get_mut(&name)
             .expect(&format!("Could not find relation {:?}", name))
             .import(scope)
-            .as_collection(|tuple,_| tuple.clone())
+            .as_collection(|tuple, _| tuple.clone())
             .probe_with(&mut self.probe)
     }
 
     /// Handle a Register request.
-    pub fn register<A: Allocate>(
-        &mut self,
-        req: Register,
-        scope: &mut Child<Worker<A>, usize>
-    ) {
-
+    pub fn register<A: Allocate>(&mut self, req: Register, scope: &mut Child<Worker<A>, u64>) {
         let Register { rules, publish } = req;
 
-        let rel_map = implement(rules, publish, scope, &mut self.global_arrangements, &mut self.probe);
+        let rel_map = implement(
+            rules,
+            publish,
+            scope,
+            &mut self.global_arrangements,
+            &mut self.probe,
+        );
 
         for (name, mut trace) in rel_map.into_iter() {
             if self.global_arrangements.contains_key(&name) {
@@ -236,13 +231,11 @@ impl Server {
     pub fn register_source<A: Allocate>(
         &mut self,
         req: RegisterSource,
-        scope: &mut Child<Worker<A>, usize>,
+        scope: &mut Child<Worker<A>, u64>,
     ) {
-
         let RegisterSource { mut names, source } = req;
 
         if names.len() == 1 {
-
             let name = names.pop().unwrap();
             let datoms = source.source(scope).as_collection();
 
@@ -253,21 +246,23 @@ impl Server {
                 self.register_global_arrangement(name, trace);
             }
         } else if names.len() > 1 {
-
             let datoms = source.source(scope).as_collection();
 
-            // @TODO 'intern' attribute names with offset in names vector 
-            
+            // @TODO 'intern' attribute names with offset in names vector
+
             for name in names.iter() {
                 if self.global_arrangements.contains_key(name) {
                     panic!("Source name clashes with registered relation.");
                 } else {
                     let name_str = name.to_string();
                     let trace = datoms
-                        .filter(move |tuple| match tuple[1] { Value::String(ref v) => *v == name_str, _ => panic!("expected a string") })
-                        .map(|tuple| vec![tuple[0].clone(), tuple[2].clone()])
-                        .arrange_by_self().trace;
-                    
+                        .filter(move |tuple| match tuple[1] {
+                            Value::String(ref v) => *v == name_str,
+                            _ => panic!("expected a string"),
+                        }).map(|tuple| vec![tuple[0].clone(), tuple[2].clone()])
+                        .arrange_by_self()
+                        .trace;
+
                     self.register_global_arrangement(name.to_string(), trace);
                 }
             }
@@ -278,11 +273,10 @@ impl Server {
     pub fn create_input<A: Allocate>(
         &mut self,
         req: CreateInput,
-        scope: &mut Child<Worker<A>, usize>,
+        scope: &mut Child<Worker<A>, u64>,
     ) {
-
         let CreateInput { name } = req;
-        
+
         if self.global_arrangements.contains_key(&name) {
             panic!("Input name clashes with existing trace.");
         } else {

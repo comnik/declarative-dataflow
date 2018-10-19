@@ -19,12 +19,12 @@ fn match_ea() {
         // [:find ?v :where [1 :name ?n]]
         let plan = Plan::MatchEA(1, ":name".to_string(), 1);
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(
                 CreateInput {
                     name: ":name".to_string(),
                 },
-                &mut scope,
+                scope,
             );
 
             let query_name = "match_ea";
@@ -36,7 +36,7 @@ fn match_ea() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
@@ -44,9 +44,8 @@ fn match_ea() {
                     Interest {
                         name: query_name.to_string(),
                     },
-                    &mut scope,
-                )
-                .inspect(move |x| {
+                    scope,
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -95,7 +94,7 @@ fn match_ea() {
                 (vec![Value::String("Dipper".to_string())], 1)
             );
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
 
@@ -116,7 +115,7 @@ fn join() {
             })),
         });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
                 CreateInput {
                     name: ":name".to_string(),
@@ -148,8 +147,7 @@ fn join() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -190,7 +188,7 @@ fn join() {
                 )
             );
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
 
@@ -229,7 +227,7 @@ fn count() {
             key_symbols: vec![e, amount],
         });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
                 CreateInput {
                     name: ":amount".to_string(),
@@ -255,8 +253,7 @@ fn count() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -278,8 +275,7 @@ fn count() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -301,8 +297,7 @@ fn count() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results_copy_2.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -360,7 +355,7 @@ fn count() {
                 (vec![Value::Eid(2), Value::Number(10), Value::Number(1)], 1)
             );
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
 
@@ -391,7 +386,7 @@ fn max() {
             key_symbols: vec![e],
         });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
                 CreateInput {
                     name: ":amount".to_string(),
@@ -417,8 +412,7 @@ fn max() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -440,8 +434,7 @@ fn max() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -479,7 +472,7 @@ fn max() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(10)], 1));
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
 
@@ -510,7 +503,7 @@ fn min() {
             key_symbols: vec![e],
         });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
                 CreateInput {
                     name: ":amount".to_string(),
@@ -536,8 +529,7 @@ fn min() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -559,8 +551,7 @@ fn min() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -598,7 +589,7 @@ fn min() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(2)], 1));
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
 
@@ -631,7 +622,7 @@ fn sum() {
             key_symbols: vec![],
         });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
                 CreateInput {
                     name: ":amount".to_string(),
@@ -657,8 +648,7 @@ fn sum() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -680,8 +670,7 @@ fn sum() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -719,7 +708,7 @@ fn sum() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(27)], 1));
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
 
@@ -750,7 +739,7 @@ fn avg() {
             key_symbols: vec![e],
         });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
                 CreateInput {
                     name: ":amount".to_string(),
@@ -776,8 +765,7 @@ fn avg() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -799,8 +787,7 @@ fn avg() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -838,7 +825,7 @@ fn avg() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
 
@@ -869,7 +856,7 @@ fn var() {
             key_symbols: vec![e],
         });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
                 CreateInput {
                     name: ":amount".to_string(),
@@ -895,8 +882,7 @@ fn var() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -918,8 +904,7 @@ fn var() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -957,10 +942,9 @@ fn var() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(7)], 1));
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
-
 
 #[test]
 fn median() {
@@ -989,7 +973,7 @@ fn median() {
             key_symbols: vec![e],
         });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
                 CreateInput {
                     name: ":amount".to_string(),
@@ -1015,8 +999,7 @@ fn median() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -1038,8 +1021,7 @@ fn median() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                )
-                .inspect(move |x| {
+                ).inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -1077,6 +1059,6 @@ fn median() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
         }).join()
-            .unwrap();
+        .unwrap();
     }).unwrap();
 }
