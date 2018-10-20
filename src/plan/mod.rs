@@ -10,6 +10,7 @@ use {QueryMap, Relation, RelationMap, SimpleRelation};
 pub mod aggregate;
 pub mod antijoin;
 pub mod filter;
+pub mod transform;
 pub mod join;
 pub mod project;
 pub mod union;
@@ -17,6 +18,7 @@ pub mod union;
 pub use self::aggregate::{Aggregate, AggregationFn};
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
+pub use self::transform::{Transform, Function};
 pub use self::join::Join;
 pub use self::project::Project;
 pub use self::union::Union;
@@ -49,6 +51,8 @@ pub enum Plan {
     Negate(Box<Plan>),
     /// Filters bindings by one of the built-in predicates
     Filter(Filter<Plan>),
+    /// Transforms a binding by a function expression 
+    Transform(Transform<Plan>),
     // /// Data pattern of the form [e ?a ?v]
     // MatchE(Entity, Var, Var),
     /// Data pattern of the form [?e a ?v]
@@ -100,6 +104,9 @@ impl Implementable for Plan {
             }
             &Plan::Filter(ref filter) => {
                 filter.implement(nested, local_arrangements, global_arrangements)
+            }
+            &Plan::Transform(ref transform) => {
+                transform.implement(nested, local_arrangements, global_arrangements)
             }
             &Plan::MatchA(sym1, ref a, sym2) => {
                 let tuples = match global_arrangements.get_mut(a) {
