@@ -1,17 +1,21 @@
 //! Aggregate expression plan.
-use std::collections::BinaryHeap;
 
 use timely::communication::Allocate;
 use timely::dataflow::operators::Map;
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::worker::Worker;
 
-use differential_dataflow::operators::{Consolidate, Group, Threshold};
+use differential_dataflow::operators::{Consolidate, Group, Threshold, Count};
 use differential_dataflow::AsCollection;
+use differential_dataflow::difference::DiffPair;
 
 use plan::Implementable;
 use Relation;
 use {QueryMap, RelationMap, SimpleRelation, Value, Var};
+
+use num_rational::{Ratio, Rational32};
+
+
 
 /// Permitted aggregation function.
 #[derive(Deserialize, Clone, Debug)]
@@ -30,10 +34,8 @@ pub enum AggregationFn {
     AVG,
     ///Varianve
     VARIANCE,
-    /// Standard deviation
-    STDDEV,
-    /// MEDIAN
-    MEDIAN,
+    // /// Standard deviation
+    // STDDEV,
 }
 
 /// [WIP]
@@ -112,28 +114,6 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         v
                     })
             },
-            AggregationFn::SUM => {
-                SimpleRelation {
-                    symbols: self.variables.to_vec(),
-                    tuples: tuples
-                        .consolidate()
-                        .distinct()
-                        .explode(|(ref key, ref tuple)| {
-                            let v = match tuple[0] {
-                                Value::Number(num) => num as isize,
-                                _ => panic!("COUNT can only be applied to numbers"),
-                            };
-                            // @todo clone?
-                            Some((key.clone(), v))
-                        }).consolidate()
-                        .inner
-                        .map(|(data, time, delta)| {
-                            let mut v = data.clone();
-                            v.push(Value::Number(delta as i64));
-                            (v, time, delta)
-                        }).as_collection(),
-                }
-            }
             AggregationFn::COUNT => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
@@ -145,24 +125,84 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         v
                     })
             },
+            AggregationFn::SUM => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
                     .consolidate()
+                    .distinct()
+                    .explode(|(key, tuple)| {
+                        let v = match tuple[0] {
+                            Value::Number(num) => num as isize,
+                            _ => panic!("SUM can only be applied to numbers"),
+                        };
+                        Some((key, v))})
+                    .count()
+                    .map(|(key, count)| {
                         let mut v = key.clone();
+                        v.push(Value::Number(count as i64));
+                        v})
             },
+            AggregationFn::AVG => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
                     .consolidate()
+                    .distinct()
+                    .explode(|(key, tuple)| {
+                        let v = match tuple[0] {
+                            Value::Number(num) => num as isize,
+                            _ => panic!("AVG can only be applied to numbers"),
+                        };
+                        Some((key, DiffPair::new(v, 1)))})
+                    .count()
+                    .map(|(key, diff_pair)| {
                         let mut v = key.clone();
+                        v.push(Value::Rational32( Ratio::new(diff_pair.element1 as i32, diff_pair.element2 as i32)));
                         v
+                    })
             },
+            AggregationFn::VARIANCE => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
                     .consolidate()
+                    .distinct()
+                    .explode(|(key, tuple)| {
+                        let v = match tuple[0] {
+                            Value::Number(num) => num as isize,
+                            _ => panic!("VAR can only be applied to numbers"),
+                        };
+                        Some((key, DiffPair::new(DiffPair::new(v*v, v), 1)))})
+                    .count()
+                    .map(|(key, diff_pair)| {
                         let mut v = key.clone();
+                        let sum_square = diff_pair.element1.element1 as i32;
+                        let sum = diff_pair.element1.element2 as i32;
+                        let c = diff_pair.element2 as i32;
+                        v.push(Value::Rational32(Rational32::new(sum_square, c) - Rational32::new(sum, c).pow(2)));
                         v
                     }),
             },
+            // AggregationFn::STDDEV => SimpleRelation {
+            //     symbols: self.variables.to_vec(),
+            //     tuples: tuples
+            //         .consolidate()
+            //         .distinct()
+            //         .explode(|(key, tuple)| {
+            //             let v = match tuple[0] {
+            //                 Value::Number(num) => num as isize,
+            //                 _ => panic!("STDDEV can only be applied to numbers"),
+            //             };
+            //             Some((key, DiffPair::new(DiffPair::new(v*v, v), 1)))})
+            //         .count()
+            //         .map(|(key, diff_pair)| {
+            //             let mut v = key.clone();
+            //             let sum_square = diff_pair.element1.element1 as f64;
+            //             let sum = diff_pair.element1.element2 as f64;
+            //             let c = diff_pair.element2 as f64;
+            //
+            //             v.push(Value::Rational32(Rational32::from_float((sum_square/c - (sum/c).powi(2)).sqrt()).unwrap()));
+            //             v
+            //         }),
+            // },
         }
     }
 }
