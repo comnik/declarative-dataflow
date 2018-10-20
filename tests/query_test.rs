@@ -1,5 +1,6 @@
 extern crate declarative_dataflow;
 extern crate timely;
+extern crate num_rational;
 
 use std::sync::mpsc::channel;
 use std::thread;
@@ -9,6 +10,8 @@ use timely::Configuration;
 use declarative_dataflow::plan::{Aggregate, AggregationFn, Join, Project};
 use declarative_dataflow::server::{CreateInput, Interest, Register, Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
+
+use num_rational::{Ratio};
 
 #[test]
 fn match_ea() {
@@ -817,13 +820,13 @@ fn avg() {
         thread::spawn(move || {
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(4)], 1)
+                (vec![Value::Eid(1), Value::Rational32(Ratio::new(17, 4))], 1)
             );
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Number(10)], 1)
+                (vec![Value::Eid(2), Value::Rational32(Ratio::new(10, 1))], 1)
             );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(27, 5))], 1));
         }).join()
         .unwrap();
     }).unwrap();
@@ -934,13 +937,13 @@ fn var() {
         thread::spawn(move || {
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(2)], 1)
+                (vec![Value::Eid(1), Value::Rational32(Ratio::new(35, 16))], 1)
             );
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Number(0)], 1)
+                (vec![Value::Eid(2), Value::Rational32(Ratio::new(0, 1))], 1)
             );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(7)], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(176, 25))], 1));
         }).join()
         .unwrap();
     }).unwrap();
