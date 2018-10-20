@@ -14,7 +14,7 @@ use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 /// Permitted functions.
 #[derive(Deserialize, Clone, Debug)]
 pub enum Function {
-    /// Time interval
+    /// Truncates a unix timestamp into an hourly interval
     INTERVAL
 }
 
