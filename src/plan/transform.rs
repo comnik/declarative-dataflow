@@ -1,7 +1,7 @@
 //! Function expression plan.
 
 use timely::communication::Allocate;
-use timely::dataflow::scopes::Child;
+use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::progress::timestamp::Timestamp;
 use timely::worker::Worker;
 
@@ -9,13 +9,13 @@ use differential_dataflow::lattice::Lattice;
 
 use plan::Implementable;
 use Relation;
-use {QueryMap, RelationMap, SimpleRelation, Var};
+use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 
-/// Permitted comparison predicates.
+/// Permitted functions.
 #[derive(Deserialize, Clone, Debug)]
-pub enum FunctionExpression {
+pub enum Function {
     /// Time interval
-    INTERVAL,
+    INTERVAL
 }
 
 /// A plan stage applying a built-in function to source tuples.
@@ -23,22 +23,22 @@ pub enum FunctionExpression {
 /// binds the argument symbols and that the result is projected onto
 /// the right symbol.
 #[derive(Deserialize, Clone, Debug)]
-pub struct Transformation<P: Implementable> {
+pub struct Transform <P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
     /// Plan for the data source.
     pub plan: Box<P>,
     /// Function to apply
-    pub function_expression: FunctionExpression,
+    pub function: Function,
 }
 
-impl<P: Implementable> Implementable for Transformation<P> {
-    fn implement<'a, 'b, A: Allocate, T: Timestamp + Lattice>(
+impl<P: Implementable> Implementable for Transform<P> {
+    fn implement<'a, 'b, A: Allocate>(
         &self,
-        nested: &mut Child<'b, Child<'a, Worker<A>, T>, u64>,
-        local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, T>>,
-        global_arrangements: &mut QueryMap<T, isize>,
-    ) -> SimpleRelation<'b, Child<'a, Worker<A>, T>> {
+        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
+        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        global_arrangements: &mut QueryMap<isize>,
+    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
         let rel = self.plan
             .implement(nested, local_arrangements, global_arrangements);
 
@@ -52,19 +52,20 @@ impl<P: Implementable> Implementable for Transformation<P> {
                     .expect("Symbol not found.")
             }).collect();
 
-        match self.function_expression {
-            FunctionExpression::INTERVAL => 
+        match self.function{
+            Function::INTERVAL => 
                 SimpleRelation {
                     symbols: rel.symbols().to_vec(),
                     tuples: rel.tuples()
                         .map(move |tuple| {
                             let mut t = match tuple[key_offsets[0]] {
                                 Value::Instant(inst) => inst as u64,
-                                _ => panic!("INTERVAL can only be applied to timestamp")
+                                _ => panic!("INTERVAL can only be applied to timestamps")
                             };
-                            t = t - (t %% 3600000);
+                            // @TODO Add parameter to control the interval
+                            t = t - (t % 3600000);
                             let mut v = tuple.clone();
-                            v[key_offsets[0]] = t;
+                            v[key_offsets[0]] = Value::Instant(t);
                             v
                         })
                 }
