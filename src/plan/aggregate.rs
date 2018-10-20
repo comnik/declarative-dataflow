@@ -20,6 +20,8 @@ pub enum AggregationFn {
     MIN,
     /// Maximum
     MAX,
+    /// MEDIAN
+    MEDIAN,
     /// Count
     COUNT,
     /// Sum
@@ -70,62 +72,45 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         };
 
         match self.aggregation_fn {
-            AggregationFn::MIN => {
-                SimpleRelation {
+            AggregationFn::MIN =>  SimpleRelation {
                     symbols: self.variables.to_vec(),
                     tuples: tuples
                         .map(prepare_unary)
                         .group(|_key, vals, output| {
-                            // @TODO vals is ordered, take the first
-                            let mut min = vals[0].0;
-                            for &(val, _) in vals.iter() {
-                                if min > val {
-                                    min = val;
-                                }
-                            }
-                            // @TODO could preserve multiplicity of smallest value here
+                            let  min = vals[0].0;
                             output.push((*min, 1));
                         }).map(|(key, min)| {
                             let mut v = key.clone();
                             v.push(Value::Number(min as i64));
                             v
-                        }),
-                }
-            }
-            AggregationFn::MAX => {
-                SimpleRelation {
+                        })
+            },
+            AggregationFn::MAX => SimpleRelation {
                     symbols: self.variables.to_vec(),
                     tuples: tuples
                         .map(prepare_unary)
                         .group(|_key, vals, output| {
-                            // @TODO vals is sorted, just take the last
-                            let mut max = vals[0].0;
-                            for &(val, _) in vals.iter() {
-                                if max < val {
-                                    max = val;
-                                }
-                            }
-                            // @TODO could preserve multiplicity of largest value here
+                            let max = vals[vals.len() - 1].0;
                             output.push((*max, 1));
                         }).map(|(key, max)| {
                             let mut v = key.clone();
                             v.push(Value::Number(max as i64));
                             v
-                        }),
-                }
-            }
-            AggregationFn::COUNT => SimpleRelation {
+                        })
+                
+            },
+            AggregationFn::MEDIAN => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
-                    .consolidate()
-                    .group(|_key, input, output| {
-                        let count = input.len();
-                        output.push((count, 1))
-                    }).map(|(key, count)| {
+                    .map(prepare_unary)
+                    .group(|_key, vals, output| {
+                        let median = vals[vals.len()/2].0;
+                        output.push((*median, 1));
+                    }).map(|(key, med)| {
                         let mut v = key.clone();
-                        v.push(Value::Number(count as i64));
+                        v.push(Value::Number(med as i64));
                         v
-                    }),
+                    })
             },
             AggregationFn::SUM => {
                 SimpleRelation {
@@ -149,95 +134,32 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         }).as_collection(),
                 }
             }
-            AggregationFn::AVG => SimpleRelation {
+            AggregationFn::COUNT => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
-                    .consolidate()
-                    .map(prepare_unary)
-                    .group(|_key, vals, output| {
-                        let mut sum = 0;
-
-                        for &(val, _) in vals.iter() {
-                            sum += val;
-                        }
-                        let avg = sum / vals.len() as i64;
-                        output.push((avg, 1));
-                    }).map(|(key, avg)| {
+                    .group(|_key, input, output| {
+                        output.push((input.len(), 1))})
+                    .map(|(key, count)| {
                         let mut v = key.clone();
-                        v.push(Value::Number(avg as i64));
+                        v.push(Value::Number(count as i64));
                         v
-                    }),
+                    })
             },
-            AggregationFn::VARIANCE => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
                     .consolidate()
-                    .map(prepare_unary)
-                    .group(|_key, vals, output| {
-                        let mut sum = 0;
-
-                        for &(val, _) in vals.iter() {
-                            sum += val;
-                        }
-                        let avg = sum / vals.len() as i64;
-
-                        let mut var = 0;
-                        for &(val, _) in vals.iter() {
-                            var += (val - avg).pow(2);
-                        }
-                        var = var / vals.len() as i64;
-                        output.push((var, 1));
-                    }).map(|(key, var)| {
                         let mut v = key.clone();
-                        v.push(Value::Number(var as i64));
+            },
+                symbols: self.variables.to_vec(),
+                tuples: tuples
+                    .consolidate()
+                        let mut v = key.clone();
                         v
-                    }),
             },
-            AggregationFn::STDDEV => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
                     .consolidate()
-                    .map(prepare_unary)
-                    .group(|_key, vals, output| {
-                        let mut sum = 0;
-
-                        for &(val, _) in vals.iter() {
-                            sum += val;
-                        }
-                        let avg = sum / vals.len() as i64;
-
-                        let mut var = 0;
-                        for &(val, _) in vals.iter() {
-                            var += (val - avg).pow(2);
-                        }
-                        var = var / vals.len() as i64;
-                        let std = (var as f64).sqrt() as i64;
-                        output.push((std, 1));
-                    }).map(|(key, std)| {
                         let mut v = key.clone();
-                        v.push(Value::Number(std as i64));
-                        v
-                    }),
-            },
-            AggregationFn::MEDIAN => SimpleRelation {
-                symbols: self.variables.to_vec(),
-                tuples: tuples
-                    .consolidate()
-                    .map(prepare_unary)
-                    .group(|_key, vals, output| {
-                        let mut heap = BinaryHeap::new();
-
-                        for &(val, _) in vals.iter() {
-                            heap.push(*val);
-                        }
-
-                        let index = heap.len() / 2;
-                        let median = heap.into_sorted_vec()[index];
-
-                        output.push((median, 1));
-                    }).map(|(key, med)| {
-                        let mut v = key.clone();
-                        v.push(Value::Number(med as i64));
                         v
                     }),
             },
