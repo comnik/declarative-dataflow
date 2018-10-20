@@ -32,7 +32,7 @@ use differential_dataflow::operators::group::Threshold;
 use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
 
-// pub use num_rational::{Rational32};
+pub use num_rational::{Rational32};
 
 pub mod plan;
 pub use plan::{Implementable, Plan};
@@ -54,7 +54,7 @@ pub type Attribute = String; // u32
 /// This enum captures the currently supported data types, and is the least common denominator
 /// for the types of records moved around.
 #[derive(
-    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize,
+    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize,
 )]
 pub enum Value {
     /// An attribute identifier
@@ -65,8 +65,8 @@ pub enum Value {
     Bool(bool),
     /// A 64 bit signed integer
     Number(i64),
-    // A 32 bit rational
-    // Rational32(Rational32),
+    /// A 32 bit rational
+    Rational32(Rational32),
     /// An entity identifier
     Eid(Entity),
     /// Milliseconds since midnight, January 1, 1970 UTC
@@ -77,7 +77,7 @@ pub enum Value {
 
 /// An entity, attribute, value triple.
 #[derive(
-    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Debug, Serialize, Deserialize,
+    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize,
 )]
 pub struct Datom(pub Entity, pub Attribute, pub Value);
 
