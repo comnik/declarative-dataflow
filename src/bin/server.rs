@@ -353,6 +353,7 @@ fn main() {
                             // @TODO only create a single dataflow, but only if req != Transact
 
                             match req {
+                                Request::Datom(e, a, v, diff, tx) => { server.datom(owner, worker.index(), e, a, v, diff, tx); },
                                 Request::Transact(req) => { server.transact(req, owner, worker.index()); },
                                 Request::Interest(req) => {
 
@@ -413,7 +414,8 @@ fn main() {
                                     worker.dataflow::<u64, _, _>(|mut scope| {
                                         server.create_input(req, &mut scope);
                                     });
-                                }
+                                },
+                                Request::AdvanceInput(name, tx) => { server.advance_input(name, tx); },
                             }
                         }
                     }

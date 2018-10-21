@@ -5,6 +5,7 @@ extern crate timely;
 
 use std::collections::HashMap;
 
+use timely::PartialOrder;
 use timely::communication::Allocate;
 use timely::dataflow::scopes::Child;
 use timely::dataflow::ProbeHandle;
@@ -95,6 +96,8 @@ pub struct CreateInput {
 /// Possible request types.
 #[derive(Deserialize, Debug)]
 pub enum Request {
+    /// Sends a single datom.
+    Datom(Entity, Attribute, Value, isize, u64),
     /// Sends inputs via one or more registered handles.
     Transact(Transact),
     /// Expresses interest in a named relation.
@@ -105,6 +108,8 @@ pub enum Request {
     RegisterSource(RegisterSource),
     /// Creates a named input handle that can be `Transact`ed upon.
     CreateInput(CreateInput),
+    /// Advances and flushes a named input handle.
+    AdvanceInput(Option<String>, u64),
 }
 
 /// Server context maintaining globally registered arrangements and
@@ -141,6 +146,20 @@ impl Server {
         trace.distinguish_since(&[]);
 
         self.global_arrangements.insert(name, trace);
+    }
+
+    /// Handle a Datom request.
+    pub fn datom(&mut self, owner: usize, worker_index: usize, e: Entity, a: Attribute, v: Value, diff: isize, tx: u64) {
+        if owner == worker_index {
+            // only the owner should actually introduce new inputs
+
+            let handle = self
+                .input_handles
+                .get_mut(&a)
+                .expect(&format!("Attribute {} does not exist.", a));
+
+            handle.update(vec![Value::Eid(e), v], diff);
+        }
     }
 
     /// Handle a Transact request.
@@ -285,6 +304,46 @@ impl Server {
 
             self.register_global_arrangement(name.clone(), trace);
             self.input_handles.insert(name, handle);
+        }
+    }
+
+    /// Handle an AdvanceInput request.
+    pub fn advance_input(&mut self, name: Option<String>, tx: u64) {
+        match name {
+            None => {
+                println!("Advancing all inputs");
+                for handle in self.input_handles.values_mut() {
+                    handle.advance_to(tx);
+                    handle.flush();
+                }
+            },
+            Some(name) => {
+                let handle = self
+                    .input_handles
+                    .get_mut(&name)
+                    .expect(&format!("Input {} does not exist.", name));
+
+                println!("Advancing {}", name);
+                
+                handle.advance_to(tx);
+                handle.flush();
+            }
+        }
+        
+        if self.config.enable_history == false {
+            // if historical queries don't matter, we should advance
+            // the index traces to allow them to compact
+
+            let mut frontier = Vec::new();
+            for handle in self.input_handles.values() {
+                frontier.push(handle.time().clone());
+            }
+
+            let frontier_ref = &frontier;
+
+            for trace in self.global_arrangements.values_mut() {
+                trace.advance_by(frontier_ref);
+            }
         }
     }
 }

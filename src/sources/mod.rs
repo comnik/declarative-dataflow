@@ -37,10 +37,7 @@ impl Sourceable for Source {
     }
 }
 
-// @TODO can't quite do this yet, because Implementable works with any
-// timestamp, while Sourceable must fix a specific one. For static
-// sources it would be possible to utilize that Timestamp satisfies
-// Default.
+// @TODO would this be useful?
 //
 // impl Implementable for Source {
 //     fn implement<'a, 'b, A: Allocate>(
