@@ -6,10 +6,9 @@ use std::thread;
 
 use timely::Configuration;
 
-use declarative_dataflow::plan::{Transform , Function};
+use declarative_dataflow::plan::{Function, Transform};
 use declarative_dataflow::server::{CreateInput, Interest, Register, Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
-
 
 #[test]
 fn interval() {
@@ -22,9 +21,8 @@ fn interval() {
         let plan = Plan::Transform(Transform {
             variables: vec![t],
             plan: Box::new(Plan::MatchA(e, ":timestamp".to_string(), t)),
-            function: Function::INTERVAL
+            function: Function::INTERVAL,
         });
-
 
         worker.dataflow::<u64, _, _>(|mut scope| {
             server.create_input(
@@ -52,18 +50,28 @@ fn interval() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
-
         });
 
         server.transact(
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(1, 1, ":timestamp".to_string(), Value::Instant(1540048515500)),
-                    TxData(1, 2, ":timestamp".to_string(), Value::Instant(1540048515616)),
+                    TxData(
+                        1,
+                        1,
+                        ":timestamp".to_string(),
+                        Value::Instant(1540048515500),
+                    ),
+                    TxData(
+                        1,
+                        2,
+                        ":timestamp".to_string(),
+                        Value::Instant(1540048515616),
+                    ),
                 ],
             },
             0,
@@ -86,6 +94,6 @@ fn interval() {
                 (vec![Value::Eid(2), Value::Instant(1540047600000)], 1)
             );
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }

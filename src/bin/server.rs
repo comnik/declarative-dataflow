@@ -39,9 +39,7 @@ use ws::connection::{ConnEvent, Connection};
 use declarative_dataflow::server::{Config, Request, Server};
 use declarative_dataflow::Value;
 
-#[derive(
-    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug,
-)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug)]
 struct Command {
     id: usize,
     // the worker (typically a controller) that issued this command
@@ -72,15 +70,14 @@ fn main() {
     let timely_args = std::env::args().take_while(|ref arg| arg.to_string() != "--");
 
     timely::execute_from_args(timely_args, move |worker| {
-
         // read configuration
         let server_args = args.iter().rev().take_while(|arg| arg.to_string() != "--");
         let default_config: Config = Default::default();
         let config = match opts.parse(server_args) {
             Err(err) => panic!(err),
             Ok(matches) => {
-
-                let starting_port = matches.opt_str("port")
+                let starting_port = matches
+                    .opt_str("port")
                     .map(|x| x.parse().unwrap_or(default_config.port))
                     .unwrap_or(default_config.port);
 
@@ -104,7 +101,7 @@ fn main() {
         // configure websocket server
         let ws_settings = ws::Settings {
             max_connections: 1024,
-            .. ws::Settings::default()
+            ..ws::Settings::default()
         };
 
         // setup CLI channel
@@ -124,26 +121,41 @@ fn main() {
         let mut events = Events::with_capacity(1024);
 
         if config.enable_cli {
-            poll.register(&recv_cli, CLI, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
+            poll.register(
+                &recv_cli,
+                CLI,
+                Ready::readable(),
+                PollOpt::edge() | PollOpt::oneshot(),
+            ).unwrap();
 
             thread::spawn(move || {
-
                 info!("[CLI] accepting cli commands");
 
                 let input = std::io::stdin();
                 while let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
-                    send_cli.send(line.to_string()).expect("failed to send command");
+                    send_cli
+                        .send(line.to_string())
+                        .expect("failed to send command");
                 }
             });
         }
 
-        poll.register(&recv_results, RESULTS, Ready::readable(), PollOpt::edge() | PollOpt::oneshot()).unwrap();
-        poll.register(&server_socket, SERVER, Ready::readable(), PollOpt::level()).unwrap();
+        poll.register(
+            &recv_results,
+            RESULTS,
+            Ready::readable(),
+            PollOpt::edge() | PollOpt::oneshot(),
+        ).unwrap();
+        poll.register(&server_socket, SERVER, Ready::readable(), PollOpt::level())
+            .unwrap();
 
-        info!("[WORKER {}] running with config {:?}", worker.index(), config);
+        info!(
+            "[WORKER {}] running with config {:?}",
+            worker.index(),
+            config
+        );
 
         loop {
-
             // each worker has to...
             //
             // ...accept new client connections
@@ -161,11 +173,15 @@ fn main() {
             // be used for debugging or artificial braking
             //
             // @TODO handle errors
-            poll.poll(&mut events, Some(Duration::from_millis(0))).unwrap();
+            poll.poll(&mut events, Some(Duration::from_millis(0)))
+                .unwrap();
 
             for event in events.iter() {
-
-                trace!("[WORKER {}] recv event on {:?}", worker.index(), event.token());
+                trace!(
+                    "[WORKER {}] recv event on {:?}",
+                    worker.index(),
+                    event.token()
+                );
 
                 match event.token() {
                     CLI => {
@@ -174,22 +190,34 @@ fn main() {
                                 id: 0, // @TODO command ids?
                                 owner: worker.index(),
                                 client: None,
-                                cmd: cli_input
+                                cmd: cli_input,
                             };
 
                             sequencer.push(command);
                         }
 
-                        poll.reregister(&recv_cli, CLI, Ready::readable(), PollOpt::edge() | PollOpt::oneshot())
-                            .unwrap();
-                    },
+                        poll.reregister(
+                            &recv_cli,
+                            CLI,
+                            Ready::readable(),
+                            PollOpt::edge() | PollOpt::oneshot(),
+                        ).unwrap();
+                    }
                     SERVER => {
                         if event.readiness().is_readable() {
                             // new connection arrived on the server socket
                             match server_socket.accept() {
-                                Err(err) => error!("[WORKER {}] error while accepting connection {:?}", worker.index(), err),
+                                Err(err) => error!(
+                                    "[WORKER {}] error while accepting connection {:?}",
+                                    worker.index(),
+                                    err
+                                ),
                                 Ok((socket, addr)) => {
-                                    info!("[WORKER {}] new tcp connection from {}", worker.index(), addr);
+                                    info!(
+                                        "[WORKER {}] new tcp connection from {}",
+                                        worker.index(),
+                                        addr
+                                    );
 
                                     // @TODO to nagle or not to nagle?
                                     // sock.set_nodelay(true)
@@ -200,7 +228,12 @@ fn main() {
                                         let connection_id = next_connection_id;
                                         next_connection_id = next_connection_id.wrapping_add(1);
 
-                                        entry.insert(Connection::new(token, socket, ws_settings, connection_id));
+                                        entry.insert(Connection::new(
+                                            token,
+                                            socket,
+                                            ws_settings,
+                                            connection_id,
+                                        ));
 
                                         token
                                     };
@@ -213,22 +246,22 @@ fn main() {
                                         conn.socket(),
                                         conn.token(),
                                         conn.events(),
-                                        PollOpt::edge() | PollOpt::oneshot()
+                                        PollOpt::edge() | PollOpt::oneshot(),
                                     ).unwrap();
                                 }
                             }
                         }
-                    },
+                    }
                     RESULTS => {
                         while let Ok((query_name, results)) = recv_results.try_recv() {
-
                             info!("[WORKER {}] {:?} {:?}", worker.index(), query_name, results);
 
                             match interests.get(&query_name) {
-                                None => { /* @TODO unregister this flow */ },
+                                None => { /* @TODO unregister this flow */ }
                                 Some(tokens) => {
-                                    let serialized = serde_json::to_string::<(String, Vec<Output>)>(&(query_name, results))
-                                        .expect("failed to serialize outputs");
+                                    let serialized = serde_json::to_string::<(String, Vec<Output>)>(
+                                        &(query_name, results),
+                                    ).expect("failed to serialize outputs");
                                     let msg = ws::Message::text(serialized);
 
                                     for &token in tokens.iter() {
@@ -236,7 +269,8 @@ fn main() {
                                         let conn = &mut connections[token.into()];
                                         info!("[WORKER {}] sending msg {:?}", worker.index(), msg);
 
-                                        conn.send_message(msg.clone()).expect("failed to send message");
+                                        conn.send_message(msg.clone())
+                                            .expect("failed to send message");
 
                                         poll.reregister(
                                             conn.socket(),
@@ -253,9 +287,9 @@ fn main() {
                             &recv_results,
                             RESULTS,
                             Ready::readable(),
-                            PollOpt::edge() | PollOpt::oneshot()
+                            PollOpt::edge() | PollOpt::oneshot(),
                         ).unwrap();
-                    },
+                    }
                     _ => {
                         let token = event.token();
                         let active = {
@@ -269,10 +303,14 @@ fn main() {
                             if (readiness & conn_events).is_readable() {
                                 match connections[token.into()].read() {
                                     Err(err) => {
-                                        trace!("[WORKER {}] error while reading: {}", worker.index(), err);
+                                        trace!(
+                                            "[WORKER {}] error while reading: {}",
+                                            worker.index(),
+                                            err
+                                        );
                                         // @TODO error handling
                                         connections[token.into()].error(err)
-                                    },
+                                    }
                                     Ok(mut conn_events) => {
                                         for conn_event in conn_events.drain(0..) {
                                             match conn_event {
@@ -281,14 +319,20 @@ fn main() {
                                                         id: 0, // @TODO command ids?
                                                         owner: worker.index(),
                                                         client: Some(token.into()),
-                                                        cmd: msg.into_text().unwrap()
+                                                        cmd: msg.into_text().unwrap(),
                                                     };
 
-                                                    trace!("[WORKER {}] {:?}", worker.index(), command);
+                                                    trace!(
+                                                        "[WORKER {}] {:?}",
+                                                        worker.index(),
+                                                        command
+                                                    );
 
                                                     sequencer.push(command);
-                                                },
-                                                _ => { println!("other"); }
+                                                }
+                                                _ => {
+                                                    println!("other");
+                                                }
                                             }
                                         }
                                     }
@@ -300,11 +344,15 @@ fn main() {
                             if (readiness & conn_events).is_writable() {
                                 match connections[token.into()].write() {
                                     Err(err) => {
-                                        trace!("[WORKER {}] error while writing: {}", worker.index(), err);
+                                        trace!(
+                                            "[WORKER {}] error while writing: {}",
+                                            worker.index(),
+                                            err
+                                        );
                                         // @TODO error handling
                                         connections[token.into()].error(err)
-                                    },
-                                    Ok(_) => { }
+                                    }
+                                    Ok(_) => {}
                                 }
                             }
 
@@ -339,34 +387,36 @@ fn main() {
             // handle commands
 
             while let Some(command) = sequencer.next() {
-
                 match serde_json::from_str::<Vec<Request>>(&command.cmd) {
-                    Err(msg) => { panic!("failed to parse command: {:?}", msg); },
+                    Err(msg) => {
+                        panic!("failed to parse command: {:?}", msg);
+                    }
                     Ok(mut requests) => {
-
                         info!("[WORKER {}] {:?}", worker.index(), requests);
 
                         for req in requests.drain(..) {
-
                             let owner = command.owner.clone();
 
                             // @TODO only create a single dataflow, but only if req != Transact
 
                             match req {
-                                Request::Datom(e, a, v, diff, tx) => { server.datom(owner, worker.index(), e, a, v, diff, tx); },
-                                Request::Transact(req) => { server.transact(req, owner, worker.index()); },
+                                Request::Datom(e, a, v, diff, tx) => {
+                                    server.datom(owner, worker.index(), e, a, v, diff, tx);
+                                }
+                                Request::Transact(req) => {
+                                    server.transact(req, owner, worker.index());
+                                }
                                 Request::Interest(req) => {
-
                                     if owner == worker.index() {
-
                                         // we are the owning worker and thus have to
                                         // keep track of this client's new interest
 
                                         match command.client {
-                                            None => { },
+                                            None => {}
                                             Some(client) => {
                                                 let client_token = Token(client);
-                                                interests.entry(req.name.clone())
+                                                interests
+                                                    .entry(req.name.clone())
                                                     .or_insert(Vec::new())
                                                     .push(client_token);
                                             }
@@ -376,7 +426,6 @@ fn main() {
                                     let send_results_handle = send_results.clone();
 
                                     worker.dataflow::<u64, _, _>(|mut scope| {
-
                                         let name = req.name.clone();
 
                                         server.interest(req, &mut scope)
@@ -399,23 +448,25 @@ fn main() {
                                                     });
                                                 });
                                     });
-                                },
+                                }
                                 Request::Register(req) => {
                                     worker.dataflow::<u64, _, _>(|mut scope| {
                                         server.register(req, &mut scope);
                                     });
-                                },
+                                }
                                 Request::RegisterSource(req) => {
                                     worker.dataflow::<u64, _, _>(|mut scope| {
                                         server.register_source(req, &mut scope);
                                     });
-                                },
+                                }
                                 Request::CreateInput(req) => {
                                     worker.dataflow::<u64, _, _>(|mut scope| {
                                         server.create_input(req, &mut scope);
                                     });
-                                },
-                                Request::AdvanceInput(name, tx) => { server.advance_input(name, tx); },
+                                }
+                                Request::AdvanceInput(name, tx) => {
+                                    server.advance_input(name, tx);
+                                }
                             }
                         }
                     }

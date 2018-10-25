@@ -10,17 +10,17 @@ use {QueryMap, Relation, RelationMap, SimpleRelation};
 pub mod aggregate;
 pub mod antijoin;
 pub mod filter;
-pub mod transform;
 pub mod join;
 pub mod project;
+pub mod transform;
 pub mod union;
 
 pub use self::aggregate::{Aggregate, AggregationFn};
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
-pub use self::transform::{Transform, Function};
 pub use self::join::Join;
 pub use self::project::Project;
+pub use self::transform::{Function, Transform};
 pub use self::union::Union;
 
 /// A type that can be implemented as a simple relation.
@@ -51,7 +51,7 @@ pub enum Plan {
     Negate(Box<Plan>),
     /// Filters bindings by one of the built-in predicates
     Filter(Filter<Plan>),
-    /// Transforms a binding by a function expression 
+    /// Transforms a binding by a function expression
     Transform(Transform<Plan>),
     // /// Data pattern of the form [e ?a ?v]
     // MatchE(Entity, Var, Var),

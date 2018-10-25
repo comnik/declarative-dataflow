@@ -5,17 +5,15 @@ use timely::dataflow::operators::Map;
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::worker::Worker;
 
-use differential_dataflow::operators::{Consolidate, Group, Threshold, Count};
-use differential_dataflow::AsCollection;
 use differential_dataflow::difference::DiffPair;
+use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
+use differential_dataflow::AsCollection;
 
 use plan::Implementable;
 use Relation;
 use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 
 use num_rational::{Ratio, Rational32};
-
-
 
 /// Permitted aggregation function.
 #[derive(Deserialize, Clone, Debug)]
@@ -60,8 +58,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
         global_arrangements: &mut QueryMap<isize>,
     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
-        let relation = self
-            .plan
+        let relation = self.plan
             .implement(nested, local_arrangements, global_arrangements);
         let tuples = relation.tuples_by_symbols(&self.key_symbols);
 
@@ -74,56 +71,57 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         };
 
         match self.aggregation_fn {
-            AggregationFn::MIN =>  SimpleRelation {
-                    symbols: self.variables.to_vec(),
-                    tuples: tuples
-                        .map(prepare_unary)
-                        .group(|_key, vals, output| {
-                            let  min = vals[0].0;
-                            output.push((*min, 1));
-                        }).map(|(key, min)| {
-                            let mut v = key.clone();
-                            v.push(Value::Number(min as i64));
-                            v
-                        })
+            AggregationFn::MIN => SimpleRelation {
+                symbols: self.variables.to_vec(),
+                tuples: tuples
+                    .map(prepare_unary)
+                    .group(|_key, vals, output| {
+                        let min = vals[0].0;
+                        output.push((*min, 1));
+                    })
+                    .map(|(key, min)| {
+                        let mut v = key.clone();
+                        v.push(Value::Number(min as i64));
+                        v
+                    }),
             },
             AggregationFn::MAX => SimpleRelation {
-                    symbols: self.variables.to_vec(),
-                    tuples: tuples
-                        .map(prepare_unary)
-                        .group(|_key, vals, output| {
-                            let max = vals[vals.len() - 1].0;
-                            output.push((*max, 1));
-                        }).map(|(key, max)| {
-                            let mut v = key.clone();
-                            v.push(Value::Number(max as i64));
-                            v
-                        })
-                
+                symbols: self.variables.to_vec(),
+                tuples: tuples
+                    .map(prepare_unary)
+                    .group(|_key, vals, output| {
+                        let max = vals[vals.len() - 1].0;
+                        output.push((*max, 1));
+                    })
+                    .map(|(key, max)| {
+                        let mut v = key.clone();
+                        v.push(Value::Number(max as i64));
+                        v
+                    }),
             },
             AggregationFn::MEDIAN => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
                     .map(prepare_unary)
                     .group(|_key, vals, output| {
-                        let median = vals[vals.len()/2].0;
+                        let median = vals[vals.len() / 2].0;
                         output.push((*median, 1));
-                    }).map(|(key, med)| {
+                    })
+                    .map(|(key, med)| {
                         let mut v = key.clone();
                         v.push(Value::Number(med as i64));
                         v
-                    })
+                    }),
             },
             AggregationFn::COUNT => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
-                    .group(|_key, input, output| {
-                        output.push((input.len(), 1))})
+                    .group(|_key, input, output| output.push((input.len(), 1)))
                     .map(|(key, count)| {
                         let mut v = key.clone();
                         v.push(Value::Number(count as i64));
                         v
-                    })
+                    }),
             },
             AggregationFn::SUM => SimpleRelation {
                 symbols: self.variables.to_vec(),
@@ -135,12 +133,14 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                             Value::Number(num) => num as isize,
                             _ => panic!("SUM can only be applied to numbers"),
                         };
-                        Some((key, v))})
+                        Some((key, v))
+                    })
                     .count()
                     .map(|(key, count)| {
                         let mut v = key.clone();
                         v.push(Value::Number(count as i64));
-                        v})
+                        v
+                    }),
             },
             AggregationFn::AVG => SimpleRelation {
                 symbols: self.variables.to_vec(),
@@ -152,13 +152,17 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                             Value::Number(num) => num as isize,
                             _ => panic!("AVG can only be applied to numbers"),
                         };
-                        Some((key, DiffPair::new(v, 1)))})
+                        Some((key, DiffPair::new(v, 1)))
+                    })
                     .count()
                     .map(|(key, diff_pair)| {
                         let mut v = key.clone();
-                        v.push(Value::Rational32( Ratio::new(diff_pair.element1 as i32, diff_pair.element2 as i32)));
+                        v.push(Value::Rational32(Ratio::new(
+                            diff_pair.element1 as i32,
+                            diff_pair.element2 as i32,
+                        )));
                         v
-                    })
+                    }),
             },
             AggregationFn::VARIANCE => SimpleRelation {
                 symbols: self.variables.to_vec(),
@@ -170,14 +174,17 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                             Value::Number(num) => num as isize,
                             _ => panic!("VAR can only be applied to numbers"),
                         };
-                        Some((key, DiffPair::new(DiffPair::new(v*v, v), 1)))})
+                        Some((key, DiffPair::new(DiffPair::new(v * v, v), 1)))
+                    })
                     .count()
                     .map(|(key, diff_pair)| {
                         let mut v = key.clone();
                         let sum_square = diff_pair.element1.element1 as i32;
                         let sum = diff_pair.element1.element2 as i32;
                         let c = diff_pair.element2 as i32;
-                        v.push(Value::Rational32(Rational32::new(sum_square, c) - Rational32::new(sum, c).pow(2)));
+                        v.push(Value::Rational32(
+                            Rational32::new(sum_square, c) - Rational32::new(sum, c).pow(2),
+                        ));
                         v
                     }),
             },

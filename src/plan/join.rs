@@ -30,18 +30,15 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
         local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
         global_arrangements: &mut QueryMap<isize>,
     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
-        let left = self
-            .left_plan
+        let left = self.left_plan
             .implement(nested, local_arrangements, global_arrangements);
-        let right = self
-            .right_plan
+        let right = self.right_plan
             .implement(nested, local_arrangements, global_arrangements);
 
         // useful for inspecting join inputs
         //.inspect(|&((ref key, ref values), _, _)| { println!("right {:?} {:?}", key, values) })
 
-        let symbols = self
-            .variables
+        let symbols = self.variables
             .iter()
             .cloned()
             .chain(
@@ -49,13 +46,15 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
                     .iter()
                     .filter(|x| !self.variables.contains(x))
                     .cloned(),
-            ).chain(
+            )
+            .chain(
                 right
                     .symbols()
                     .iter()
                     .filter(|x| !self.variables.contains(x))
                     .cloned(),
-            ).collect();
+            )
+            .collect();
 
         let tuples = left.tuples_by_symbols(&self.variables).join_map(
             &right.tuples_by_symbols(&self.variables),
