@@ -5,11 +5,11 @@ extern crate timely;
 
 use std::collections::HashMap;
 
-use timely::PartialOrder;
 use timely::communication::Allocate;
 use timely::dataflow::scopes::Child;
 use timely::dataflow::ProbeHandle;
 use timely::worker::Worker;
+use timely::PartialOrder;
 
 use differential_dataflow::collection::Collection;
 use differential_dataflow::input::{Input, InputSession};
@@ -149,12 +149,20 @@ impl Server {
     }
 
     /// Handle a Datom request.
-    pub fn datom(&mut self, owner: usize, worker_index: usize, e: Entity, a: Attribute, v: Value, diff: isize, tx: u64) {
+    pub fn datom(
+        &mut self,
+        owner: usize,
+        worker_index: usize,
+        e: Entity,
+        a: Attribute,
+        v: Value,
+        diff: isize,
+        tx: u64,
+    ) {
         if owner == worker_index {
             // only the owner should actually introduce new inputs
 
-            let handle = self
-                .input_handles
+            let handle = self.input_handles
                 .get_mut(&a)
                 .expect(&format!("Attribute {} does not exist.", a));
 
@@ -171,8 +179,7 @@ impl Server {
 
             // @TODO do this smarter, e.g. grouped by handle
             for TxData(op, e, a, v) in tx_data {
-                let handle = self
-                    .input_handles
+                let handle = self.input_handles
                     .get_mut(&a)
                     .expect(&format!("Attribute {} does not exist.", a));
 
@@ -278,7 +285,8 @@ impl Server {
                         .filter(move |tuple| match tuple[1] {
                             Value::String(ref v) => *v == name_str,
                             _ => panic!("expected a string"),
-                        }).map(|tuple| vec![tuple[0].clone(), tuple[2].clone()])
+                        })
+                        .map(|tuple| vec![tuple[0].clone(), tuple[2].clone()])
                         .arrange_by_self()
                         .trace;
 
@@ -316,20 +324,19 @@ impl Server {
                     handle.advance_to(tx);
                     handle.flush();
                 }
-            },
+            }
             Some(name) => {
-                let handle = self
-                    .input_handles
+                let handle = self.input_handles
                     .get_mut(&name)
                     .expect(&format!("Input {} does not exist.", name));
 
                 println!("Advancing {}", name);
-                
+
                 handle.advance_to(tx);
                 handle.flush();
             }
         }
-        
+
         if self.config.enable_history == false {
             // if historical queries don't matter, we should advance
             // the index traces to allow them to compact

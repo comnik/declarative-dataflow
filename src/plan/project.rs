@@ -26,8 +26,7 @@ impl<P: Implementable> Implementable for Project<P> {
         local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
         global_arrangements: &mut QueryMap<isize>,
     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
-        let relation = self
-            .plan
+        let relation = self.plan
             .implement(nested, local_arrangements, global_arrangements);
         let tuples = relation
             .tuples_by_symbols(&self.variables)

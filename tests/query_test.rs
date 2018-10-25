@@ -1,6 +1,6 @@
 extern crate declarative_dataflow;
-extern crate timely;
 extern crate num_rational;
+extern crate timely;
 
 use std::sync::mpsc::channel;
 use std::thread;
@@ -11,7 +11,7 @@ use declarative_dataflow::plan::{Aggregate, AggregationFn, Join, Project};
 use declarative_dataflow::server::{CreateInput, Interest, Register, Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
 
-use num_rational::{Ratio};
+use num_rational::Ratio;
 
 #[test]
 fn match_ea() {
@@ -48,7 +48,8 @@ fn match_ea() {
                         name: query_name.to_string(),
                     },
                     scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -97,7 +98,7 @@ fn match_ea() {
                 (vec![Value::String("Dipper".to_string())], 1)
             );
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
 
@@ -150,7 +151,8 @@ fn join() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -191,7 +193,7 @@ fn join() {
                 )
             );
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
 
@@ -256,7 +258,8 @@ fn count() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -278,7 +281,8 @@ fn count() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -300,7 +304,8 @@ fn count() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results_copy_2.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -358,7 +363,7 @@ fn count() {
                 (vec![Value::Eid(2), Value::Number(10), Value::Number(1)], 1)
             );
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
 
@@ -415,7 +420,8 @@ fn max() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -437,7 +443,8 @@ fn max() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -475,7 +482,7 @@ fn max() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(10)], 1));
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
 
@@ -532,7 +539,8 @@ fn min() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -554,7 +562,8 @@ fn min() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -592,7 +601,7 @@ fn min() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(2)], 1));
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
 
@@ -651,7 +660,8 @@ fn sum() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -673,7 +683,8 @@ fn sum() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -711,7 +722,7 @@ fn sum() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(27)], 1));
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
 
@@ -768,7 +779,8 @@ fn avg() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -790,7 +802,8 @@ fn avg() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -826,9 +839,12 @@ fn avg() {
                 results.recv().unwrap(),
                 (vec![Value::Eid(2), Value::Rational32(Ratio::new(10, 1))], 1)
             );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(27, 5))], 1));
+            assert_eq!(
+                results.recv().unwrap(),
+                (vec![Value::Rational32(Ratio::new(27, 5))], 1)
+            );
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
 
@@ -885,7 +901,8 @@ fn var() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -907,7 +924,8 @@ fn var() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -937,15 +955,21 @@ fn var() {
         thread::spawn(move || {
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Rational32(Ratio::new(35, 16))], 1)
+                (
+                    vec![Value::Eid(1), Value::Rational32(Ratio::new(35, 16))],
+                    1
+                )
             );
             assert_eq!(
                 results.recv().unwrap(),
                 (vec![Value::Eid(2), Value::Rational32(Ratio::new(0, 1))], 1)
             );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(176, 25))], 1));
+            assert_eq!(
+                results.recv().unwrap(),
+                (vec![Value::Rational32(Ratio::new(176, 25))], 1)
+            );
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
 
@@ -1002,7 +1026,8 @@ fn median() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
@@ -1024,7 +1049,8 @@ fn median() {
                         name: query_name.to_string(),
                     },
                     &mut scope,
-                ).inspect(move |x| {
+                )
+                .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
         });
@@ -1062,6 +1088,6 @@ fn median() {
             );
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
         }).join()
-        .unwrap();
+            .unwrap();
     }).unwrap();
 }
