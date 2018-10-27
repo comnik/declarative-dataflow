@@ -16,10 +16,11 @@ fn interval() {
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
 
-        // [:find ?t :where [?e :timestamp ?t] [(interval ?t) ?t]]
-        let (e, t) = (1, 2);
+        // [:find ?h :where [?e :timestamp ?t] [(interval ?t) ?h]]
+        let (e, t, h) = (1, 2, 3);
         let plan = Plan::Transform(Transform {
             variables: vec![t],
+            result_sym: h,
             plan: Box::new(Plan::MatchA(e, ":timestamp".to_string(), t)),
             function: Function::INTERVAL,
         });
@@ -87,11 +88,11 @@ fn interval() {
         thread::spawn(move || {
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Instant(1540047600000)], 1)
+                (vec![Value::Eid(1), Value::Instant(1540048515500), Value::Instant(1540047600000)], 1)
             );
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Instant(1540047600000)], 1)
+                (vec![Value::Eid(2), Value::Instant(1540048515616), Value::Instant(1540047600000)], 1)
             );
         }).join()
             .unwrap();
