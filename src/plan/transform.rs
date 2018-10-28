@@ -26,7 +26,9 @@ pub enum Function {
 pub struct Transform<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
-    /// Plan for the data source.
+    /// Symbol to which the result of the transformation is bound
+    pub result_sym: Var,
+    /// Plan for the data source
     pub plan: Box<P>,
     /// Function to apply
     pub function: Function,
@@ -52,9 +54,12 @@ impl<P: Implementable> Implementable for Transform<P> {
             })
             .collect();
 
+        let mut symbols = rel.symbols().to_vec().clone();
+        symbols.push(self.result_sym);
+        
         match self.function {
             Function::INTERVAL => SimpleRelation {
-                symbols: rel.symbols().to_vec(),
+                symbols: symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     let mut t = match tuple[key_offsets[0]] {
                         Value::Instant(inst) => inst as u64,
@@ -63,7 +68,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                     // @TODO Add parameter to control the interval
                     t = t - (t % 3600000);
                     let mut v = tuple.clone();
-                    v[key_offsets[0]] = Value::Instant(t);
+                    v.push(Value::Instant(t));
                     v
                 }),
             },
