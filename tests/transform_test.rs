@@ -3,6 +3,7 @@ extern crate timely;
 
 use std::sync::mpsc::channel;
 use std::thread;
+use std::collections::HashMap;
 
 use timely::Configuration;
 
@@ -18,11 +19,14 @@ fn interval() {
 
         // [:find ?h :where [?e :timestamp ?t] [(interval ?t) ?h]]
         let (e, t, h) = (1, 2, 3);
+        let mut constants = HashMap::new();
+        // constants.insert(1, Value::String(String::from("hour")));
         let plan = Plan::Transform(Transform {
             variables: vec![t],
             result_sym: h,
             plan: Box::new(Plan::MatchA(e, ":timestamp".to_string(), t)),
             function: Function::INTERVAL,
+            constants: constants
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {

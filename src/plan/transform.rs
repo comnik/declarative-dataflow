@@ -1,4 +1,5 @@
 //! Function expression plan.
+use std::collections::HashMap;
 
 use timely::communication::Allocate;
 use timely::dataflow::scopes::child::{Child, Iterative};
@@ -32,6 +33,8 @@ pub struct Transform<P: Implementable> {
     pub plan: Box<P>,
     /// Function to apply
     pub function: Function,
+    /// Constant intputs
+    pub constants: HashMap<u32, Value>,
 }
 
 impl<P: Implementable> Implementable for Transform<P> {
@@ -57,6 +60,8 @@ impl<P: Implementable> Implementable for Transform<P> {
         let mut symbols = rel.symbols().to_vec().clone();
         symbols.push(self.result_sym);
         
+        let constants_local = self.constants.clone();
+
         match self.function {
             Function::INTERVAL => SimpleRelation {
                 symbols: symbols,
@@ -65,8 +70,22 @@ impl<P: Implementable> Implementable for Transform<P> {
                         Value::Instant(inst) => inst as u64,
                         _ => panic!("INTERVAL can only be applied to timestamps"),
                     };
-                    // @TODO Add parameter to control the interval
-                    t = t - (t % 3600000);
+                    let default_interval = String::from("hour");
+                    let interval_param = match constants_local.get(&1){  
+                        Some(Value::String(interval)) => interval as &String, 
+                        None => &default_interval,
+                        _ => panic!("Paramter for INTERVAL must be a string"),
+                    };
+                    let interval_options = vec![String::from("minute"), String::from("hour"), String::from("day"), String::from("week")];
+                    let millies : Vec<u64> = vec![60000, 3600000, 86400000, 604800000];
+                    let encoding : HashMap<_, _> = interval_options.iter().zip(millies.iter()).collect();
+
+                    let mod_val = match encoding.get(&interval_param){
+                        Some(val) => val,
+                        None => panic!("Unknown interval for INTERVAL") 
+                    };
+
+                    t = t - (t % *mod_val);
                     let mut v = tuple.clone();
                     v.push(Value::Instant(t));
                     v
