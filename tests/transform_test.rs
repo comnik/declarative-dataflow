@@ -25,7 +25,7 @@ fn truncate() {
             variables: vec![t],
             result_sym: h,
             plan: Box::new(Plan::MatchA(e, ":timestamp".to_string(), t)),
-            function: Function::INTERVAL,
+            function: Function::TRUNCATE,
             constants: constants
         });
 
