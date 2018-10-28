@@ -26,7 +26,7 @@ pub enum Function {
 pub struct Transform<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
-    /// Variable containing the result binded by the transformation
+    /// Symbol to which the result of the transformation is bound
     pub result_sym: Var,
     /// Plan for the data source
     pub plan: Box<P>,
