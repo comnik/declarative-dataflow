@@ -12,7 +12,7 @@ use declarative_dataflow::server::{CreateInput, Interest, Register, Server, Tran
 use declarative_dataflow::{Plan, Rule, Value};
 
 #[test]
-fn interval() {
+fn truncate() {
     timely::execute(Configuration::Thread, move |worker| {
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
@@ -37,7 +37,7 @@ fn interval() {
                 &mut scope,
             );
 
-            let query_name = "interval";
+            let query_name = "truncate";
             server.register(
                 Register {
                     rules: vec![Rule {

@@ -16,7 +16,7 @@ use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 #[derive(Deserialize, Clone, Debug)]
 pub enum Function {
     /// Truncates a unix timestamp into an hourly interval
-    INTERVAL,
+    TRUNCATE,
 }
 
 /// A plan stage applying a built-in function to source tuples.
@@ -63,18 +63,18 @@ impl<P: Implementable> Implementable for Transform<P> {
         let constants_local = self.constants.clone();
 
         match self.function {
-            Function::INTERVAL => SimpleRelation {
+            Function::TRUNCATE => SimpleRelation {
                 symbols: symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     let mut t = match tuple[key_offsets[0]] {
                         Value::Instant(inst) => inst as u64,
-                        _ => panic!("INTERVAL can only be applied to timestamps"),
+                        _ => panic!("TRUNCATE can only be applied to timestamps"),
                     };
                     let default_interval = String::from("hour");
                     let interval_param = match constants_local.get(&1){  
                         Some(Value::String(interval)) => interval as &String, 
                         None => &default_interval,
-                        _ => panic!("Paramter for INTERVAL must be a string"),
+                        _ => panic!("Paramter for TRUNCATE must be a string"),
                     };
                     let interval_options = vec![String::from("minute"), String::from("hour"), String::from("day"), String::from("week")];
                     let millies : Vec<u64> = vec![60000, 3600000, 86400000, 604800000];
@@ -82,7 +82,7 @@ impl<P: Implementable> Implementable for Transform<P> {
 
                     let mod_val = match encoding.get(&interval_param){
                         Some(val) => val,
-                        None => panic!("Unknown interval for INTERVAL") 
+                        None => panic!("Unknown interval for TRUNCATE") 
                     };
 
                     t = t - (t % *mod_val);
