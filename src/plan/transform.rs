@@ -70,22 +70,22 @@ impl<P: Implementable> Implementable for Transform<P> {
                         Value::Instant(inst) => inst as u64,
                         _ => panic!("TRUNCATE can only be applied to timestamps"),
                     };
-                    let default_interval = String::from("hour");
+                    let default_interval = String::from(":hour");
                     let interval_param = match constants_local.get(&1){  
                         Some(Value::String(interval)) => interval as &String, 
                         None => &default_interval,
                         _ => panic!("Parameter for TRUNCATE must be a string"),
                     };
-                    let interval_options = vec![String::from(":minute"), String::from(":hour"), String::from(":day"), String::from(":week")];
-                    let millies : Vec<u64> = vec![60000, 3600000, 86400000, 604800000];
-                    let encoding : HashMap<_, _> = interval_options.iter().zip(millies.iter()).collect();
 
-                    let mod_val = match encoding.get(&interval_param){
-                        Some(val) => val,
-                        None => panic!("Unknown interval for TRUNCATE") 
+                    let mod_val = match interval_param.as_ref() {
+                        ":minute" => 60000,
+                        ":hour" => 3600000,
+                        ":day" => 86400000,
+                        ":week" => 604800000,
+                        _ => panic!("Unknown interval for TRUNCATE") 
                     };
 
-                    t = t - (t % *mod_val);
+                    t = t - (t % mod_val);
                     let mut v = tuple.clone();
                     v.push(Value::Instant(t));
                     v
