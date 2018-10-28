@@ -76,7 +76,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                         None => &default_interval,
                         _ => panic!("Parameter for TRUNCATE must be a string"),
                     };
-                    let interval_options = vec![String::from("minute"), String::from("hour"), String::from("day"), String::from("week")];
+                    let interval_options = vec![String::from(":minute"), String::from(":hour"), String::from(":day"), String::from(":week")];
                     let millies : Vec<u64> = vec![60000, 3600000, 86400000, 604800000];
                     let encoding : HashMap<_, _> = interval_options.iter().zip(millies.iter()).collect();
 
