@@ -1,4 +1,5 @@
 //! Function expression plan.
+use std::collections::HashMap;
 
 use timely::communication::Allocate;
 use timely::dataflow::scopes::child::{Child, Iterative};
@@ -15,7 +16,7 @@ use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 #[derive(Deserialize, Clone, Debug)]
 pub enum Function {
     /// Truncates a unix timestamp into an hourly interval
-    INTERVAL,
+    TRUNCATE,
 }
 
 /// A plan stage applying a built-in function to source tuples.
@@ -32,6 +33,8 @@ pub struct Transform<P: Implementable> {
     pub plan: Box<P>,
     /// Function to apply
     pub function: Function,
+    /// Constant intputs
+    pub constants: HashMap<u32, Value>,
 }
 
 impl<P: Implementable> Implementable for Transform<P> {
@@ -57,16 +60,32 @@ impl<P: Implementable> Implementable for Transform<P> {
         let mut symbols = rel.symbols().to_vec().clone();
         symbols.push(self.result_sym);
         
+        let constants_local = self.constants.clone();
+
         match self.function {
-            Function::INTERVAL => SimpleRelation {
+            Function::TRUNCATE => SimpleRelation {
                 symbols: symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     let mut t = match tuple[key_offsets[0]] {
                         Value::Instant(inst) => inst as u64,
-                        _ => panic!("INTERVAL can only be applied to timestamps"),
+                        _ => panic!("TRUNCATE can only be applied to timestamps"),
                     };
-                    // @TODO Add parameter to control the interval
-                    t = t - (t % 3600000);
+                    let default_interval = String::from(":hour");
+                    let interval_param = match constants_local.get(&1){  
+                        Some(Value::String(interval)) => interval as &String, 
+                        None => &default_interval,
+                        _ => panic!("Parameter for TRUNCATE must be a string"),
+                    };
+
+                    let mod_val = match interval_param.as_ref() {
+                        ":minute" => 60000,
+                        ":hour" => 3600000,
+                        ":day" => 86400000,
+                        ":week" => 604800000,
+                        _ => panic!("Unknown interval for TRUNCATE") 
+                    };
+
+                    t = t - (t % mod_val);
                     let mut v = tuple.clone();
                     v.push(Value::Instant(t));
                     v
