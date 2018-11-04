@@ -428,7 +428,7 @@ fn main() {
                                     worker.dataflow::<u64, _, _>(|mut scope| {
                                         let name = req.name.clone();
 
-                                        server.interest(req, &mut scope)
+                                        server.interest(req.name.clone(), &mut scope)
                                             .inner
                                             .unary_notify(
                                                 timely::dataflow::channels::pact::Exchange::new(move |_| owner as u64),
@@ -459,9 +459,9 @@ fn main() {
                                         server.register_source(req, &mut scope);
                                     });
                                 }
-                                Request::CreateInput(req) => {
+                                Request::CreateInput(CreateInput { name }) => {
                                     worker.dataflow::<u64, _, _>(|mut scope| {
-                                        server.create_input(req, &mut scope);
+                                        server.create_input(name, &mut scope);
                                     });
                                 }
                                 Request::AdvanceInput(name, tx) => {

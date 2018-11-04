@@ -148,6 +148,18 @@ impl Server {
         self.global_arrangements.insert(name, trace);
     }
 
+    /// Returns true iff the probe is behind any input handle. Mostly
+    /// used as a convenience method during testing.
+    pub fn is_any_outdated(&self) -> bool {
+        for handle in self.input_handles.values() {
+            if self.probe.less_than(handle.time()) {
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Handle a Datom request.
     pub fn datom(
         &mut self,
@@ -219,11 +231,9 @@ impl Server {
     /// Handle an Interest request.
     pub fn interest<'a, A: Allocate>(
         &mut self,
-        req: Interest,
+        name: String,
         scope: &mut Child<'a, Worker<A>, u64>,
     ) -> Collection<Child<'a, Worker<A>, u64>, Vec<Value>, isize> {
-        let Interest { name } = req;
-
         self.global_arrangements
             .get_mut(&name)
             .expect(&format!("Could not find relation {:?}", name))
@@ -299,11 +309,9 @@ impl Server {
     /// Handle a CreateInput request.
     pub fn create_input<A: Allocate>(
         &mut self,
-        req: CreateInput,
+        name: String,
         scope: &mut Child<Worker<A>, u64>,
     ) {
-        let CreateInput { name } = req;
-
         if self.global_arrangements.contains_key(&name) {
             panic!("Input name clashes with existing trace.");
         } else {
