@@ -36,7 +36,7 @@ use slab::Slab;
 
 use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::server::{Config, Request, Server};
+use declarative_dataflow::server::{Config, Request, Server, CreateInput};
 use declarative_dataflow::Value;
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug)]
