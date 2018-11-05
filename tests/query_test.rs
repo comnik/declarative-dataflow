@@ -8,7 +8,7 @@ use std::thread;
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Aggregate, AggregationFn, Join, Project};
-use declarative_dataflow::server::{CreateInput, Interest, Register, Server, Transact, TxData};
+use declarative_dataflow::server::{Register, Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
 
 use num_rational::Ratio;
@@ -23,12 +23,7 @@ fn match_ea() {
         let plan = Plan::MatchEA(1, ":name".to_string(), 1);
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":name".to_string(),
-                },
-                scope,
-            );
+            server.create_input(":name".to_string(), scope);
 
             let query_name = "match_ea";
             server.register(
@@ -43,12 +38,7 @@ fn match_ea() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    scope,
-                )
+                .interest(query_name.to_string(), scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -82,11 +72,7 @@ fn match_ea() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(
@@ -120,18 +106,8 @@ fn join() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":name".to_string(),
-                },
-                &mut scope,
-            );
-            server.create_input(
-                CreateInput {
-                    name: ":age".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":name".to_string(), scope);
+            server.create_input(":age".to_string(), scope);
 
             let query_name = "join";
             server.register(
@@ -146,12 +122,7 @@ fn join() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -174,11 +145,7 @@ fn join() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(
@@ -233,12 +200,7 @@ fn count() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":amount".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":amount".to_string(), scope);
 
             let query_name = "count";
             server.register(
@@ -253,12 +215,7 @@ fn count() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -276,12 +233,7 @@ fn count() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -299,12 +251,7 @@ fn count() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results_copy_2.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -326,11 +273,7 @@ fn count() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
@@ -395,12 +338,7 @@ fn max() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":amount".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":amount".to_string(), scope);
 
             let query_name = "max";
             server.register(
@@ -415,12 +353,7 @@ fn max() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -438,12 +371,7 @@ fn max() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -465,11 +393,7 @@ fn max() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(
@@ -514,12 +438,7 @@ fn min() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":amount".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":amount".to_string(), scope);
 
             let query_name = "min";
             server.register(
@@ -534,12 +453,7 @@ fn min() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -557,12 +471,7 @@ fn min() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -584,11 +493,7 @@ fn min() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(
@@ -635,12 +540,7 @@ fn sum() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":amount".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":amount".to_string(), scope);
 
             let query_name = "sum";
             server.register(
@@ -655,12 +555,7 @@ fn sum() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -678,12 +573,7 @@ fn sum() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -705,11 +595,7 @@ fn sum() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(
@@ -754,12 +640,7 @@ fn avg() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":amount".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":amount".to_string(), scope);
 
             let query_name = "avg";
             server.register(
@@ -774,12 +655,7 @@ fn avg() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -797,12 +673,7 @@ fn avg() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -824,11 +695,7 @@ fn avg() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(
@@ -876,12 +743,7 @@ fn var() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":amount".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":amount".to_string(), scope);
 
             let query_name = "var";
             server.register(
@@ -896,12 +758,7 @@ fn var() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -919,12 +776,7 @@ fn var() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -946,11 +798,7 @@ fn var() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(
@@ -1001,12 +849,7 @@ fn median() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":amount".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":amount".to_string(), scope);
 
             let query_name = "median";
             server.register(
@@ -1021,12 +864,7 @@ fn median() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -1044,12 +882,7 @@ fn median() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -1071,11 +904,7 @@ fn median() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(

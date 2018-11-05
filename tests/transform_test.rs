@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Function, Transform};
-use declarative_dataflow::server::{CreateInput, Interest, Register, Server, Transact, TxData};
+use declarative_dataflow::server::{CreateInput, Register, Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
 
 #[test]
@@ -30,12 +30,7 @@ fn truncate() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(
-                CreateInput {
-                    name: ":timestamp".to_string(),
-                },
-                &mut scope,
-            );
+            server.create_input(":timestamp".to_string(), &mut scope);
 
             let query_name = "truncate";
             server.register(
@@ -50,12 +45,7 @@ fn truncate() {
             );
 
             server
-                .interest(
-                    Interest {
-                        name: query_name.to_string(),
-                    },
-                    &mut scope,
-                )
+                .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
