@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Function, Transform};
-use declarative_dataflow::server::{CreateInput, Register, Server, Transact, TxData};
+use declarative_dataflow::server::{Register, Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
 
 #[test]
@@ -73,11 +73,7 @@ fn truncate() {
             0,
         );
 
-        for handle in server.input_handles.values() {
-            while server.probe.less_than(handle.time()) {
-                worker.step();
-            }
-        }
+        worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
             assert_eq!(

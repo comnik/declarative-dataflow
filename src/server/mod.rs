@@ -7,9 +7,9 @@ use std::collections::HashMap;
 
 use timely::communication::Allocate;
 use timely::dataflow::scopes::Child;
+// use timely::dataflow::operators::Inspect;
 use timely::dataflow::ProbeHandle;
 use timely::worker::Worker;
-use timely::PartialOrder;
 
 use differential_dataflow::collection::Collection;
 use differential_dataflow::input::{Input, InputSession};
@@ -169,7 +169,7 @@ impl Server {
         a: Attribute,
         v: Value,
         diff: isize,
-        tx: u64,
+        _tx: u64,
     ) {
         if owner == worker_index {
             // only the owner should actually introduce new inputs
@@ -199,14 +199,12 @@ impl Server {
             }
         }
 
-        // @TODO do this smarter, e.g. only for handles that received inputs
         for handle in self.input_handles.values_mut() {
             let next_tx = match tx {
                 None => handle.epoch() + 1,
                 Some(tx) => tx + 1,
             };
 
-            // @TODO only advance handles that received input?
             handle.advance_to(next_tx);
             handle.flush();
         }

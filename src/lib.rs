@@ -9,9 +9,9 @@
 extern crate differential_dataflow;
 extern crate timely;
 
-#[macro_use]
-extern crate abomonation_derive;
-extern crate abomonation;
+// #[macro_use]
+// extern crate abomonation_derive;
+// extern crate abomonation;
 
 #[macro_use]
 extern crate serde_derive;
@@ -23,7 +23,7 @@ use std::collections::{HashMap, HashSet};
 use timely::communication::Allocate;
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::dataflow::*;
-use timely::progress::nested::product::Product;
+use timely::order::Product;
 use timely::worker::Worker;
 
 use differential_dataflow::collection::Collection;
@@ -254,7 +254,11 @@ pub fn implement<A: Allocate>(
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
             if let Some(relation) = local_arrangements.get(&name) {
-                let trace = relation.leave().probe_with(probe).arrange_by_self().trace;
+                let trace = relation.leave()
+                    .inspect(|x| { println!("OUTPUT {:?}", x); })
+                    // .probe_with(probe)
+                    .arrange_by_self()
+                    .trace;
 
                 result_map.insert(name, trace);
             } else {

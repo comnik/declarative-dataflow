@@ -3,10 +3,7 @@ use std::collections::HashMap;
 
 use timely::communication::Allocate;
 use timely::dataflow::scopes::child::{Child, Iterative};
-use timely::progress::timestamp::Timestamp;
 use timely::worker::Worker;
-
-use differential_dataflow::lattice::Lattice;
 
 use plan::Implementable;
 use Relation;

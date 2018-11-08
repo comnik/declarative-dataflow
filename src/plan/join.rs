@@ -1,6 +1,7 @@
 //! Equijoin expression plan.
 
 use timely::communication::Allocate;
+// use timely::dataflow::operators::Inspect;
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::worker::Worker;
 
@@ -35,9 +36,6 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
         let right = self.right_plan
             .implement(nested, local_arrangements, global_arrangements);
 
-        // useful for inspecting join inputs
-        //.inspect(|&((ref key, ref values), _, _)| { println!("right {:?} {:?}", key, values) })
-
         let symbols = self.variables
             .iter()
             .cloned()
@@ -56,16 +54,21 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
             )
             .collect();
 
-        let tuples = left.tuples_by_symbols(&self.variables).join_map(
-            &right.tuples_by_symbols(&self.variables),
-            |key, v1, v2| {
-                key.iter()
-                    .cloned()
-                    .chain(v1.iter().cloned())
-                    .chain(v2.iter().cloned())
-                    .collect()
-            },
-        );
+        let tuples = left
+            .tuples_by_symbols(&self.variables)
+            // .inspect(|&((ref key, ref values), _, _)| { println!("LEFT {:?} {:?}", key, values) })
+            .join_map(
+                &right.tuples_by_symbols(&self.variables),
+                |key, v1, v2| {
+                    key.iter()
+                        .cloned()
+                        .chain(v1.iter().cloned())
+                        .chain(v2.iter().cloned())
+                        .collect()
+                },
+            );
+            // .inspect(|x| { println!("JOINED {:?}", x) })
+            
 
         // let debug_syms: Vec<String> = symbols.iter().map(|x| x.to_string()).collect();
         // println!(debug_syms);

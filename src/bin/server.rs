@@ -26,7 +26,8 @@ use std::{thread, usize};
 use getopts::Options;
 
 use timely::dataflow::operators::generic::OutputHandle;
-use timely::dataflow::operators::Operator;
+use timely::dataflow::operators::{Operator, Probe};
+use timely::dataflow::channels::pact::Exchange;
 use timely::synchronization::Sequencer;
 
 use mio::net::TcpListener;
@@ -257,7 +258,10 @@ fn main() {
                             info!("[WORKER {}] {:?} {:?}", worker.index(), query_name, results);
 
                             match interests.get(&query_name) {
-                                None => { /* @TODO unregister this flow */ }
+                                None => {
+                                    /* @TODO unregister this flow */
+                                    info!("NO INTEREST FOR THIS RESULT");
+                                }
                                 Some(tokens) => {
                                     let serialized = serde_json::to_string::<(String, Vec<Output>)>(
                                         &(query_name, results),
@@ -431,22 +435,29 @@ fn main() {
                                         server.interest(req.name.clone(), &mut scope)
                                             .inner
                                             .unary_notify(
-                                                timely::dataflow::channels::pact::Exchange::new(move |_| owner as u64),
+                                                Exchange::new(move |_| owner as u64),
                                                 "OutputsRecv",
-                                                Vec::new(),
-                                                move |input, _output: &mut OutputHandle<_, Output, _>, _notificator| {
+                                                vec![],
+                                                move |input, output: &mut OutputHandle<_, (), _>, _notificator| {
 
+                                                    drop(output);
+                                                    
                                                     // due to the exchange pact, this closure is only
                                                     // executed by the owning worker
 
-                                                    input.for_each(|_time, data| {
+                                                    input.for_each(|time, data| {
+                                                        notificator.notify_at(time.retain());
                                                         let out: Vec<Output> = data.iter()
                                                             .map(|(tuple, _t, diff)| (tuple.clone(), *diff))
                                                             .collect();
 
                                                         send_results_handle.send((name.clone(), out)).unwrap();
                                                     });
-                                                });
+
+                                                    // @TODO only send results here?
+                                                    // notificator.for_each(|time, _, _| { });
+                                                })
+                                            .probe_with(&mut server.probe);
                                     });
                                 }
                                 Request::Register(req) => {
@@ -477,11 +488,7 @@ fn main() {
             // s.t. the sequencer continues issuing commands
             worker.step();
 
-            for handle in server.input_handles.values() {
-                while server.probe.less_than(handle.time()) {
-                    worker.step();
-                }
-            }
+            worker.step_while(|| server.is_any_outdated());
         }
     }).unwrap(); // asserts error-free execution
 }
