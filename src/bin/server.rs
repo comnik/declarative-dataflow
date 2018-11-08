@@ -445,8 +445,8 @@ fn main() {
                                                     // due to the exchange pact, this closure is only
                                                     // executed by the owning worker
 
-                                                    input.for_each(|time, data| {
-                                                        notificator.notify_at(time.retain());
+                                                    input.for_each(|_time, data| {
+                                                        // notificator.notify_at(time.retain());
                                                         let out: Vec<Output> = data.iter()
                                                             .map(|(tuple, _t, diff)| (tuple.clone(), *diff))
                                                             .collect();
