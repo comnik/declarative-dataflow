@@ -4,9 +4,8 @@ version = "0.1.0"
 authors = ["Nikolas Göbel <me@nikolasgoebel.com>"]
 
 [dependencies]
-timely = "0.7"
-differential-dataflow = "0.7"
+differential-dataflow = { git = "https://github.com/frankmcsherry/differential-dataflow" }
+timely = { git = "https://github.com/frankmcsherry/timely-dataflow", features = ["bincode"] }
 
 [dependencies.declarative_dataflow]
 path = ".."
-features = ["json-source"]

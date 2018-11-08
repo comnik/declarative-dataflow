@@ -9,15 +9,17 @@ use std::sync::mpsc::{channel};
 use timely::{Configuration};
 
 use differential_dataflow::operators::Count;
-use differential_dataflow::operators::consolidate::Consolidate;
 
 use declarative_dataflow::{Plan, Rule, Value};
 use declarative_dataflow::plan::{Filter, Join, Union, Aggregate, AggregationFn, Predicate};
 use declarative_dataflow::sources::{Source, JsonFile};
-use declarative_dataflow::server::{Server, Interest, Register, RegisterSource};
+use declarative_dataflow::server::{Server, Register, RegisterSource};
 
 fn main() {
-    timely::execute(Configuration::Process(4), move |worker| {
+
+    let filename = std::env::args().nth(1).unwrap();
+
+    timely::execute(Configuration::Process(1), move |worker| {
 
         let mut server = Server::new(Default::default());
         // let (send_results, results) = channel();
@@ -34,9 +36,9 @@ fn main() {
             }
         ];
 
-        let obj_source = Source::JsonFile(JsonFile { path: "../data/confusion/confusion-2014-03-02.json".to_string() });
+        let obj_source = Source::JsonFile(JsonFile { path: filename.clone() });
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             
             server.register_source(RegisterSource {
                 names: vec!["target".to_string(), "guess".to_string()],
@@ -45,10 +47,10 @@ fn main() {
             
             server.register(Register { rules, publish: vec!["q1".to_string()] }, &mut scope);
 
-            server.interest(Interest { name: "q1".to_string() }, &mut scope);
-                // .map(|_x| ())
-                // .count()
-                // .inspect(|x| println!("RESULT {:?}", x));
+            server.interest("q1".to_string(), &mut scope)
+                .map(|_x| ())
+                .count()
+                .inspect(|x| println!("RESULT {:?}", x));
                 // .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
         });
 

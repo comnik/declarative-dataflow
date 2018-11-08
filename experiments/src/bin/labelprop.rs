@@ -10,7 +10,7 @@ use timely::{Configuration};
 use declarative_dataflow::{Plan, Rule, Value};
 use declarative_dataflow::plan::{Join, Union, Aggregate, AggregationFn};
 use declarative_dataflow::sources::{Source, PlainFile};
-use declarative_dataflow::server::{Server, Interest, Register, RegisterSource};
+use declarative_dataflow::server::{Server, Register, RegisterSource};
 
 fn main() {
     timely::execute(Configuration::Process(4), move |worker| {
@@ -55,7 +55,7 @@ fn main() {
             
             server.register(Register { rules, publish: vec!["labelprop".to_string()] }, &mut scope);
 
-            server.interest(Interest { name: "labelprop".to_string() }, &mut scope)
+            server.interest("labelprop".to_string(), &mut scope)
                 .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
         });
 

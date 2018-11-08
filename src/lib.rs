@@ -255,7 +255,7 @@ pub fn implement<A: Allocate>(
         for name in publish.into_iter() {
             if let Some(relation) = local_arrangements.get(&name) {
                 let trace = relation.leave()
-                    .inspect(|x| { println!("OUTPUT {:?}", x); })
+                    // .inspect(|x| { println!("OUTPUT {:?}", x); })
                     // .probe_with(probe)
                     .arrange_by_self()
                     .trace;

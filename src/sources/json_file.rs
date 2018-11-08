@@ -1,8 +1,7 @@
 //! Operator and utilities to source data from plain files containing
 //! arbitrary json structures.
 
-#[cfg(feature = "json-source")]
-extern crate json;
+extern crate serde_json;
 extern crate timely;
 
 use std::fs::File;
@@ -23,7 +22,6 @@ pub struct JsonFile {
     pub path: String,
 }
 
-#[cfg(feature = "json-source")]
 impl Sourceable for JsonFile {
     fn source<G: Scope>(&self, scope: &G) -> Stream<G, (Vec<Value>, u64, isize)> {
         let filename = self.path.clone();
@@ -47,23 +45,17 @@ impl Sourceable for JsonFile {
                         let line = readline.ok().expect("read error");
 
                         if (object_index % num_workers == worker_index) && line.len() > 0 {
-                            let obj = json::parse(&line).unwrap();
+                            let mut obj: serde_json::Value = serde_json::from_str(&line).unwrap();
                             let mut session = output.session(&cap);
 
-                            for (k, v) in obj.entries() {
-                                match v {
-                                    json::JsonValue::Short(v) => {
-                                        session.give((
-                                            vec![
-                                                Value::Eid(object_index as u64),
-                                                Value::String(k.to_string()),
-                                                Value::String(v.to_string()),
-                                            ],
-                                            0,
-                                            1,
-                                        ));
+                            for (k, v) in obj.as_object().unwrap() {
+                                match *v {
+                                    serde_json::Value::String(ref s) => {
+                                        session.give(
+                                            (vec![Value::Eid(object_index as u64), Value::String(k.to_string()), Value::String(s.to_string())], 0, 1)
+                                        );
                                     }
-                                    _ => println!("{:?} unsupported, ignoring", v),
+                                    _ => { /* println!("{:?} unsupported, ignoring", v) */ },
                                 }
                             }
                             num_objects_read += 1;
@@ -81,12 +73,5 @@ impl Sourceable for JsonFile {
                 cap = None;
             }
         })
-    }
-}
-
-#[cfg(not(feature = "json-source"))]
-impl Sourceable for JsonFile {
-    fn source<G: Scope>(&self, scope: &G) -> Stream<G, (Vec<Value>, u64, isize)> {
-        panic!("Feature 'json-source' must be enabled to use this.");
     }
 }
