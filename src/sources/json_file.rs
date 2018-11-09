@@ -68,13 +68,20 @@ impl Sourceable for JsonFile {
                             for (name_idx, k) in names.iter().enumerate() {
                                 match obj_map.get(k) {
                                     None => {},
-                                    Some(v) => {
-                                        match *v {
-                                            serde_json::Value::String(ref s) => {
-                                                session.give(((name_idx, vec![Value::Eid(object_index as u64), Value::String(s.to_string())]), 0, 1));
+                                    Some(json_value) => {
+                                        let v = match *json_value {
+                                            serde_json::Value::String(ref s) => Value::String(s.to_string()),
+                                            serde_json::Value::Number(ref num) => {
+                                                match num.as_i64() {
+                                                    None => panic!("only i64 supported at the moment"),
+                                                    Some(num) => Value::Number(num),
+                                                }
                                             },
-                                            _ => { /* println!("{:?} unsupported, ignoring", v) */ },
-                                        }
+                                            serde_json::Value::Bool(ref b) => Value::Bool(*b),
+                                            _ => panic!("only strings, booleans, and i64 types supported at the moment"),
+                                        };
+
+                                        session.give(((name_idx, vec![Value::Eid(object_index as u64), v]), 0, 1));
                                     }
                                 }
                             }
