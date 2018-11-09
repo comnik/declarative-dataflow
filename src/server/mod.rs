@@ -271,30 +271,29 @@ impl Server {
 
         if names.len() == 1 {
             let name = names.pop().unwrap();
-            let datoms = source.source(scope).as_collection();
+            let datoms = source.source(scope, names.clone()).as_collection();
 
             if self.global_arrangements.contains_key(&name) {
                 panic!("Source name clashes with registered relation.");
             } else {
-                let trace = datoms.arrange_by_self().trace;
+                let trace = datoms
+                    .map(|(_idx, tuple)| tuple)
+                    .arrange_by_self()
+                    .trace;
+                
                 self.register_global_arrangement(name, trace);
             }
         } else if names.len() > 1 {
-            let datoms = source.source(scope).as_collection();
+            let datoms = source.source(scope, names.clone()).as_collection();
 
-            // @TODO 'intern' attribute names with offset in names vector
-
-            for name in names.iter() {
+            for (name_idx, name) in names.iter().enumerate() {
                 if self.global_arrangements.contains_key(name) {
                     panic!("Source name clashes with registered relation.");
                 } else {
                     let name_str = name.to_string();
                     let trace = datoms
-                        .filter(move |tuple| match tuple[1] {
-                            Value::String(ref v) => *v == name_str,
-                            _ => panic!("expected a string"),
-                        })
-                        .map(|tuple| vec![tuple[0].clone(), tuple[2].clone()])
+                        .filter(move |(idx, _tuple)| *idx == name_idx)
+                        .map(|(_idx, tuple)| tuple)
                         .arrange_by_self()
                         .trace;
 

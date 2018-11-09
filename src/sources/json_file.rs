@@ -23,10 +23,10 @@ pub struct JsonFile {
 }
 
 impl Sourceable for JsonFile {
-    fn source<G: Scope>(&self, scope: &G) -> Stream<G, (Vec<Value>, u64, isize)> {
+    fn source<G: Scope>(&self, scope: &G, names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
         let filename = self.path.clone();
 
-        generic::operator::source(scope, &format!("File({})", filename), |capability| {
+        generic::operator::source(scope, &format!("File({})", filename), move |capability| {
             let mut cap = Some(capability);
 
             let worker_index = scope.index();
@@ -48,16 +48,34 @@ impl Sourceable for JsonFile {
                             let mut obj: serde_json::Value = serde_json::from_str(&line).unwrap();
                             let mut session = output.session(&cap);
 
-                            for (k, v) in obj.as_object().unwrap() {
-                                match *v {
-                                    serde_json::Value::String(ref s) => {
-                                        session.give(
-                                            (vec![Value::Eid(object_index as u64), Value::String(k.to_string()), Value::String(s.to_string())], 0, 1)
-                                        );
+                            let obj_map = obj.as_object().unwrap();
+
+                            // In the common case we assume that all objects share
+                            // roughly the same number of attributes, a (potentially small)
+                            // subset of which is actually requested downstream.
+                            //
+                            // otherwise:
+                            // for (k, v) in obj.as_object().unwrap() {
+
+                            for (name_idx, k) in names.iter().enumerate() {
+                                match obj_map.get(k) {
+                                    None => {},
+                                    Some(v) => {
+                                        match *v {
+                                            serde_json::Value::String(ref s) => {
+
+                                                // @TODO parse only the names we are interested in
+                                                // @TODO run with Value = serde_json::Value
+                                                // @TODO batch inputs
+
+                                                session.give(((name_idx, vec![Value::Eid(object_index as u64), Value::String(s.to_string())]), 0, 1));
+                                            },
+                                            _ => { /* println!("{:?} unsupported, ignoring", v) */ },
+                                        }
                                     }
-                                    _ => { /* println!("{:?} unsupported, ignoring", v) */ },
                                 }
                             }
+                            
                             num_objects_read += 1;
                         }
 
