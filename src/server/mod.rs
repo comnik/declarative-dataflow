@@ -290,7 +290,6 @@ impl Server {
                 if self.global_arrangements.contains_key(name) {
                     panic!("Source name clashes with registered relation.");
                 } else {
-                    let name_str = name.to_string();
                     let trace = datoms
                         .filter(move |(idx, _tuple)| *idx == name_idx)
                         .map(|(_idx, tuple)| tuple)

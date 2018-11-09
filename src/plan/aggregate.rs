@@ -1,13 +1,11 @@
 //! Aggregate expression plan.
 
 use timely::communication::Allocate;
-use timely::dataflow::operators::Map;
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::worker::Worker;
 
 use differential_dataflow::difference::DiffPair;
 use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
-use differential_dataflow::AsCollection;
 
 use plan::Implementable;
 use Relation;

@@ -232,7 +232,7 @@ pub fn implement<A: Allocate>(
     publish: Vec<String>,
     scope: &mut Child<Worker<A>, u64>,
     global_arrangements: &mut QueryMap<isize>,
-    probe: &mut ProbeHandle<u64>,
+    _probe: &mut ProbeHandle<u64>,
 ) -> HashMap<String, RelationHandle> {
     scope.iterative::<u64, _, _>(|nested| {
         let mut local_arrangements = RelationMap::new();

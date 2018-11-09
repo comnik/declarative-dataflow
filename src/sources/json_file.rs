@@ -27,27 +27,35 @@ impl Sourceable for JsonFile {
         let filename = self.path.clone();
 
         generic::operator::source(scope, &format!("File({})", filename), move |capability| {
+
             let mut cap = Some(capability);
 
             let worker_index = scope.index();
             let num_workers = scope.peers();
 
+            let path = Path::new(&filename);
+            let file = File::open(&path).unwrap();
+            let reader = BufReader::new(file);
+            let mut iterator = reader.lines().peekable();
+
+            let mut num_objects_read = 0;
+            let mut object_index = 0;
+
             move |output| {
-                if let Some(cap) = cap.as_mut() {
-                    let path = Path::new(&filename);
-                    let file = File::open(&path).unwrap();
-                    let reader = BufReader::new(file);
+                if iterator.peek().is_some() {
+                    
+                    let mut session = output.session(cap.as_ref().unwrap());
 
-                    let mut num_objects_read = 0;
-                    let mut object_index = 0;
-
-                    for readline in reader.lines() {
+                    for readline in iterator.by_ref().take(256 - 1) {
+                        
                         let line = readline.ok().expect("read error");
 
                         if (object_index % num_workers == worker_index) && line.len() > 0 {
-                            let mut obj: serde_json::Value = serde_json::from_str(&line).unwrap();
-                            let mut session = output.session(&cap);
 
+                            // @TODO parse only the names we are interested in
+                            // @TODO run with Value = serde_json::Value
+                            
+                            let mut obj: serde_json::Value = serde_json::from_str(&line).unwrap();
                             let obj_map = obj.as_object().unwrap();
 
                             // In the common case we assume that all objects share
@@ -63,11 +71,6 @@ impl Sourceable for JsonFile {
                                     Some(v) => {
                                         match *v {
                                             serde_json::Value::String(ref s) => {
-
-                                                // @TODO parse only the names we are interested in
-                                                // @TODO run with Value = serde_json::Value
-                                                // @TODO batch inputs
-
                                                 session.give(((name_idx, vec![Value::Eid(object_index as u64), Value::String(s.to_string())]), 0, 1));
                                             },
                                             _ => { /* println!("{:?} unsupported, ignoring", v) */ },
@@ -82,13 +85,10 @@ impl Sourceable for JsonFile {
                         object_index += 1;
                     }
 
-                    println!(
-                        "[WORKER {}] read {} out of {} objects",
-                        worker_index, num_objects_read, object_index
-                    );
+                    // println!("[WORKER {}] read {} out of {} objects", worker_index, num_objects_read, object_index);
+                } else {
+                    cap = None;
                 }
-
-                cap = None;
             }
         })
     }
