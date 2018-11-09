@@ -2,16 +2,14 @@ extern crate timely;
 extern crate differential_dataflow;
 extern crate declarative_dataflow;
 
-use std::thread;
 use std::time::{Instant};
-use std::sync::mpsc::{channel};
 
 use timely::{Configuration};
 
 use differential_dataflow::operators::Count;
 
 use declarative_dataflow::{Plan, Rule, Value};
-use declarative_dataflow::plan::{Filter, Join, Union, Aggregate, AggregationFn, Predicate};
+use declarative_dataflow::plan::{Join};
 use declarative_dataflow::sources::{Source, JsonFile};
 use declarative_dataflow::server::{Server, Register, RegisterSource};
 
@@ -22,9 +20,8 @@ fn main() {
     timely::execute(Configuration::Process(1), move |worker| {
 
         let mut server = Server::new(Default::default());
-        // let (send_results, results) = channel();
 
-        let (e, target, guess) = (1, 2, 3);
+        let e = 1;
         let rules = vec![
             Rule {
                 name: "q1".to_string(),
@@ -51,22 +48,11 @@ fn main() {
                 .map(|_x| ())
                 .count()
                 .inspect(|x| println!("RESULT {:?}", x));
-                // .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
         });
 
         let timer = Instant::now();
         while !server.probe.done() { worker.step(); }
 
         println!("finished at {:?}", timer.elapsed());
-        
-        // thread::spawn(move || {
-            // let result = results.recv().unwrap();
-            // println!("{:?}, finished at {:?}", result, timer.elapsed());
-            // while let Ok(result) = results.recv() {
-            //     println!("{:?} {:?}", result, timer.elapsed());
-            // }
-            // assert_eq!(results.recv().unwrap(), (vec![Value::Number(9393283)], 1));
-            // println!("Finished. {:?}", timer.elapsed());
-        // }).join().unwrap();
     }).unwrap();
 }
