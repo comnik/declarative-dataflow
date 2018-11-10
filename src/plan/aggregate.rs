@@ -41,7 +41,7 @@ fn reorder(result_vec: Vec<Value>, positions: Vec<usize>) -> Vec<Value> {
 }
 
 /// [WIP]
-/// A plan stage applying the specified aggregation function to
+/// A plan stage applying the specified single aggregation function to
 /// bindings for the specified symbols. Very WIP.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Aggregate<P: Implementable> {
@@ -174,13 +174,13 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         Some((key, DiffPair::new(v, 1)))
                     })
                     .count()
-                    .map(|(key, diff_pair)| {
+                    .map(move |(key, diff_pair)| {
                         let mut v = key.clone();
                         v.push(Value::Rational32(Ratio::new(
                             diff_pair.element1 as i32,
                             diff_pair.element2 as i32,
                         )));
-                        v
+                        reorder(v, sym_position.clone())
                     }),
             },
             AggregationFn::VARIANCE => SimpleRelation {
@@ -196,7 +196,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         Some((key, DiffPair::new(DiffPair::new(v * v, v), 1)))
                     })
                     .count()
-                    .map(|(key, diff_pair)| {
+                    .map(move |(key, diff_pair)| {
                         let mut v = key.clone();
                         let sum_square = diff_pair.element1.element1 as i32;
                         let sum = diff_pair.element1.element2 as i32;
@@ -204,7 +204,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         v.push(Value::Rational32(
                             Rational32::new(sum_square, c) - Rational32::new(sum, c).pow(2),
                         ));
-                        v
+                        reorder(v, sym_position.clone())
                     }),
             },
             // AggregationFn::STDDEV => SimpleRelation {
@@ -229,6 +229,146 @@ impl<P: Implementable> Implementable for Aggregate<P> {
             //             v
             //         }),
             // },
+        }
+    }
+}
+
+/// [WIP]
+/// A plan stage applying multiple aggregations to
+/// bindings for the specified symbols. Very WIP.
+#[derive(Deserialize, Clone, Debug)]
+pub struct AggregateMulti<P: Implementable> {
+    /// TODO
+    pub variables: Vec<Var>,
+    /// Plan for the data source.
+    pub plan: Box<P>,
+    /// Logical predicate to apply.
+    pub aggregation_fn: Vec<AggregationFn>,
+    /// Relation symbols that determine the grouping.
+    pub key_symbols: Vec<Var>,
+    /// Aggregation symbols
+    pub aggregation_symbols: Vec<Var>,
+}
+
+impl<P: Implementable> Implementable for AggregateMulti<P> {
+    fn implement<'a, 'b, A: Allocate>(
+        &self,
+        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
+        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        global_arrangements: &mut QueryMap<isize>,
+    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
+        let relation = self.plan
+            .implement(nested, local_arrangements, global_arrangements);
+
+        let mut value_offsets = Vec::new();
+        let mut seen = Vec::new();
+
+        for sym in self.aggregation_symbols.iter() {
+            if !seen.contains(&sym) {
+                seen.push(&sym);
+                value_offsets.push(seen.iter().position(|&v| sym == v).unwrap());
+            } else {
+                value_offsets.push(seen.iter().position(|&v| sym == v).unwrap());
+            }
+        }
+
+        let mut result_position = self.key_symbols.clone();
+        result_position.append(&mut self.aggregation_symbols.clone());
+
+        let mut variables = self.variables.clone();
+
+        let mut sym_position = Vec::new();
+
+        for sym in result_position.iter() {
+            let i = variables.iter().position(|&v| *sym == v).unwrap();
+            sym_position.push(i);
+            variables[i] = 0;
+        }
+
+        let tuples = relation.tuples_by_symbols(&self.key_symbols);
+
+        let aggregation_fn = self.aggregation_fn.clone();
+
+        SimpleRelation {
+            symbols: self.variables.to_vec(),
+            tuples: tuples
+                .group(move |_key, vals, output| {
+                    let mut results = Vec::new();
+                    for (i, agg_fn) in aggregation_fn.iter().enumerate() {
+                        let mut values: Vec<Value> =
+                            vals.iter().map(|x| x.0[value_offsets[i]].clone()).collect();
+                        values.sort();
+                        values.dedup();
+                        match agg_fn {
+                            AggregationFn::MIN => {
+                                let min = values[0].clone();
+                                results.push(min);
+                            }
+                            AggregationFn::MAX => {
+                                let max = values[values.len() - 1].clone();
+                                results.push(max);
+                            }
+                            AggregationFn::MEDIAN => {
+                                let median = values[values.len() / 2].clone();
+                                results.push(median);
+                            }
+                            AggregationFn::COUNT => {
+                                results.push(Value::Number(values.len() as i64));
+                            }
+                            AggregationFn::SUM => {
+                                let mut sum = 0;
+                                for value in values.iter() {
+                                    let val = match value {
+                                        Value::Number(num) => num,
+                                        _ => panic!("SUM can only be applied to type Number!"),
+                                    };
+                                    sum += val;
+                                }
+                                results.push(Value::Number(sum as i64));
+                            }
+                            AggregationFn::AVG => {
+                                let mut sum = 0;
+                                for value in values.iter() {
+                                    let val = match value {
+                                        Value::Number(num) => num,
+                                        _ => panic!("AVG can only be applied to type Number!"),
+                                    };
+                                    sum += val;
+                                }
+                                results.push(Value::Rational32(Ratio::new(
+                                    sum as i32,
+                                    values.len() as i32,
+                                )));
+                            } 
+                            AggregationFn::VARIANCE => {
+                                let mut sum = 0;
+                                for value in values.iter() {
+                                    let val = match value {
+                                        Value::Number(num) => num,
+                                        _ => panic!("VARIANCE can only be applied to type Number!"),
+                                    };
+                                    sum += val;
+                                }
+                                let avg = Ratio::new(sum as i32, vals.len() as i32);
+                                let mut var = Ratio::new(0, 1);
+                                for value in values.iter() {
+                                    let val = match value {
+                                        Value::Number(num) => num,
+                                        _ => panic!("VARIANCE can only be applied to type Number!"),
+                                    };
+                                    var += (Ratio::new(*val as i32, 1) - avg).pow(2);
+                                }
+                                results.push(Value::Rational32(var / vals.len() as i32));
+                                }
+                        }
+                    }
+                    output.push((results, 1));
+                })
+                .map(move |(key, vals)| {
+                    let mut v = key.clone();
+                    v.append(&mut vals.clone());
+                    reorder(v, sym_position.clone())
+                }),
         }
     }
 }

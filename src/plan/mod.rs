@@ -15,7 +15,7 @@ pub mod project;
 pub mod transform;
 pub mod union;
 
-pub use self::aggregate::{Aggregate, AggregationFn};
+pub use self::aggregate::{Aggregate, AggregateMulti, AggregationFn};
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
 pub use self::join::Join;
@@ -41,6 +41,8 @@ pub enum Plan {
     Project(Project<Plan>),
     /// Aggregation
     Aggregate(Aggregate<Plan>),
+    /// AggregationMulti
+    AggregateMulti(AggregateMulti<Plan>),
     /// Union
     Union(Union<Plan>),
     /// Equijoin
@@ -84,6 +86,9 @@ impl Implementable for Plan {
                 projection.implement(nested, local_arrangements, global_arrangements)
             }
             &Plan::Aggregate(ref aggregate) => {
+                aggregate.implement(nested, local_arrangements, global_arrangements)
+            }
+            &Plan::AggregateMulti(ref aggregate) => {
                 aggregate.implement(nested, local_arrangements, global_arrangements)
             }
             &Plan::Union(ref union) => {
