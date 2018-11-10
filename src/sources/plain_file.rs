@@ -21,7 +21,11 @@ pub struct PlainFile {
 }
 
 impl Sourceable for PlainFile {
-    fn source<G: Scope<Timestamp = u64>>(&self, scope: &G, _names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
+    fn source<G: Scope<Timestamp = u64>>(
+        &self,
+        scope: &G,
+        _names: Vec<String>,
+    ) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
         let filename = self.path.clone();
 
         generic::operator::source(scope, &format!("File({})", filename), |capability| {
@@ -48,7 +52,11 @@ impl Sourceable for PlainFile {
                             let v: i64 =
                                 elts.next().unwrap().parse().ok().expect("malformed value");
 
-                            output.session(&cap).give(((0, vec![Value::Number(e), Value::Number(v)]), 0, 1));
+                            output.session(&cap).give((
+                                (0, vec![Value::Number(e), Value::Number(v)]),
+                                0,
+                                1,
+                            ));
                             num_datums_read += 1;
                         }
 

@@ -23,11 +23,14 @@ pub struct JsonFile {
 }
 
 impl Sourceable for JsonFile {
-    fn source<G: Scope>(&self, scope: &G, names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
+    fn source<G: Scope>(
+        &self,
+        scope: &G,
+        names: Vec<String>,
+    ) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
         let filename = self.path.clone();
 
         generic::operator::source(scope, &format!("File({})", filename), move |capability| {
-
             let mut cap = Some(capability);
 
             let worker_index = scope.index();
@@ -43,18 +46,15 @@ impl Sourceable for JsonFile {
 
             move |output| {
                 if iterator.peek().is_some() {
-                    
                     let mut session = output.session(cap.as_ref().unwrap());
 
                     for readline in iterator.by_ref().take(256 - 1) {
-                        
                         let line = readline.ok().expect("read error");
 
                         if (object_index % num_workers == worker_index) && line.len() > 0 {
-
                             // @TODO parse only the names we are interested in
                             // @TODO run with Value = serde_json::Value
-                            
+
                             let mut obj: serde_json::Value = serde_json::from_str(&line).unwrap();
                             let obj_map = obj.as_object().unwrap();
 
@@ -67,7 +67,7 @@ impl Sourceable for JsonFile {
 
                             for (name_idx, k) in names.iter().enumerate() {
                                 match obj_map.get(k) {
-                                    None => {},
+                                    None => {}
                                     Some(json_value) => {
                                         let v = match *json_value {
                                             serde_json::Value::String(ref s) => Value::String(s.to_string()),
@@ -81,18 +81,22 @@ impl Sourceable for JsonFile {
                                             _ => panic!("only strings, booleans, and i64 types supported at the moment"),
                                         };
 
-                                        session.give(((name_idx, vec![Value::Eid(object_index as u64), v]), 0, 1));
+                                        session.give((
+                                            (name_idx, vec![Value::Eid(object_index as u64), v]),
+                                            0,
+                                            1,
+                                        ));
                                     }
                                 }
                             }
-                            
+
                             num_objects_read += 1;
                         }
 
                         object_index += 1;
                     }
 
-                    // println!("[WORKER {}] read {} out of {} objects", worker_index, num_objects_read, object_index);
+                // println!("[WORKER {}] read {} out of {} objects", worker_index, num_objects_read, object_index);
                 } else {
                     cap = None;
                 }

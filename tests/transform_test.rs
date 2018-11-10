@@ -1,9 +1,9 @@
 extern crate declarative_dataflow;
 extern crate timely;
 
+use std::collections::HashMap;
 use std::sync::mpsc::channel;
 use std::thread;
-use std::collections::HashMap;
 
 use timely::Configuration;
 

@@ -16,7 +16,11 @@ pub use self::json_file::JsonFile;
 pub trait Sourceable {
     /// Creates a timely operator reading from the source and
     /// producing inputs.
-    fn source<G: Scope<Timestamp = u64>>(&self, scope: &G, names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)>;
+    fn source<G: Scope<Timestamp = u64>>(
+        &self,
+        scope: &G,
+        names: Vec<String>,
+    ) -> Stream<G, ((usize, Vec<Value>), u64, isize)>;
 }
 
 /// Supported external data sources.
@@ -29,7 +33,11 @@ pub enum Source {
 }
 
 impl Sourceable for Source {
-    fn source<G: Scope<Timestamp = u64>>(&self, scope: &G, names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
+    fn source<G: Scope<Timestamp = u64>>(
+        &self,
+        scope: &G,
+        names: Vec<String>,
+    ) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
         match self {
             &Source::PlainFile(ref source) => source.source(scope, names),
             &Source::JsonFile(ref source) => source.source(scope, names),

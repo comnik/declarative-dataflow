@@ -276,11 +276,8 @@ impl Server {
             if self.global_arrangements.contains_key(&name) {
                 panic!("Source name clashes with registered relation.");
             } else {
-                let trace = datoms
-                    .map(|(_idx, tuple)| tuple)
-                    .arrange_by_self()
-                    .trace;
-                
+                let trace = datoms.map(|(_idx, tuple)| tuple).arrange_by_self().trace;
+
                 self.register_global_arrangement(name, trace);
             }
         } else if names.len() > 1 {
@@ -303,11 +300,7 @@ impl Server {
     }
 
     /// Handle a CreateInput request.
-    pub fn create_input<A: Allocate>(
-        &mut self,
-        name: String,
-        scope: &mut Child<Worker<A>, u64>,
-    ) {
+    pub fn create_input<A: Allocate>(&mut self, name: String, scope: &mut Child<Worker<A>, u64>) {
         if self.global_arrangements.contains_key(&name) {
             panic!("Input name clashes with existing trace.");
         } else {

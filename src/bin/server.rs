@@ -25,9 +25,9 @@ use std::{thread, usize};
 
 use getopts::Options;
 
+use timely::dataflow::channels::pact::Exchange;
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
-use timely::dataflow::channels::pact::Exchange;
 use timely::synchronization::Sequencer;
 
 use mio::net::TcpListener;
@@ -37,7 +37,7 @@ use slab::Slab;
 
 use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::server::{Config, Request, Server, CreateInput};
+use declarative_dataflow::server::{Config, CreateInput, Request, Server};
 use declarative_dataflow::Value;
 
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug)]
@@ -441,7 +441,6 @@ fn main() {
                                                 move |input, output: &mut OutputHandle<_, (), _>, _notificator| {
 
                                                     drop(output);
-                                                    
                                                     // due to the exchange pact, this closure is only
                                                     // executed by the owning worker
 
