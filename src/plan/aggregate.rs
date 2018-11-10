@@ -34,6 +34,12 @@ pub enum AggregationFn {
     // STDDEV,
 }
 
+fn reorder(result_vec: Vec<Value>, positions: Vec<usize>) -> Vec<Value> {
+    let mut v: Vec<_> = result_vec.iter().zip(positions.iter()).collect();
+    v.sort_by(|a, b| a.1.cmp(b.1));
+    v.iter().map(|x| x.0.clone()).collect()
+}
+
 /// [WIP]
 /// A plan stage applying the specified aggregation function to
 /// bindings for the specified symbols. Very WIP.
@@ -47,6 +53,8 @@ pub struct Aggregate<P: Implementable> {
     pub aggregation_fn: AggregationFn,
     /// Relation symbols that determine the grouping.
     pub key_symbols: Vec<Var>,
+    /// Aggregation symbol
+    pub aggregation_symbol: Vec<Var>,
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
@@ -68,6 +76,19 @@ impl<P: Implementable> Implementable for Aggregate<P> {
             (key.clone(), v)
         };
 
+        let mut result_position = self.key_symbols.clone();
+        result_position.append(&mut self.aggregation_symbol.clone());
+
+        let mut variables = self.variables.clone();
+
+        let mut sym_position = Vec::new();
+
+        for sym in result_position.iter() {
+            let i = variables.iter().position(|&v| *sym == v).unwrap();
+            sym_position.push(i);
+            variables[i] = 0;
+        }
+
         match self.aggregation_fn {
             AggregationFn::MIN => SimpleRelation {
                 symbols: self.variables.to_vec(),
@@ -77,10 +98,10 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         let min = vals[0].0;
                         output.push((*min, 1));
                     })
-                    .map(|(key, min)| {
+                    .map(move |(key, min)| {
                         let mut v = key.clone();
                         v.push(Value::Number(min as i64));
-                        v
+                        reorder(v, sym_position.clone())
                     }),
             },
             AggregationFn::MAX => SimpleRelation {
@@ -91,10 +112,10 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         let max = vals[vals.len() - 1].0;
                         output.push((*max, 1));
                     })
-                    .map(|(key, max)| {
+                    .map(move |(key, max)| {
                         let mut v = key.clone();
                         v.push(Value::Number(max as i64));
-                        v
+                        reorder(v, sym_position.clone())
                     }),
             },
             AggregationFn::MEDIAN => SimpleRelation {
@@ -105,20 +126,20 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         let median = vals[vals.len() / 2].0;
                         output.push((*median, 1));
                     })
-                    .map(|(key, med)| {
+                    .map(move |(key, med)| {
                         let mut v = key.clone();
                         v.push(Value::Number(med as i64));
-                        v
+                        reorder(v, sym_position.clone())
                     }),
             },
             AggregationFn::COUNT => SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples
                     .group(|_key, input, output| output.push((input.len(), 1)))
-                    .map(|(key, count)| {
+                    .map(move |(key, count)| {
                         let mut v = key.clone();
                         v.push(Value::Number(count as i64));
-                        v
+                        reorder(v, sym_position.clone())
                     }),
             },
             AggregationFn::SUM => SimpleRelation {
@@ -134,10 +155,10 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         Some((key, v))
                     })
                     .count()
-                    .map(|(key, count)| {
+                    .map(move |(key, count)| {
                         let mut v = key.clone();
                         v.push(Value::Number(count as i64));
-                        v
+                        reorder(v, sym_position.clone())
                     }),
             },
             AggregationFn::AVG => SimpleRelation {
