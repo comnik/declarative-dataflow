@@ -42,7 +42,11 @@ fn reorder(result_vec: Vec<Value>, positions: Vec<usize>) -> Vec<Value> {
 
 /// [WIP]
 /// A plan stage applying the specified single aggregation function to
-/// bindings for the specified symbols. Very WIP.
+/// bindings for the specified symbols.
+/// There are different plans for multiple and single aggregations.
+/// Single aggregations are implemented more efficiently, e.g. using differentials diffpair and leveraging the order of grouped tuples.
+/// All multiple aggregations currently are done inside one grouped context, which does not allow the former and
+/// thus is less performant.
 #[derive(Deserialize, Clone, Debug)]
 pub struct Aggregate<P: Implementable> {
     /// TODO
@@ -243,7 +247,7 @@ pub struct AggregateMulti<P: Implementable> {
     /// Plan for the data source.
     pub plan: Box<P>,
     /// Logical predicate to apply.
-    pub aggregation_fn: Vec<AggregationFn>,
+    pub aggregation_fns: Vec<AggregationFn>,
     /// Relation symbols that determine the grouping.
     pub key_symbols: Vec<Var>,
     /// Aggregation symbols
@@ -287,14 +291,14 @@ impl<P: Implementable> Implementable for AggregateMulti<P> {
 
         let tuples = relation.tuples_by_symbols(&self.key_symbols);
 
-        let aggregation_fn = self.aggregation_fn.clone();
+        let aggregation_fns = self.aggregation_fns.clone();
 
         SimpleRelation {
             symbols: self.variables.to_vec(),
             tuples: tuples
                 .group(move |_key, vals, output| {
                     let mut results = Vec::new();
-                    for (i, agg_fn) in aggregation_fn.iter().enumerate() {
+                    for (i, agg_fn) in aggregation_fns.iter().enumerate() {
                         let mut values: Vec<Value> =
                             vals.iter().map(|x| x.0[value_offsets[i]].clone()).collect();
                         values.sort();
