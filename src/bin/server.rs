@@ -404,12 +404,8 @@ fn main() {
                             // @TODO only create a single dataflow, but only if req != Transact
 
                             match req {
-                                Request::Datom(e, a, v, diff, tx) => {
-                                    server.datom(owner, worker.index(), e, a, v, diff, tx);
-                                }
-                                Request::Transact(req) => {
-                                    server.transact(req, owner, worker.index());
-                                }
+                                Request::Datom(e, a, v, diff, tx) => server.datom(owner, worker.index(), e, a, v, diff, tx),
+                                Request::Transact(req) => server.transact(req, owner, worker.index()),
                                 Request::Interest(req) => {
                                     if owner == worker.index() {
                                         // we are the owning worker and thus have to
@@ -475,9 +471,8 @@ fn main() {
                                         server.create_input(name, &mut scope);
                                     });
                                 }
-                                Request::AdvanceInput(name, tx) => {
-                                    server.advance_input(name, tx);
-                                }
+                                Request::AdvanceInput(name, tx) => server.advance_input(name, tx),
+                                Request::CloseInput(name) => server.close_input(name),
                             }
                         }
                     }

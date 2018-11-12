@@ -110,6 +110,8 @@ pub enum Request {
     CreateInput(CreateInput),
     /// Advances and flushes a named input handle.
     AdvanceInput(Option<String>, u64),
+    /// Closes a named input handle.
+    CloseInput(String),
 }
 
 /// Server context maintaining globally registered arrangements and
@@ -356,5 +358,16 @@ impl Server {
                 trace.advance_by(frontier_ref);
             }
         }
+    }
+
+    /// Handle a CloseInput request.
+    pub fn close_input(&mut self, name: String) {
+        let handle = self.input_handles
+            .remove(&name)
+            .expect(&format!("Input {} does not exist.", name));
+
+        println!("Closing {}", name);
+
+        handle.close();
     }
 }
