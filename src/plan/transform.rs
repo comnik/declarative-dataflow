@@ -79,12 +79,12 @@ impl<P: Implementable> Implementable for Transform<P> {
                 symbols: symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     let mut t = match tuple[key_offsets[0]] {
-                        Value::Instant(inst) => inst as u64,
-                        _ => panic!("TRUNCATE can only be applied to timestamps"),
+                        Value::Number(num) => num as i64,
+                        _ => panic!("TRUNCATE can only be applied to numbers"),
                     };
                     let default_interval = String::from(":hour");
-                    let interval_param = match constants_local.get(&1){  
-                        Some(Value::String(interval)) => interval as &String, 
+                    let interval_param = match constants_local.get(&1) {
+                        Some(Value::String(interval)) => interval as &String,
                         None => &default_interval,
                         _ => panic!("Parameter for TRUNCATE must be a string"),
                     };
@@ -94,12 +94,12 @@ impl<P: Implementable> Implementable for Transform<P> {
                         ":hour" => 3600000,
                         ":day" => 86400000,
                         ":week" => 604800000,
-                        _ => panic!("Unknown interval for TRUNCATE") 
+                        _ => panic!("Unknown interval for TRUNCATE"),
                     };
 
                     t = t - (t % mod_val);
                     let mut v = tuple.clone();
-                    v.push(Value::Instant(t));
+                    v.push(Value::Number(t));
                     v
                 }),
             },
