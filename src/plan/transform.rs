@@ -14,6 +14,8 @@ use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 pub enum Function {
     /// Truncates a unix timestamp into an hourly interval
     TRUNCATE,
+    /// Bind a constant to the specified symbol and add it into the result set
+    BIND,
 }
 
 /// A plan stage applying a built-in function to source tuples.
@@ -60,6 +62,19 @@ impl<P: Implementable> Implementable for Transform<P> {
         let constants_local = self.constants.clone();
 
         match self.function {
+            Function::BIND => SimpleRelation {
+                symbols: symbols,
+                tuples: rel.tuples().map(move |tuple| {
+                    let constant = match constants_local.get(&0) {
+                        Some(constant) => constant,
+                        _ => panic!("Empty parameter for BIND is not allowed"),
+                    };
+                    let mut v = tuple.clone();
+                    v.push(constant.clone());
+                    v
+                }),
+            },
+
             Function::TRUNCATE => SimpleRelation {
                 symbols: symbols,
                 tuples: rel.tuples().map(move |tuple| {
