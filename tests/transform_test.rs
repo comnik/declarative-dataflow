@@ -17,10 +17,10 @@ fn truncate() {
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
 
-        // [:find ?h :where [?e :timestamp ?t] [(interval ?t) ?h]]
+        // [:find ?e ?t ?h :where [?e :timestamp ?t] [(truncate ?t) ?h]]
         let (e, t, h) = (1, 2, 3);
         let mut constants = HashMap::new();
-        // constants.insert(1, Value::String(String::from("hour")));
+        constants.insert(1, Value::String(String::from(":hour")));
         let plan = Plan::Transform(Transform {
             variables: vec![t],
             result_sym: h,
@@ -55,18 +55,8 @@ fn truncate() {
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(
-                        1,
-                        1,
-                        ":timestamp".to_string(),
-                        Value::Instant(1540048515500),
-                    ),
-                    TxData(
-                        1,
-                        2,
-                        ":timestamp".to_string(),
-                        Value::Instant(1540048515616),
-                    ),
+                    TxData(1, 1, ":timestamp".to_string(), Value::Number(1540048515500)),
+                    TxData(1, 2, ":timestamp".to_string(), Value::Number(1540048515616)),
                 ],
             },
             0,
@@ -78,11 +68,25 @@ fn truncate() {
         thread::spawn(move || {
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Instant(1540048515500), Value::Instant(1540047600000)], 1)
+                (
+                    vec![
+                        Value::Eid(1),
+                        Value::Number(1540048515500),
+                        Value::Number(1540047600000),
+                    ],
+                    1
+                )
             );
             assert_eq!(
                 results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Instant(1540048515616), Value::Instant(1540047600000)], 1)
+                (
+                    vec![
+                        Value::Eid(2),
+                        Value::Number(1540048515616),
+                        Value::Number(1540047600000),
+                    ],
+                    1
+                )
             );
         }).join()
             .unwrap();
