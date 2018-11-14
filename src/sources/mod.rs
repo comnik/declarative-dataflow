@@ -7,8 +7,8 @@ use timely::dataflow::{Scope, Stream};
 
 use Value;
 
-pub mod plain_file;
-pub use self::plain_file::PlainFile;
+pub mod csv_file;
+pub use self::csv_file::CsvFile;
 pub mod json_file;
 pub use self::json_file::JsonFile;
 
@@ -22,8 +22,8 @@ pub trait Sourceable {
 /// Supported external data sources.
 #[derive(Deserialize, Clone, Debug)]
 pub enum Source {
-    /// Plain files
-    PlainFile(PlainFile),
+    /// CSV files
+    CsvFile(CsvFile),
     /// Files containing json objects
     JsonFile(JsonFile),
 }
@@ -31,7 +31,7 @@ pub enum Source {
 impl Sourceable for Source {
     fn source<G: Scope<Timestamp = u64>>(&self, scope: &G, names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
         match self {
-            &Source::PlainFile(ref source) => source.source(scope, names),
+            &Source::CsvFile(ref source) => source.source(scope, names),
             &Source::JsonFile(ref source) => source.source(scope, names),
         }
     }
