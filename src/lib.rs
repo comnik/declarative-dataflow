@@ -45,7 +45,13 @@ pub mod sources;
 //
 
 /// A unique entity identifier.
+#[cfg(not(feature = "uuids"))]
 pub type Entity = u64;
+
+/// A unique entity identifier.
+#[cfg(feature = "uuids")]
+pub type Entity = u128;
+
 /// A unique attribute identifier.
 pub type Attribute = String; // u32
 

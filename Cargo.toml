@@ -20,6 +20,9 @@ env_logger = "0.5.6"
 getopts = "0.2.18"
 num-rational = { version = "0.2", features = ["std", "serde"] }
 
+[features]
+uuids = []
+
 [profile.release]
 opt-level = 3
 debug = true

@@ -11,7 +11,9 @@ use std::path::Path;
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
 
-use Value;
+// use sources::json_file::flate2::read::GzDecoder;
+
+use {Value, Entity};
 
 use sources::Sourceable;
 
@@ -35,6 +37,7 @@ impl Sourceable for JsonFile {
 
             let path = Path::new(&filename);
             let file = File::open(&path).unwrap();
+            // let reader = BufReader::new(GzDecoder::new(file));
             let reader = BufReader::new(file);
             let mut iterator = reader.lines().peekable();
 
@@ -81,7 +84,7 @@ impl Sourceable for JsonFile {
                                             _ => panic!("only strings, booleans, and i64 types supported at the moment"),
                                         };
 
-                                        session.give(((name_idx, vec![Value::Eid(object_index as u64), v]), 0, 1));
+                                        session.give(((name_idx, vec![Value::Eid(object_index as Entity), v]), 0, 1));
                                     }
                                 }
                             }
