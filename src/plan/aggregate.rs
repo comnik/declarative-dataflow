@@ -60,27 +60,35 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
         global_arrangements: &mut QueryMap<isize>,
     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
-        let relation = self.plan
-            .implement(nested, local_arrangements, global_arrangements);
+        
+        let relation = self.plan.implement(nested, local_arrangements, global_arrangements);
+
+        // We split the incoming tuples into their (key, value) parts.
         let tuples = relation.tuples_by_symbols(&self.key_symbols);
 
-        // value_offsets are positions where inside the value vector the value for the given aggregation is found
+        // For each aggregation function that is to be applied, we
+        // need to determine the index (into the value part of each
+        // tuple) at which its argument is to be found.
+        
         let mut value_offsets = Vec::new();
         let mut seen = Vec::new();
 
         for sym in self.aggregation_symbols.iter() {
             if !seen.contains(&sym) {
                 seen.push(&sym);
-                value_offsets.push(seen.iter().position(|&v| sym == v).unwrap());
+                value_offsets.push(seen.len() - 1);
             } else {
                 value_offsets.push(seen.iter().position(|&v| sym == v).unwrap());
             }
         }
 
-        // output_positions keeps track of where the aggregations
-        // are supposed to be inserted to match the users specified symbol order
+        // Users can specify weird find clauses like [:find ?key1 (min ?v1) ?key2]
+        // and we would like to avoid an extra projection. Thus, we pre-compute
+        // the correct output offset for each aggregation.
+        
         let mut variables = self.variables.clone();
         let mut output_positions = Vec::new();
+        
         for sym in self.aggregation_symbols.iter() {
             let output_index = variables.iter().position(|&v| *sym == v).unwrap();
             output_positions.push(output_index);
@@ -90,7 +98,8 @@ impl<P: Implementable> Implementable for Aggregate<P> {
 
         let mut collections = Vec::new();
 
-        // we iterate of all aggregations and push the resulting collection 
+        // We iterate over all aggregations and keep track of the
+        // resulting collections, s.t. they can be joined afterwards.
         for (i, aggregation_fn) in self.aggregation_fns.iter().enumerate() {
             let value_offset = value_offsets[i];
 
@@ -244,12 +253,15 @@ impl<P: Implementable> Implementable for Aggregate<P> {
             }
         }
         else {
+            // @TODO replace this with a join application
             let left = collections.remove(0);
-            let tuples = collections.iter().fold(left, |coll, next| coll.join_map(&next, |key, v1, v2| {
-                let mut val = v1.clone();
-                val.append(&mut v2.clone());
-                (key.clone(), val)
-            }));
+            let tuples = collections.iter()
+                .fold(left, |coll, next| coll.join_map(&next, |key, v1, v2| {
+                    let mut val = v1.clone();
+                    val.append(&mut v2.clone());
+                    (key.clone(), val)
+                }));
+            
             SimpleRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples.map(move |(key, vals)|{
