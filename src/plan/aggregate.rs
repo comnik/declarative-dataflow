@@ -51,6 +51,8 @@ pub struct Aggregate<P: Implementable> {
     pub key_symbols: Vec<Var>,
     /// Aggregation symbols
     pub aggregation_symbols: Vec<Var>,
+    /// With symbols
+    pub with_symbols: Vec<Var>,
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
@@ -87,11 +89,11 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         // the correct output offset for each aggregation.
         
         let mut variables = self.variables.clone();
-        let mut output_positions = Vec::new();
-        
+        let mut output_offsets = Vec::new();
+
         for sym in self.aggregation_symbols.iter() {
             let output_index = variables.iter().position(|&v| *sym == v).unwrap();
-            output_positions.push(output_index);
+            output_offsets.push(output_index);
 
             variables[output_index] = 0;
         }
@@ -102,68 +104,62 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         // resulting collections, s.t. they can be joined afterwards.
         for (i, aggregation_fn) in self.aggregation_fns.iter().enumerate() {
             let value_offset = value_offsets[i];
+            let with_length = self.with_symbols.len();
+
+            // Access the right value for the given iteration loop and extend possible with-values.
+            let prepare_unary = move |(key, tuple): (Vec<Value>, Vec<Value>)| {
+                let value = &tuple[value_offset];
+                let mut v = vec![value.clone()];
+
+                // With-symbols are always the last elements in the value part of each tuple, given they are specified.
+                // We append these, s.t. we consolidate correctly.
+                if with_length > 0 {
+                    v.extend(tuple.iter().rev().take(with_length).cloned());
+                }
+
+                (key, v)
+            };
 
             match aggregation_fn {
                 AggregationFn::MIN =>  {
                     let tuples = tuples
-                        .map(move |(key, tuple)| {
-                            let v = match tuple[value_offset] {
-                                Value::Number(num) => num,
-                                _ => panic!("MIN can only be applied on type Number."),
-                            };
-                            (key, v)
-                        })
+                        .map(prepare_unary)
                         .group(|_key, vals, output| {
-                            let min = vals[0].0;
-                            output.push((*min, 1));
+                            let min = &vals[0].0[0];
+                            output.push((min.clone(), 1));
                         })
                         .map(move |(key, min)| {
-                            (key, vec![Value::Number(min as i64)])
+                            (key, vec![min])
                         });
                     collections.push(tuples);
                 },
                 AggregationFn::MAX => {
                     let tuples = tuples
-                        .map(move |(key, tuple)| {
-                            let v = match tuple[value_offset] {
-                                Value::Number(num) => num,
-                                _ => panic!("MAX can only be applied on type Number."),
-                            };
-                            (key, v)
-                        })
+                        .map(prepare_unary)
                         .group(|_key, vals, output| {
-                            let max = vals[vals.len() - 1].0;
-                            output.push((*max, 1));
+                            let max = &vals[vals.len() - 1].0[0];
+                            output.push((max.clone(), 1));
                         })
                         .map(move |(key, max)| {
-                            (key, vec![Value::Number(max as i64)])
+                            (key, vec![max])
                         });
                     collections.push(tuples);
                 },
                 AggregationFn::MEDIAN =>  {
                     let tuples = tuples
-                        .map(move |(key, tuple)| {
-                            let v = match tuple[value_offset] {
-                                Value::Number(num) => num,
-                                _ => panic!("MEDIAN can only be applied on type Number."),
-                            };
-                            (key, v)
-                        })
+                        .map(prepare_unary)
                         .group(|_key, vals, output| {
-                            let median = vals[vals.len() / 2].0;
-                            output.push((*median, 1));
+                            let median = &vals[vals.len() / 2].0[0];
+                            output.push((median.clone(), 1));
                         })
                         .map(move |(key, med)| {
-                            (key, vec![Value::Number(med as i64)])
+                            (key, vec![med])
                         });
                     collections.push(tuples);
                 },
                 AggregationFn::COUNT =>  {
                     let tuples = tuples
-                        .map(move |(key, tuple)| {
-                            let v = tuple[value_offset].clone() ;
-                            (key, v)
-                        })
+                        .map(prepare_unary)
                         .group(|_key, input, output| output.push((input.len(), 1)))
                         .map(move |(key, count)| {
                             (key, vec![Value::Number(count as i64)])
@@ -172,17 +168,15 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 },
                 AggregationFn::SUM =>  {
                     let tuples = tuples
-                        .map(move |(key, tuple)| {
-                            let v = match tuple[value_offset] {
-                                Value::Number(num) => num,
-                                _ => panic!("MEDIAN can only be applied on type Number."),
-                            };
-                            (key, v)
-                        })
+                        .map(prepare_unary)
                         .consolidate()
                         .distinct()
                         .explode(|(key, val)| {
-                            Some((key, val as isize))
+                            let v = match val[0] {
+                                Value::Number(num) => num,
+                                _ => panic!("SUM can only be applied on type Number."),
+                            };
+                            Some((key, v as isize))
                         })
                         .count()
                         .map(move |(key, count)| {
@@ -192,17 +186,15 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 },
                 AggregationFn::AVG =>  {
                     let tuples = tuples
-                        .map(move |(key, tuple)| {
-                            let v = match tuple[value_offset] {
-                                Value::Number(num) => num,
-                                _ => panic!("MEDIAN can only be applied on type Number."),
-                            };
-                            (key, v)
-                        })
+                        .map(prepare_unary)
                         .consolidate()
                         .distinct()
                         .explode(move |(key, val)| {
-                            Some((key, DiffPair::new(val as isize, 1)))
+                            let v = match val[0] {
+                                Value::Number(num) => num,
+                                _ => panic!("AVG can only be applied on type Number."),
+                            };
+                            Some((key, DiffPair::new(v as isize, 1)))
                         })
                         .count()
                         .map(move |(key, diff_pair)| {
@@ -214,17 +206,15 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 },
                 AggregationFn::VARIANCE => {
                     let tuples = tuples
-                        .map(move |(key, tuple)| {
-                            let v = match tuple[value_offset] {
-                                Value::Number(num) => num,
-                                _ => panic!("MEDIAN can only be applied on type Number."),
-                            };
-                            (key, v)
-                        })
+                        .map(prepare_unary)
                         .consolidate()
                         .distinct()
                         .explode(move |(key, val)| {
-                            Some((key, DiffPair::new(DiffPair::new(val as isize * val as isize, val as isize), 1)))
+                            let v = match val[0] {
+                                Value::Number(num) => num,
+                                _ => panic!("VARIANCE can only be applied on type Number."),
+                            };
+                            Some((key, DiffPair::new(DiffPair::new(v as isize * v as isize, v as isize), 1)))
                         })
                         .count()
                         .map(move |(key, diff_pair)| {
@@ -240,14 +230,14 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         }
 
         if collections.len() == 1 {
-            let output_position = output_positions[0];
+            let output_index = output_offsets[0];
             SimpleRelation{
                 symbols: self.variables.to_vec(),
                 tuples: collections[0]
                     .map(move |(key, val)| {
                         let mut k = key.clone();
                         let v = val[0].clone();
-                        k.insert(output_position, v);
+                        k.insert(output_index, v);
                         k
                     })
             }
@@ -267,7 +257,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 tuples: tuples.map(move |(key, vals)|{
                     let mut v = key.clone();
                     for (i, val) in vals.iter().enumerate(){
-                        v.insert(output_positions[i], val.clone())
+                        v.insert(output_offsets[i], val.clone())
                     }
                     v
                 })

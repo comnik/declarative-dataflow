@@ -20,36 +20,30 @@ fn count() {
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
         let send_results_copy = send_results.clone();
-        let send_results_copy_2 = send_results.clone();
 
         // [:find (count ?amount) :where [?e :amount ?amount]]
         let (e, amount) = (1, 2);
         let plan = Plan::Aggregate(Aggregate {
             variables: vec![amount],
-            plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+            plan: Box::new(Plan::Project(Project {
+                variables: vec![amount],
+                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+            })),
             aggregation_fns: vec![AggregationFn::COUNT],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (count ?amount) :where [?e :amount ?amount]]
         let (e, amount) = (1, 2);
-        let plan_group_sing = Plan::Aggregate(Aggregate {
+        let plan_group= Plan::Aggregate(Aggregate {
             variables: vec![e, amount],
             plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
             aggregation_fns: vec![AggregationFn::COUNT],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
-        });
-
-        // [:find ?e ?amount (count ?amount) :where [?e :amount ?amount]]
-        let (e, amount) = (1, 2);
-        let plan_group_mult = Plan::Aggregate(Aggregate {
-            variables: vec![e, amount],
-            plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-            aggregation_fns: vec![AggregationFn::COUNT],
-            key_symbols: vec![e, amount],
-            aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -73,12 +67,12 @@ fn count() {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "count_group_single_key";
+            let query_name = "count_group";
             server.register(
                 Register {
                     rules: vec![Rule {
                         name: query_name.to_string(),
-                        plan: plan_group_sing,
+                        plan: plan_group,
                     }],
                     publish: vec![query_name.to_string()],
                 },
@@ -91,23 +85,6 @@ fn count() {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "count_group_multiple_keys";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan_group_mult,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                &mut scope,
-            );
-
-            server
-                .interest(query_name.to_string(), &mut scope)
-                .inspect(move |x| {
-                    send_results_copy_2.send((x.0.clone(), x.2)).unwrap();
-                });
         });
 
         server.transact(
@@ -129,7 +106,6 @@ fn count() {
         worker.step_while(|| server.is_any_outdated());
 
         thread::spawn(move || {
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
             assert_eq!(
                 results.recv().unwrap(),
                 (vec![Value::Eid(1), Value::Number(4)], 1)
@@ -138,26 +114,7 @@ fn count() {
                 results.recv().unwrap(),
                 (vec![Value::Eid(2), Value::Number(1)], 1)
             );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(2), Value::Number(1)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(4), Value::Number(1)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(5), Value::Number(1)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(6), Value::Number(1)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Number(10), Value::Number(1)], 1)
-            );
+            assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
         }).join()
             .unwrap();
     }).unwrap();
@@ -181,6 +138,7 @@ fn max() {
             aggregation_fns: vec![AggregationFn::MAX],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (max ?amount) :where [?e :amount ?amount]]
@@ -190,6 +148,7 @@ fn max() {
             aggregation_fns: vec![AggregationFn::MAX],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -283,6 +242,7 @@ fn min() {
             aggregation_fns: vec![AggregationFn::MIN],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (min ?amount) :where [?e :amount ?amount]]
@@ -292,6 +252,7 @@ fn min() {
             aggregation_fns: vec![AggregationFn::MIN],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -385,6 +346,7 @@ fn sum() {
             aggregation_fns: vec![AggregationFn::SUM],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (sum ?amount) :where [?e :amount ?amount]]
@@ -394,6 +356,7 @@ fn sum() {
             aggregation_fns: vec![AggregationFn::SUM],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -487,6 +450,7 @@ fn avg() {
             aggregation_fns: vec![AggregationFn::AVG],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (avg ?amount) :where [?e :amount ?amount]]
@@ -496,6 +460,7 @@ fn avg() {
             aggregation_fns: vec![AggregationFn::AVG],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -698,6 +663,7 @@ fn median() {
             aggregation_fns: vec![AggregationFn::MEDIAN],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (median ?amount) :where [?e :amount ?amount]]
@@ -707,6 +673,7 @@ fn median() {
             aggregation_fns: vec![AggregationFn::MEDIAN],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -811,6 +778,7 @@ fn multi() {
             ],
             key_symbols: vec![],
             aggregation_symbols: vec![amount, debt, amount, debt],
+            with_symbols: vec![],
         });
 
         // [:find ?e (min ?amount) (max ?amount) (median ?amount) (count ?amount) (min ?debt)
@@ -837,6 +805,7 @@ fn multi() {
             ],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount, amount, amount, amount, debt, debt, debt, debt],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -950,6 +919,90 @@ fn multi() {
                         Value::Number(42),
                         Value::Number(42),
                         Value::Number(2),
+                    ],
+                    1
+                )
+            );
+        }).join()
+            .unwrap();
+    }).unwrap();
+}
+
+#[test]
+fn with() {
+    timely::execute(Configuration::Thread, move |worker| {
+        let mut server = Server::new(Default::default());
+        let (send_results, results) = channel();
+
+        // [:find (sum ?heads) :with ?monster :where [?e :monster ?monster][?e :head ?head]] 
+        let (e, monster, heads) = (1, 2, 3);
+        let plan = Plan::Aggregate(Aggregate{
+            variables: vec![heads],
+            plan: Box::new(Plan::Project(Project {
+                variables: vec![heads, monster],
+                plan: Box::new(Plan::Join(Join {
+                    variables: vec![e],
+                    left_plan: Box::new(Plan::MatchA(e, ":monster".to_string(), monster)),
+                    right_plan: Box::new(Plan::MatchA(e, ":heads".to_string(), heads)),
+                })),
+            })),
+            aggregation_fns: vec![
+                AggregationFn::SUM,
+            ],
+            key_symbols: vec![],
+            aggregation_symbols: vec![heads],
+            with_symbols: vec![monster],
+        });
+
+        worker.dataflow::<u64, _, _>(|mut scope| {
+            server.create_input(":monster".to_string(), scope);
+            server.create_input(":heads".to_string(), scope);
+
+            let query_name = "with";
+            server.register(
+                Register {
+                    rules: vec![Rule {
+                        name: query_name.to_string(),
+                        plan: plan,
+                    }],
+                    publish: vec![query_name.to_string()],
+                },
+                &mut scope,
+            );
+
+            server
+                .interest(query_name.to_string(), &mut scope)
+                .inspect(move |x| {
+                    send_results.send((x.0.clone(), x.2)).unwrap();
+                });
+        });
+
+        server.transact(
+            Transact {
+                tx: Some(0),
+                tx_data: vec![
+                    TxData(1, 1, ":monster".to_string(), Value::String("Cerberus".to_string())),
+                    TxData(1, 1, ":heads".to_string(), Value::Number(3)),
+                    TxData(1, 2, ":monster".to_string(), Value::String("Medusa".to_string())),
+                    TxData(1, 2, ":heads".to_string(), Value::Number(1)),
+                    TxData(1, 3, ":monster".to_string(), Value::String("Cyclops".to_string())),
+                    TxData(1, 3, ":heads".to_string(), Value::Number(1)),
+                    TxData(1, 4, ":monster".to_string(), Value::String("Chimera".to_string())),
+                    TxData(1, 4, ":heads".to_string(), Value::Number(1)),
+                ],
+            },
+            0,
+            0,
+        );
+
+        worker.step_while(|| server.is_any_outdated());
+
+        thread::spawn(move || {
+            assert_eq!(
+                results.recv().unwrap(),
+                (
+                    vec![
+                        Value::Number(6),
                     ],
                     1
                 )
