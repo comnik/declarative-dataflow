@@ -104,7 +104,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         // resulting collections, s.t. they can be joined afterwards.
         for (i, aggregation_fn) in self.aggregation_fns.iter().enumerate() {
             let value_offset = value_offsets[i];
-            let with_lenght = self.with_symbols.len();
+            let with_length = self.with_symbols.len();
 
             // Access the right value for the given iteration loop and extend possible with-values.
             let prepare_unary = move |(key, tuple): (Vec<Value>, Vec<Value>)| {
@@ -113,8 +113,9 @@ impl<P: Implementable> Implementable for Aggregate<P> {
 
                 // With-symbols are always the last elements in the value part of each tuple, given they are specified.
                 // We append these, s.t. we consolidate correctly.
-                // @TODO I'm not sure if the compiler is smart enough to skip the iteration if `with-lenght` is zero
-                v.extend(tuple.iter().rev().take(with_lenght).cloned());
+                if with_length > 0 {
+                    v.extend(tuple.iter().rev().take(with_length).cloned());
+                }
 
                 (key, v)
             };
