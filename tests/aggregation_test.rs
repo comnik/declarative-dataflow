@@ -972,3 +972,87 @@ fn multi() {
             .unwrap();
     }).unwrap();
 }
+
+#[test]
+fn with() {
+    timely::execute(Configuration::Thread, move |worker| {
+        let mut server = Server::new(Default::default());
+        let (send_results, results) = channel();
+
+        // [:find (sum ?heads) :with ?monster :where [?e :monster ?monster][?e :head ?head]] 
+        let (e, monster, heads) = (1, 2, 3);
+        let plan = Plan::Aggregate(Aggregate{
+            variables: vec![heads],
+            plan: Box::new(Plan::Project(Project {
+                variables: vec![heads, monster],
+                plan: Box::new(Plan::Join(Join {
+                    variables: vec![e],
+                    left_plan: Box::new(Plan::MatchA(e, ":monster".to_string(), monster)),
+                    right_plan: Box::new(Plan::MatchA(e, ":heads".to_string(), heads)),
+                })),
+            })),
+            aggregation_fns: vec![
+                AggregationFn::SUM,
+            ],
+            key_symbols: vec![],
+            aggregation_symbols: vec![heads],
+            with_symbols: vec![monster],
+        });
+
+        worker.dataflow::<u64, _, _>(|mut scope| {
+            server.create_input(":monster".to_string(), scope);
+            server.create_input(":heads".to_string(), scope);
+
+            let query_name = "with";
+            server.register(
+                Register {
+                    rules: vec![Rule {
+                        name: query_name.to_string(),
+                        plan: plan,
+                    }],
+                    publish: vec![query_name.to_string()],
+                },
+                &mut scope,
+            );
+
+            server
+                .interest(query_name.to_string(), &mut scope)
+                .inspect(move |x| {
+                    send_results.send((x.0.clone(), x.2)).unwrap();
+                });
+        });
+
+        server.transact(
+            Transact {
+                tx: Some(0),
+                tx_data: vec![
+                    TxData(1, 1, ":monster".to_string(), Value::String("Cerberus".to_string())),
+                    TxData(1, 1, ":heads".to_string(), Value::Number(3)),
+                    TxData(1, 2, ":monster".to_string(), Value::String("Medusa".to_string())),
+                    TxData(1, 2, ":heads".to_string(), Value::Number(1)),
+                    TxData(1, 3, ":monster".to_string(), Value::String("Cyclops".to_string())),
+                    TxData(1, 3, ":heads".to_string(), Value::Number(1)),
+                    TxData(1, 4, ":monster".to_string(), Value::String("Chimera".to_string())),
+                    TxData(1, 4, ":heads".to_string(), Value::Number(1)),
+                ],
+            },
+            0,
+            0,
+        );
+
+        worker.step_while(|| server.is_any_outdated());
+
+        thread::spawn(move || {
+            assert_eq!(
+                results.recv().unwrap(),
+                (
+                    vec![
+                        Value::Number(6),
+                    ],
+                    1
+                )
+            );
+        }).join()
+            .unwrap();
+    }).unwrap();
+}
