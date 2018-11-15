@@ -89,11 +89,11 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         // the correct output offset for each aggregation.
         
         let mut variables = self.variables.clone();
-        let mut output_positions = Vec::new();
-        
+        let mut output_offsets = Vec::new();
+
         for sym in self.aggregation_symbols.iter() {
             let output_index = variables.iter().position(|&v| *sym == v).unwrap();
-            output_positions.push(output_index);
+            output_offsets.push(output_index);
 
             variables[output_index] = 0;
         }
@@ -229,14 +229,14 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         }
 
         if collections.len() == 1 {
-            let output_position = output_positions[0];
+            let output_index = output_offsets[0];
             SimpleRelation{
                 symbols: self.variables.to_vec(),
                 tuples: collections[0]
                     .map(move |(key, val)| {
                         let mut k = key.clone();
                         let v = val[0].clone();
-                        k.insert(output_position, v);
+                        k.insert(output_index, v);
                         k
                     })
             }
@@ -256,7 +256,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 tuples: tuples.map(move |(key, vals)|{
                     let mut v = key.clone();
                     for (i, val) in vals.iter().enumerate(){
-                        v.insert(output_positions[i], val.clone())
+                        v.insert(output_offsets[i], val.clone())
                     }
                     v
                 })
