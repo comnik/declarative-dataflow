@@ -30,6 +30,7 @@ fn count() {
             aggregation_fns: vec![AggregationFn::COUNT],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (count ?amount) :where [?e :amount ?amount]]
@@ -50,6 +51,7 @@ fn count() {
             aggregation_fns: vec![AggregationFn::COUNT],
             key_symbols: vec![e, amount],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -181,6 +183,7 @@ fn max() {
             aggregation_fns: vec![AggregationFn::MAX],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (max ?amount) :where [?e :amount ?amount]]
@@ -190,6 +193,7 @@ fn max() {
             aggregation_fns: vec![AggregationFn::MAX],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -283,6 +287,7 @@ fn min() {
             aggregation_fns: vec![AggregationFn::MIN],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (min ?amount) :where [?e :amount ?amount]]
@@ -292,6 +297,7 @@ fn min() {
             aggregation_fns: vec![AggregationFn::MIN],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -385,6 +391,7 @@ fn sum() {
             aggregation_fns: vec![AggregationFn::SUM],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (sum ?amount) :where [?e :amount ?amount]]
@@ -394,6 +401,7 @@ fn sum() {
             aggregation_fns: vec![AggregationFn::SUM],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -487,6 +495,7 @@ fn avg() {
             aggregation_fns: vec![AggregationFn::AVG],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (avg ?amount) :where [?e :amount ?amount]]
@@ -496,6 +505,7 @@ fn avg() {
             aggregation_fns: vec![AggregationFn::AVG],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -698,6 +708,7 @@ fn median() {
             aggregation_fns: vec![AggregationFn::MEDIAN],
             key_symbols: vec![],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         // [:find ?e (median ?amount) :where [?e :amount ?amount]]
@@ -707,6 +718,7 @@ fn median() {
             aggregation_fns: vec![AggregationFn::MEDIAN],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
@@ -811,6 +823,7 @@ fn multi() {
             ],
             key_symbols: vec![],
             aggregation_symbols: vec![amount, debt, amount, debt],
+            with_symbols: vec![],
         });
 
         // [:find ?e (min ?amount) (max ?amount) (median ?amount) (count ?amount) (min ?debt)
@@ -837,6 +850,7 @@ fn multi() {
             ],
             key_symbols: vec![e],
             aggregation_symbols: vec![amount, amount, amount, amount, debt, debt, debt, debt],
+            with_symbols: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
