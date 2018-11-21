@@ -61,7 +61,7 @@ impl Sourceable for CsvFile {
 
                             let columns: Vec<&str> = line.split(separator).collect();
 
-                            for (offset, type_hint) in schema.iter() {
+                            for (name_idx, (offset, type_hint)) in schema.iter().enumerate() {
                                 let eid = Value::Eid(datum_index as Entity);
                                 let v = match type_hint {
                                     Value::String(_) => Value::String(columns[*offset].trim().trim_matches('"').to_string()),
@@ -69,7 +69,7 @@ impl Sourceable for CsvFile {
                                     _ => panic!("Only String and Number are supported at the moment."),
                                 };
 
-                                session.give(((*offset, vec![eid, v]), 0, 1));
+                                session.give(((name_idx, vec![eid, v]), 0, 1));
                             }
                             
                             num_datums_read += 1;
