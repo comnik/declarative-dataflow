@@ -11,6 +11,7 @@ pub mod aggregate;
 pub mod antijoin;
 pub mod filter;
 pub mod join;
+pub mod hector;
 pub mod project;
 pub mod transform;
 pub mod union;
@@ -19,6 +20,7 @@ pub use self::aggregate::{Aggregate, AggregationFn};
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
 pub use self::join::Join;
+pub use self::hector::Hector;
 pub use self::project::Project;
 pub use self::transform::{Function, Transform};
 pub use self::union::Union;
@@ -45,6 +47,8 @@ pub enum Plan {
     Union(Union<Plan>),
     /// Equijoin
     Join(Join<Plan, Plan>),
+    /// WCO
+    Hector(Hector<Plan>),
     /// Antijoin
     Antijoin(Antijoin<Plan, Plan>),
     /// Negation
@@ -91,6 +95,9 @@ impl Implementable for Plan {
             }
             &Plan::Join(ref join) => {
                 join.implement(nested, local_arrangements, global_arrangements)
+            }
+            &Plan::Hector(ref hector) => {
+                hector.implement(nested, local_arrangements, global_arrangements)
             }
             &Plan::Antijoin(ref antijoin) => {
                 antijoin.implement(nested, local_arrangements, global_arrangements)

@@ -6,6 +6,7 @@ authors = ["Frank McSherry <fmcsherry@me.com>", "Nikolas Göbel <me@nikolasgoebe
 [dependencies]
 timely = { version = "0.8.0", features = ["bincode"] }
 differential-dataflow = "0.8.0"
+dogsdogsdogs = { path = "../../repos/differential-dataflow/dogsdogsdogs/" } 
 abomonation = "0.7"
 abomonation_derive = "0.3"
 serde = "1"
