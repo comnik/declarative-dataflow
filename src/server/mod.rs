@@ -217,7 +217,7 @@ impl Server {
 
             let mut frontier = Vec::new();
             for handle in self.input_handles.values() {
-                frontier.push(handle.time().clone());
+                frontier.push(handle.time().clone() - 1);
             }
 
             let frontier_ref = &frontier;
@@ -349,7 +349,7 @@ impl Server {
 
             let mut frontier = Vec::new();
             for handle in self.input_handles.values() {
-                frontier.push(handle.time().clone());
+                frontier.push(handle.time().clone() - 1);
             }
 
             let frontier_ref = &frontier;
