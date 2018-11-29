@@ -53,7 +53,7 @@ struct Command {
 }
 
 /// (tuple, diff) as sent back to external clients.
-pub type Output = (Vec<Value>, isize);
+pub type Output = (Vec<Value>, isize, u64);
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
@@ -434,17 +434,15 @@ fn main() {
                                                 Exchange::new(move |_| owner as u64),
                                                 "OutputsRecv",
                                                 vec![],
-                                                move |input, output: &mut OutputHandle<_, (), _>, _notificator| {
+                                                move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
 
-                                                    drop(output);
-                                                    
                                                     // due to the exchange pact, this closure is only
                                                     // executed by the owning worker
 
                                                     input.for_each(|_time, data| {
                                                         // notificator.notify_at(time.retain());
                                                         let out: Vec<Output> = data.iter()
-                                                            .map(|(tuple, _t, diff)| (tuple.clone(), *diff))
+                                                            .map(|(tuple, t, diff)| (tuple.clone(), *diff, *t))
                                                             .collect();
 
                                                         send_results_handle.send((name.clone(), out)).unwrap();
