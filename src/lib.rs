@@ -8,6 +8,7 @@
 
 extern crate differential_dataflow;
 extern crate timely;
+extern crate timely_sort;
 
 // #[macro_use]
 // extern crate abomonation_derive;
@@ -33,6 +34,8 @@ use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
 
 pub use num_rational::Rational32;
+
+pub mod timestamp;
 
 pub mod plan;
 pub use plan::{Implementable, Plan};
