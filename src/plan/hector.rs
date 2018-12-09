@@ -31,8 +31,12 @@ use differential_dataflow::trace::implementations::ord::{OrdValBatch, OrdKeyBatc
 use timestamp::altneu::AltNeu;
 use plan::Implementable;
 use Relation;
-use {QueryMap, RelationMap, SimpleRelation, Var};
-    
+use {QueryMap, RelationMap, SimpleRelation, Entity, Value, Var};
+
+//
+// OPERATOR
+//
+
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
 /// sources.
@@ -44,6 +48,41 @@ pub struct Hector<P: Implementable> {
     pub plans: Vec<P>,
 }
 
+struct Attribute {
+    symbols: (Var,Var),
+    alt_forward: CollectionIndex<Entity, Value, AltNeu<u64>>,
+    neu_forward: CollectionIndex<Entity, Value, AltNeu<u64>>,
+    alt_reverse: CollectionIndex<Value, Entity, AltNeu<u64>>,
+    neu_reverse: CollectionIndex<Value, Entity, AltNeu<u64>>,
+}
+
+impl Attribute {
+    pub fn new<G: Scope<Timestamp=AltNeu<u64>>> (symbols: (Var,Var), collection: &Collection<G, (Entity,Value), isize>) -> Self {
+        let forward = collection.clone();
+        let reverse = collection.map(|(e,v)| (v,e));
+        
+        Attribute {
+            symbols: symbols,
+            alt_forward: CollectionIndex::index(&forward),
+            neu_forward: CollectionIndex::index(&forward.delay(|time| AltNeu::neu(time.time.clone()))),
+            alt_reverse: CollectionIndex::index(&reverse),
+            neu_reverse: CollectionIndex::index(&reverse.delay(|time| AltNeu::neu(time.time.clone()))),
+        }
+    }
+
+    pub fn intersect(&self, other: &Attribute) -> Option<Var> {
+        if self.symbols == other.symbols {
+            panic!("Attempt to intersect an attribute with itself")
+        } else if self.symbols.0 == other.symbols.0 {
+            Some(self.symbols.0.clone())
+        } else if self.symbols.1 == other.symbols.1 {
+            Some(self.symbols.1.clone())
+        } else {
+            None
+        }
+    }
+}
+
 impl<P: Implementable> Implementable for Hector<P> {
     fn implement<'a, 'b, A: Allocate>(
         &self,
@@ -51,32 +90,92 @@ impl<P: Implementable> Implementable for Hector<P> {
         local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
         global_arrangements: &mut QueryMap<isize>,
     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
-        use differential_dataflow::AsCollection;
-        use timely::dataflow::operators::Concatenate;
-        
-        let mut scope = nested.clone();
-        let streams = self.plans.iter().map(|plan| {
-            plan.implement(&mut scope, local_arrangements, global_arrangements)
-                .tuples_by_symbols(&self.variables)
-                .map(|(key, _vals)| key)
-                .inner
-        });
 
-        let concat = nested.concatenate(streams).as_collection();
+        let joined = nested.scoped::<AltNeu<u64>, _, _>("AltNeu", |inner| {
+
+            // We prepare the input relations.
+            
+            let (a, b, c) = (1, 2, 3);
+            
+            let attributes = vec![
+                Attribute::new((a,b)),
+                Attribute::new((b,c)),
+                Attribute::new((a,c)),
+            ];
+            
+            // For each relation, we construct a delta query driven by
+            // changes to that relation.
+
+            let changes = attributes.iter().enumerate().map(|(idx, delta_rel)| {
+
+                let mut extenders = vec![].iter();
+                
+                // @TODO reverse if necessary
+                
+                if idx > 0 {
+                    
+                    // Conflicting relations that appear before the
+                    // current one in the sequence (< idx)
+                    
+                    let preceding_relations = attributes.iter()
+                        .take(idx - 1)
+                        .map(|attribute| {
+                            match attribute.intersect(delta_rel) {
+                                None => None,
+                                Some(join_var) => {
+                                    if join_var == attribute.symbols.0 {
+                                        Some(attribute.alt_forward.extend_using(|(e,_v)| *e))
+                                    } else if join_var == self.symbols.1 {
+                                        Some(attribute.alt_forward.extend_using(|(_e,v)| *v))
+                                    } else {
+                                        panic!("Requested variable not bound by Attribute")
+                                    }
+                                },
+                            }
+                        })
+                        .filter_map(Option::none);
+
+                    extenders = extenders.chain(preceding_relations);
+                }
+
+                // for conflicting relations rel > idx
+                // (assuming the conflict on variable v)
+                // if idx < attributes.len() {
+                //     let succeeding_relations = attributes.iter()
+                //         .skip(idx)
+                //         .map(|attribute| {
+                //             match attribute.intersect(delta_rel) {
+                //                 None => None,
+                //                 Some(join_var) => attribute.neu_forward.extend_using(attribute.make_projector(join_var))
+                //             }
+                //         })
+                //         .filter_map(Option::none);
+
+                //     extenders = extenders.chain(succeeding_relations);
+                // }
+                
+                // @TODO project correctly
+                delta_rel.tuples.extend(&mut extenders)
+            });
+
+            nested.concatenate(changes).as_collection()
+        });
 
         SimpleRelation {
             symbols: self.variables.to_vec(),
-            tuples: concat.distinct(),
+            tuples: joined.distinct().leave(),
         }
     }
 }
 
-/// A type capable of extending a stream of prefixes.
-///
-/**
-    Implementors of `PrefixExtension` provide types and methods for extending a differential dataflow collection,
-    via the three methods `count`, `propose`, and `validate`.
-**/
+//
+// GENERIC IMPLEMENTATION
+//
+
+/// A type capable of extending a stream of prefixes. Implementors of
+/// `PrefixExtension` provide types and methods for extending a
+/// differential dataflow collection, via the three methods `count`,
+/// `propose`, and `validate`.
 trait PrefixExtender<G: Scope> {
     /// The required type of prefix to extend.
     type Prefix;
@@ -138,6 +237,10 @@ impl<G: Scope, P, E> ValidateExtensionMethod<G, P, E> for Collection<G, (P, E)> 
     }
 }
 
+//
+// SPECIFIC IMPLEMENTATION
+//
+
 // These are all defined here so that users can be assured a common layout.
 type TraceValSpine<K,V,T,R> = Spine<K, V, T, R, Rc<OrdValBatch<K,V,T,R>>>;
 type TraceValHandle<K,V,T,R> = TraceAgent<K, V, T, R, TraceValSpine<K,V,T,R>>;
@@ -180,7 +283,7 @@ where
     K: Data+Hash,
     V: Data+Hash,
     T: Lattice+Data+Timestamp,
-{
+{    
     pub fn index<G: Scope<Timestamp=T>>(collection: &Collection<G, (K, V), isize>) -> Self {
         let counts = collection.map(|(k,_v)| k).arrange_by_self().trace;
         let propose = collection.arrange_by_key().trace;
