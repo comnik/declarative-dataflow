@@ -10,6 +10,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::channels::pact::{Pipeline, Exchange};
 use timely::dataflow::operators::Operator;
 use timely::progress::Timestamp;
+use timely::order::Product;
 use timely::dataflow::operators::Partition;
 use timely::dataflow::operators::Concatenate;
 use timely::communication::Allocate;
@@ -31,7 +32,7 @@ use differential_dataflow::trace::implementations::ord::{OrdValBatch, OrdKeyBatc
 use timestamp::altneu::AltNeu;
 use plan::Implementable;
 use Relation;
-use {QueryMap, RelationMap, SimpleRelation, Entity, Value, Var};
+use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 
 //
 // OPERATOR
@@ -49,28 +50,33 @@ pub struct Hector<P: Implementable> {
 }
 
 struct Attribute {
-    symbols: (Var,Var),
-    alt_forward: CollectionIndex<Entity, Value, AltNeu<u64>>,
-    neu_forward: CollectionIndex<Entity, Value, AltNeu<u64>>,
-    alt_reverse: CollectionIndex<Value, Entity, AltNeu<u64>>,
-    neu_reverse: CollectionIndex<Value, Entity, AltNeu<u64>>,
+    alt_forward: CollectionIndex<Value, Value, AltNeu<Product<u64,u64>>>,
+    neu_forward: CollectionIndex<Value, Value, AltNeu<Product<u64,u64>>>,
+    alt_reverse: CollectionIndex<Value, Value, AltNeu<Product<u64,u64>>>,
+    neu_reverse: CollectionIndex<Value, Value, AltNeu<Product<u64,u64>>>,
 }
 
 impl Attribute {
-    pub fn new<G: Scope<Timestamp=AltNeu<u64>>> (symbols: (Var,Var), collection: &Collection<G, (Entity,Value), isize>) -> Self {
+    pub fn new<G: Scope<Timestamp=AltNeu<Product<u64,u64>>>> (collection: &Collection<G, (Value,Value), isize>) -> Self {
         let forward = collection.clone();
         let reverse = collection.map(|(e,v)| (v,e));
         
         Attribute {
-            symbols: symbols,
             alt_forward: CollectionIndex::index(&forward),
             neu_forward: CollectionIndex::index(&forward.delay(|time| AltNeu::neu(time.time.clone()))),
             alt_reverse: CollectionIndex::index(&reverse),
             neu_reverse: CollectionIndex::index(&reverse.delay(|time| AltNeu::neu(time.time.clone()))),
         }
     }
+}
 
-    pub fn intersect(&self, other: &Attribute) -> Option<Var> {
+struct Binding<'a> {
+    symbols: (Var,Var),
+    attribute: &'a Attribute,
+}
+
+impl<'a> Binding<'a> {
+    pub fn intersect(&self, other: &Binding) -> Option<Var> {
         if self.symbols == other.symbols {
             panic!("Attempt to intersect an attribute with itself")
         } else if self.symbols.0 == other.symbols.0 {
@@ -91,71 +97,76 @@ impl<P: Implementable> Implementable for Hector<P> {
         global_arrangements: &mut QueryMap<isize>,
     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
 
-        let joined = nested.scoped::<AltNeu<u64>, _, _>("AltNeu", |inner| {
+        let joined = nested.scoped::<AltNeu<Product<u64,u64>>, _, _>("AltNeu", |inner| {
 
             // We prepare the input relations.
+
+            let name = "edges";
+            
+            let edges = match global_arrangements.get_mut(name) {
+                None => panic!("{:?} not in query map", name),
+                Some(named) => named
+                    .import(&nested.parent)
+                    .enter(nested)
+                    .enter(inner)
+                    .as_collection(|tuple, _| (tuple[0].clone(), tuple[1].clone())),
+            };
+
+            let attributes = vec![Attribute::new(&edges)];
             
             let (a, b, c) = (1, 2, 3);
-            
-            let attributes = vec![
-                Attribute::new((a,b)),
-                Attribute::new((b,c)),
-                Attribute::new((a,c)),
+            let bindings = vec![
+                Binding { symbols: (a,b), attribute: attributes.get(0).unwrap() },
+                Binding { symbols: (b,c), attribute: attributes.get(0).unwrap() },
+                Binding { symbols: (a,c), attribute: attributes.get(0).unwrap() },
             ];
             
             // For each relation, we construct a delta query driven by
             // changes to that relation.
 
-            let changes = attributes.iter().enumerate().map(|(idx, delta_rel)| {
+            let changes = bindings.iter().enumerate().map(|(idx, delta_rel)| {
 
-                let mut extenders = vec![].iter();
+                let mut extenders = vec![];
                 
                 // @TODO reverse if necessary
                 
                 if idx > 0 {
-                    
                     // Conflicting relations that appear before the
                     // current one in the sequence (< idx)
-                    
-                    let preceding_relations = attributes.iter()
-                        .take(idx - 1)
-                        .map(|attribute| {
-                            match attribute.intersect(delta_rel) {
-                                None => None,
-                                Some(join_var) => {
-                                    if join_var == attribute.symbols.0 {
-                                        Some(attribute.alt_forward.extend_using(|(e,_v)| *e))
-                                    } else if join_var == self.symbols.1 {
-                                        Some(attribute.alt_forward.extend_using(|(_e,v)| *v))
-                                    } else {
-                                        panic!("Requested variable not bound by Attribute")
-                                    }
-                                },
-                            }
-                        })
-                        .filter_map(Option::none);
 
-                    extenders = extenders.chain(preceding_relations);
+                    for preceeding in bindings.iter().take(idx-1) {
+                        if let Some(join_var) = preceeding.intersect(delta_rel) {
+                            if join_var == preceeding.symbols.0 {
+                                extenders.push(preceeding.attribute.alt_forward.extend_using(|(e,_v): &(Value,Value)| *e));
+                            } else if join_var == preceeding.symbols.1 {
+                                extenders.push(preceeding.attribute.alt_reverse.extend_using(|(_e,v): &(Value,Value)| *v));
+                            } else {
+                                panic!("Requested variable not bound by Attribute")
+                            }
+                        }
+                    }
                 }
 
-                // for conflicting relations rel > idx
-                // (assuming the conflict on variable v)
-                // if idx < attributes.len() {
-                //     let succeeding_relations = attributes.iter()
-                //         .skip(idx)
-                //         .map(|attribute| {
-                //             match attribute.intersect(delta_rel) {
-                //                 None => None,
-                //                 Some(join_var) => attribute.neu_forward.extend_using(attribute.make_projector(join_var))
-                //             }
-                //         })
-                //         .filter_map(Option::none);
+                if idx < bindings.len() {
+                    // Conflicting relations that appear after the
+                    // current one in the sequence (> idx)
 
-                //     extenders = extenders.chain(succeeding_relations);
-                // }
+                    for succeeding in bindings.iter().skip(idx) {
+                        if let Some(join_var) = succeeding.intersect(delta_rel) {
+                            if join_var == succeeding.symbols.0 {
+                                extenders.push(succeeding.attribute.neu_forward.extend_using(|(e,_v)| *e));
+                            } else if join_var == succeeding.symbols.1 {
+                                extenders.push(succeeding.attribute.neu_reverse.extend_using(|(_e,v)| *v));
+                            } else {
+                                panic!("Requested variable not bound by Attribute")
+                            }
+                        }
+                    }
+                }
                 
                 // @TODO project correctly
-                delta_rel.tuples.extend(&mut extenders)
+                // @TODO fix hardcoded backing collection
+                edges.extend(&mut extenders[..])
             });
 
             nested.concatenate(changes).as_collection()
