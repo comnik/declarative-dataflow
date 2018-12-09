@@ -31,7 +31,6 @@ use differential_dataflow::trace::implementations::ord::{OrdValBatch, OrdKeyBatc
 
 use timestamp::altneu::AltNeu;
 use plan::Implementable;
-use Relation;
 use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 
 //
@@ -89,26 +88,32 @@ impl<'a> Binding<'a> {
     }
 }
 
+fn select_e((e,_v): &(Value,Value)) -> Value { e.clone() }
+fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
+
 impl<P: Implementable> Implementable for Hector<P> {
     fn implement<'a, 'b, A: Allocate>(
         &self,
         nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        _local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
         global_arrangements: &mut QueryMap<isize>,
     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
+
+        let nested_copy = nested.clone();
 
         let joined = nested.scoped::<AltNeu<Product<u64,u64>>, _, _>("AltNeu", |inner| {
 
             // We prepare the input relations.
 
             let name = "edges";
+            let mut scope = inner.clone();
             
             let edges = match global_arrangements.get_mut(name) {
                 None => panic!("{:?} not in query map", name),
                 Some(named) => named
-                    .import(&nested.parent)
-                    .enter(nested)
-                    .enter(inner)
+                    .import(&nested_copy.parent)
+                    .enter(&nested_copy)
+                    .enter(&mut scope)
                     .as_collection(|tuple, _| (tuple[0].clone(), tuple[1].clone())),
             };
 
@@ -126,7 +131,7 @@ impl<P: Implementable> Implementable for Hector<P> {
 
             let changes = bindings.iter().enumerate().map(|(idx, delta_rel)| {
 
-                let mut extenders = vec![];
+                let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Child<'_, Child<'_, Worker<A>, u64>, Product<u64, u64>>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
                 
                 // @TODO reverse if necessary
                 
@@ -137,9 +142,9 @@ impl<P: Implementable> Implementable for Hector<P> {
                     for preceeding in bindings.iter().take(idx-1) {
                         if let Some(join_var) = preceeding.intersect(delta_rel) {
                             if join_var == preceeding.symbols.0 {
-                                extenders.push(preceeding.attribute.alt_forward.extend_using(|(e,_v): &(Value,Value)| *e));
+                                extenders.push(Box::new(preceeding.attribute.alt_forward.extend_using(select_e)));
                             } else if join_var == preceeding.symbols.1 {
-                                extenders.push(preceeding.attribute.alt_reverse.extend_using(|(_e,v): &(Value,Value)| *v));
+                                extenders.push(Box::new(preceeding.attribute.alt_reverse.extend_using(select_v)));
                             } else {
                                 panic!("Requested variable not bound by Attribute")
                             }
@@ -154,9 +159,9 @@ impl<P: Implementable> Implementable for Hector<P> {
                     for succeeding in bindings.iter().skip(idx) {
                         if let Some(join_var) = succeeding.intersect(delta_rel) {
                             if join_var == succeeding.symbols.0 {
-                                extenders.push(succeeding.attribute.neu_forward.extend_using(|(e,_v)| *e));
+                                extenders.push(Box::new(succeeding.attribute.neu_forward.extend_using(select_e)));
                             } else if join_var == succeeding.symbols.1 {
-                                extenders.push(succeeding.attribute.neu_reverse.extend_using(|(_e,v)| *v));
+                                extenders.push(Box::new(succeeding.attribute.neu_reverse.extend_using(select_v)));
                             } else {
                                 panic!("Requested variable not bound by Attribute")
                             }
@@ -167,14 +172,16 @@ impl<P: Implementable> Implementable for Hector<P> {
                 // @TODO project correctly
                 // @TODO fix hardcoded backing collection
                 edges.extend(&mut extenders[..])
+                    .map(|((e,v1),v2)| vec![e,v1,v2])
+                    .inner
             });
 
-            nested.concatenate(changes).as_collection()
+            inner.concatenate(changes).as_collection().leave()
         });
 
         SimpleRelation {
             symbols: self.variables.to_vec(),
-            tuples: joined.distinct().leave(),
+            tuples: joined.distinct(),
         }
     }
 }
@@ -202,14 +209,14 @@ trait PrefixExtender<G: Scope> {
 
 trait ProposeExtensionMethod<G: Scope, P: Data+Ord> {
     fn propose_using<PE: PrefixExtender<G, Prefix=P>>(&self, extender: &mut PE) -> Collection<G, (P, PE::Extension)>;
-    fn extend<E: Data+Ord>(&self, extenders: &mut [&mut PrefixExtender<G,Prefix=P,Extension=E>]) -> Collection<G, (P, E)>;
+    fn extend<E: Data+Ord>(&self, extenders: &mut [Box<dyn PrefixExtender<G,Prefix=P,Extension=E>>]) -> Collection<G, (P, E)>;
 }
 
 impl<G: Scope, P: Data+Ord> ProposeExtensionMethod<G, P> for Collection<G, P> {
     fn propose_using<PE: PrefixExtender<G, Prefix=P>>(&self, extender: &mut PE) -> Collection<G, (P, PE::Extension)> {
         extender.propose(self)
     }
-    fn extend<E: Data+Ord>(&self, extenders: &mut [&mut PrefixExtender<G,Prefix=P,Extension=E>]) -> Collection<G, (P, E)>
+    fn extend<E: Data+Ord>(&self, extenders: &mut [Box<dyn PrefixExtender<G,Prefix=P,Extension=E>>]) -> Collection<G, (P, E)>
     {
 
         if extenders.len() == 1 {
