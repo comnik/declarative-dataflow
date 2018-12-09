@@ -48,7 +48,7 @@ pub enum Plan {
     /// Equijoin
     Join(Join<Plan, Plan>),
     /// WCO
-    Hector(Hector<Plan>),
+    Hector(Hector),
     /// Antijoin
     Antijoin(Antijoin<Plan, Plan>),
     /// Negation

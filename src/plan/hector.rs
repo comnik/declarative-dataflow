@@ -41,12 +41,7 @@ use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 /// symbols. Throws if any of the join symbols isn't bound by both
 /// sources.
 #[derive(Deserialize, Clone, Debug)]
-pub struct Hector<P: Implementable> {
-    /// TODO
-    pub variables: Vec<Var>,
-    /// Input plans.
-    pub plans: Vec<P>,
-}
+pub struct Hector { }
 
 struct Attribute {
     alt_forward: CollectionIndex<Value, Value, AltNeu<Product<u64,u64>>>,
@@ -78,9 +73,9 @@ impl<'a> Binding<'a> {
     pub fn intersect(&self, other: &Binding) -> Option<Var> {
         if self.symbols == other.symbols {
             panic!("Attempt to intersect an attribute with itself")
-        } else if self.symbols.0 == other.symbols.0 {
+        } else if self.symbols.0 == other.symbols.0 || self.symbols.0 == other.symbols.1 {
             Some(self.symbols.0.clone())
-        } else if self.symbols.1 == other.symbols.1 {
+        } else if self.symbols.1 == other.symbols.0 || self.symbols.1 == other.symbols.1 {
             Some(self.symbols.1.clone())
         } else {
             None
@@ -91,7 +86,7 @@ impl<'a> Binding<'a> {
 fn select_e((e,_v): &(Value,Value)) -> Value { e.clone() }
 fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
 
-impl<P: Implementable> Implementable for Hector<P> {
+impl Implementable for Hector {
     fn implement<'a, 'b, A: Allocate>(
         &self,
         nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
@@ -105,7 +100,7 @@ impl<P: Implementable> Implementable for Hector<P> {
 
             // We prepare the input relations.
 
-            let name = "edges";
+            let name = "edge";
             let mut scope = inner.clone();
             
             let edges = match global_arrangements.get_mut(name) {
@@ -131,6 +126,8 @@ impl<P: Implementable> Implementable for Hector<P> {
 
             let changes = bindings.iter().enumerate().map(|(idx, delta_rel)| {
 
+                println!("IDX {:?}", idx);
+                
                 let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Child<'_, Child<'_, Worker<A>, u64>, Product<u64, u64>>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
                 
                 // @TODO reverse if necessary
@@ -139,15 +136,23 @@ impl<P: Implementable> Implementable for Hector<P> {
                     // Conflicting relations that appear before the
                     // current one in the sequence (< idx)
 
-                    for preceeding in bindings.iter().take(idx-1) {
-                        if let Some(join_var) = preceeding.intersect(delta_rel) {
-                            if join_var == preceeding.symbols.0 {
-                                extenders.push(Box::new(preceeding.attribute.alt_forward.extend_using(select_e)));
-                            } else if join_var == preceeding.symbols.1 {
-                                extenders.push(Box::new(preceeding.attribute.alt_reverse.extend_using(select_v)));
-                            } else {
-                                panic!("Requested variable not bound by Attribute")
-                            }
+                    for preceeding in bindings.iter().take(idx) {
+                        if preceeding.symbols == delta_rel.symbols {
+                            panic!("Attempt to intersect attribute with itself");
+                        } else if preceeding.symbols.0 == delta_rel.symbols.0 {
+                            println!("alt forward select_e");
+                            extenders.push(Box::new(preceeding.attribute.alt_forward.extend_using(select_e)));
+                        } else if preceeding.symbols.0 == delta_rel.symbols.1 {
+                            println!("alt forward select_v");
+                            extenders.push(Box::new(preceeding.attribute.alt_forward.extend_using(select_v)));
+                        } else if preceeding.symbols.1 == delta_rel.symbols.0 {
+                            println!("alt reverse select_e");
+                            extenders.push(Box::new(preceeding.attribute.alt_reverse.extend_using(select_e)));
+                        } else if preceeding.symbols.1 == delta_rel.symbols.1 {
+                            println!("alt reverse select_v");
+                            extenders.push(Box::new(preceeding.attribute.alt_reverse.extend_using(select_v)));
+                        } else {
+                            panic!("Requested variable not bound by Attribute")
                         }
                     }
                 }
@@ -156,15 +161,23 @@ impl<P: Implementable> Implementable for Hector<P> {
                     // Conflicting relations that appear after the
                     // current one in the sequence (> idx)
 
-                    for succeeding in bindings.iter().skip(idx) {
-                        if let Some(join_var) = succeeding.intersect(delta_rel) {
-                            if join_var == succeeding.symbols.0 {
-                                extenders.push(Box::new(succeeding.attribute.neu_forward.extend_using(select_e)));
-                            } else if join_var == succeeding.symbols.1 {
-                                extenders.push(Box::new(succeeding.attribute.neu_reverse.extend_using(select_v)));
-                            } else {
-                                panic!("Requested variable not bound by Attribute")
-                            }
+                    for succeeding in bindings.iter().skip(idx + 1) {
+                        if succeeding.symbols == delta_rel.symbols {
+                            panic!("Attempt to intersect attribute with itself");
+                        } else if succeeding.symbols.0 == delta_rel.symbols.0 {
+                            println!("neu forward select_e");
+                            extenders.push(Box::new(succeeding.attribute.neu_forward.extend_using(select_e)));
+                        } else if succeeding.symbols.0 == delta_rel.symbols.1 {
+                            println!("neu forward select_v");
+                            extenders.push(Box::new(succeeding.attribute.neu_forward.extend_using(select_v)));
+                        } else if succeeding.symbols.1 == delta_rel.symbols.0 {
+                            println!("neu reverse select_e");
+                            extenders.push(Box::new(succeeding.attribute.neu_reverse.extend_using(select_e)));
+                        } else if succeeding.symbols.1 == delta_rel.symbols.1 {
+                            println!("neu reverse select_v");
+                            extenders.push(Box::new(succeeding.attribute.neu_reverse.extend_using(select_v)));
+                        } else {
+                            panic!("Requested variable not bound by Attribute")
                         }
                     }
                 }
@@ -180,7 +193,7 @@ impl<P: Implementable> Implementable for Hector<P> {
         });
 
         SimpleRelation {
-            symbols: self.variables.to_vec(),
+            symbols: vec![],
             tuples: joined.distinct(),
         }
     }
