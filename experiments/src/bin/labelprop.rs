@@ -1,4 +1,5 @@
 extern crate timely;
+extern crate differential_dataflow;
 extern crate declarative_dataflow;
 
 use std::thread;
@@ -7,13 +8,15 @@ use std::sync::mpsc::{channel};
 
 use timely::{Configuration};
 
+use differential_dataflow::operators::group::Count;
+
 use declarative_dataflow::{Plan, Rule, Value};
 use declarative_dataflow::plan::{Join, Union, Aggregate, AggregationFn};
-use declarative_dataflow::sources::{Source, PlainFile};
+use declarative_dataflow::sources::{Source, CsvFile};
 use declarative_dataflow::server::{Server, Register, RegisterSource};
 
 fn main() {
-    timely::execute(Configuration::Process(4), move |worker| {
+    timely::execute(Configuration::Thread, move |worker| {
 
         let mut server = Server::new(Default::default());
         let (send_results, results) = channel();
@@ -36,34 +39,46 @@ fn main() {
             },
             Rule {
                 name: "labelprop".to_string(),
-                plan: Plan::Aggregate(Aggregate {
-                    variables: vec![x, y],
-                    key_symbols: vec![x, y],
-                    plan: Box::new(Plan::RuleExpr(vec![x, y], "label".to_string())),
-                    aggregation_fn: AggregationFn::COUNT
-                })
+                plan: Plan::RuleExpr(vec![x, y], "label".to_string()),
+                // plan: Plan::Aggregate(Aggregate {
+                //     variables: vec![x, y],
+                //     key_symbols: vec![],
+                //     plan: Box::new(Plan::RuleExpr(vec![x, y], "label".to_string())),
+                //     aggregation_fn: AggregationFn::COUNT
+                // })
             }
         ];
 
-        let edge_source = Source::PlainFile(PlainFile { path: "../data/labelprop/edges.httpd_df".to_string() });
-        let node_source = Source::PlainFile(PlainFile { path: "../data/labelprop/nodes.httpd_df".to_string() });
+        let edge_source = RegisterSource {
+            names: vec![":edge".to_string()],
+            source: Source::CsvFile(CsvFile { path: "../data/labelprop/edges.httpd_df".to_string() })
+        };
+        let node_source = RegisterSource {
+            names: vec![":node".to_string()],
+            source: Source::CsvFile(CsvFile { path: "../data/labelprop/nodes.httpd_df".to_string() })
+        };
 
-        worker.dataflow::<usize, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|mut scope| {
             
-            server.register_source(RegisterSource { name: ":edge".to_string(), source: edge_source }, &mut scope);
-            server.register_source(RegisterSource { name: ":node".to_string(), source: node_source }, &mut scope);
+            server.register_source(edge_source, &mut scope);
+            server.register_source(node_source, &mut scope);
             
             server.register(Register { rules, publish: vec!["labelprop".to_string()] }, &mut scope);
 
             server.interest("labelprop".to_string(), &mut scope)
-                .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
+                .map(|_x| ())
+                .count()
+                .inspect(move |x| {
+                    println!("{:?}", x);
+                    send_results.send((x.0.clone(), x.2)).unwrap();
+                });
         });
 
         let timer = Instant::now();
         while !server.probe.done() { worker.step(); }
 
         thread::spawn(move || {
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(9393283)], 1));
+            // assert_eq!(results.recv().unwrap(), (vec![Value::Number(9393283)], 1));
             println!("Finished. {:?}", timer.elapsed());
         });
     }).unwrap();
