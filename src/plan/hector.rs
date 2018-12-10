@@ -3,6 +3,7 @@
 
 use std::rc::Rc;
 use std::collections::HashMap;
+use std::collections::hash_map::Entry;
 use std::hash::Hash;
 
 use timely::PartialOrder;
@@ -41,7 +42,20 @@ use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 /// symbols. Throws if any of the join symbols isn't bound by both
 /// sources.
 #[derive(Deserialize, Clone, Debug)]
-pub struct Hector { }
+pub struct Hector {
+    /// Bindings to join.
+    pub bindings: Vec<Binding>,
+}
+
+/// Describes symbols whose possible values are given by a global
+/// arrangement.
+#[derive(Deserialize, Clone, Debug)]
+pub struct Binding {
+    /// The symbols this binding talks about.
+    pub symbols: (Var,Var),
+    /// The name of a globally registered arrangement.
+    pub source_name: String,
+}
 
 struct Attribute {
     alt_forward: CollectionIndex<Value, Value, AltNeu<Product<u64,u64>>>,
@@ -64,25 +78,6 @@ impl Attribute {
     }
 }
 
-struct Binding<'a> {
-    symbols: (Var,Var),
-    attribute: &'a Attribute,
-}
-
-impl<'a> Binding<'a> {
-    pub fn intersect(&self, other: &Binding) -> Option<Var> {
-        if self.symbols == other.symbols {
-            panic!("Attempt to intersect an attribute with itself")
-        } else if self.symbols.0 == other.symbols.0 || self.symbols.0 == other.symbols.1 {
-            Some(self.symbols.0.clone())
-        } else if self.symbols.1 == other.symbols.0 || self.symbols.1 == other.symbols.1 {
-            Some(self.symbols.1.clone())
-        } else {
-            None
-        }
-    }
-}
-
 fn select_e((e,_v): &(Value,Value)) -> Value { e.clone() }
 fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
 
@@ -101,30 +96,46 @@ impl Implementable for Hector {
             // We prepare the input relations.
 
             let name = "edge";
-            let mut scope = inner.clone();
-            
-            let edges = match global_arrangements.get_mut(name) {
-                None => panic!("{:?} not in query map", name),
-                Some(named) => named
-                    .import(&nested_copy.parent)
-                    .enter(&nested_copy)
-                    .enter(&mut scope)
-                    .as_collection(|tuple, _| (tuple[0].clone(), tuple[1].clone())),
-            };
-
-            let attributes = vec![Attribute::new(&edges)];
-            
             let (a, b, c) = (1, 2, 3);
+
             let bindings = vec![
-                Binding { symbols: (a,b), attribute: attributes.get(0).unwrap() },
-                Binding { symbols: (b,c), attribute: attributes.get(0).unwrap() },
-                Binding { symbols: (a,c), attribute: attributes.get(0).unwrap() },
+                Binding { symbols: (a,b), source_name: name.to_string() },
+                Binding { symbols: (b,c), source_name: name.to_string() },
+                Binding { symbols: (a,c), source_name: name.to_string() },
             ];
+           
+            let mut scope = inner.clone();
+            let mut collections = HashMap::new();
+
+            for binding in bindings.iter() {
+                match global_arrangements.get_mut(&binding.source_name) {
+                    None => panic!("{:?} not in query map", binding.source_name),
+                    Some(named) => {
+                        match collections.entry(binding.source_name.clone()) {
+                            Entry::Occupied(x) => { x.into_mut(); },
+                            Entry::Vacant(x) => {
+                                let collection = named
+                                    .import(&nested_copy.parent)
+                                    .enter(&nested_copy)
+                                    .enter(&mut scope)
+                                    .as_collection(|tuple, _| (tuple[0].clone(), tuple[1].clone()));
+
+                                x.insert(collection);
+                            }
+                        };
+                    }
+                }
+            }
+
+            let mut attributes = HashMap::new();
+            for (name, collection) in collections.iter() {
+                attributes.insert(name.clone(), Attribute::new(collection));
+            }
             
             // For each relation, we construct a delta query driven by
             // changes to that relation.
 
-            let changes = bindings.iter().enumerate().map(|(idx, delta_rel)| {
+            let changes = bindings.iter().enumerate().map(|(idx, delta_binding)| {
 
                 println!("IDX {:?}", idx);
                 
@@ -137,20 +148,23 @@ impl Implementable for Hector {
                     // current one in the sequence (< idx)
 
                     for preceeding in bindings.iter().take(idx) {
-                        if preceeding.symbols == delta_rel.symbols {
+
+                        let attribute = attributes.get(&preceeding.source_name).unwrap();
+                        
+                        if preceeding.symbols == delta_binding.symbols {
                             panic!("Attempt to intersect attribute with itself");
-                        } else if preceeding.symbols.0 == delta_rel.symbols.0 {
+                        } else if preceeding.symbols.0 == delta_binding.symbols.0 {
                             println!("alt forward select_e");
-                            extenders.push(Box::new(preceeding.attribute.alt_forward.extend_using(select_e)));
-                        } else if preceeding.symbols.0 == delta_rel.symbols.1 {
+                            extenders.push(Box::new(attribute.alt_forward.extend_using(select_e)));
+                        } else if preceeding.symbols.0 == delta_binding.symbols.1 {
                             println!("alt forward select_v");
-                            extenders.push(Box::new(preceeding.attribute.alt_forward.extend_using(select_v)));
-                        } else if preceeding.symbols.1 == delta_rel.symbols.0 {
+                            extenders.push(Box::new(attribute.alt_forward.extend_using(select_v)));
+                        } else if preceeding.symbols.1 == delta_binding.symbols.0 {
                             println!("alt reverse select_e");
-                            extenders.push(Box::new(preceeding.attribute.alt_reverse.extend_using(select_e)));
-                        } else if preceeding.symbols.1 == delta_rel.symbols.1 {
+                            extenders.push(Box::new(attribute.alt_reverse.extend_using(select_e)));
+                        } else if preceeding.symbols.1 == delta_binding.symbols.1 {
                             println!("alt reverse select_v");
-                            extenders.push(Box::new(preceeding.attribute.alt_reverse.extend_using(select_v)));
+                            extenders.push(Box::new(attribute.alt_reverse.extend_using(select_v)));
                         } else {
                             panic!("Requested variable not bound by Attribute")
                         }
@@ -162,20 +176,23 @@ impl Implementable for Hector {
                     // current one in the sequence (> idx)
 
                     for succeeding in bindings.iter().skip(idx + 1) {
-                        if succeeding.symbols == delta_rel.symbols {
+
+                        let attribute = attributes.get(&succeeding.source_name).unwrap();
+                        
+                        if succeeding.symbols == delta_binding.symbols {
                             panic!("Attempt to intersect attribute with itself");
-                        } else if succeeding.symbols.0 == delta_rel.symbols.0 {
+                        } else if succeeding.symbols.0 == delta_binding.symbols.0 {
                             println!("neu forward select_e");
-                            extenders.push(Box::new(succeeding.attribute.neu_forward.extend_using(select_e)));
-                        } else if succeeding.symbols.0 == delta_rel.symbols.1 {
+                            extenders.push(Box::new(attribute.neu_forward.extend_using(select_e)));
+                        } else if succeeding.symbols.0 == delta_binding.symbols.1 {
                             println!("neu forward select_v");
-                            extenders.push(Box::new(succeeding.attribute.neu_forward.extend_using(select_v)));
-                        } else if succeeding.symbols.1 == delta_rel.symbols.0 {
+                            extenders.push(Box::new(attribute.neu_forward.extend_using(select_v)));
+                        } else if succeeding.symbols.1 == delta_binding.symbols.0 {
                             println!("neu reverse select_e");
-                            extenders.push(Box::new(succeeding.attribute.neu_reverse.extend_using(select_e)));
-                        } else if succeeding.symbols.1 == delta_rel.symbols.1 {
+                            extenders.push(Box::new(attribute.neu_reverse.extend_using(select_e)));
+                        } else if succeeding.symbols.1 == delta_binding.symbols.1 {
                             println!("neu reverse select_v");
-                            extenders.push(Box::new(succeeding.attribute.neu_reverse.extend_using(select_v)));
+                            extenders.push(Box::new(attribute.neu_reverse.extend_using(select_v)));
                         } else {
                             panic!("Requested variable not bound by Attribute")
                         }
@@ -184,7 +201,9 @@ impl Implementable for Hector {
                 
                 // @TODO project correctly
                 // @TODO fix hardcoded backing collection
-                edges.extend(&mut extenders[..])
+                collections.get_mut(&delta_binding.source_name)
+                    .unwrap()
+                    .extend(&mut extenders[..])
                     .map(|((e,v1),v2)| vec![e,v1,v2])
                     .inner
             });
