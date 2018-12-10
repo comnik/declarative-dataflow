@@ -7,11 +7,9 @@ use std::thread;
 
 use timely::Configuration;
 
-use declarative_dataflow::plan::{Aggregate, AggregationFn, Join, Project};
+use declarative_dataflow::plan::{Join, Hector, Project, Binding};
 use declarative_dataflow::server::{Register, Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
-
-use num_rational::Ratio;
 
 #[test]
 fn match_ea() {
@@ -161,5 +159,69 @@ fn join() {
             );
         }).join()
             .unwrap();
+    }).unwrap();
+}
+
+#[test]
+fn hector() {
+    timely::execute(Configuration::Thread, move |worker| {
+        let mut server = Server::new(Default::default());
+        // let (send_results, results) = channel();
+
+        // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
+        let (a,b,c) = (1,2,3);
+        let plan = Plan::Hector(Hector {
+            bindings: vec![
+                Binding { symbols: (a,b), source_name: "edge".to_string() },
+                Binding { symbols: (b,c), source_name: "edge".to_string() },
+                Binding { symbols: (c,a), source_name: "edge".to_string() },
+            ]
+        });
+
+        worker.dataflow::<u64, _, _>(|mut scope| {
+            server.create_input("edge".to_string(), scope);
+
+            let query_name = "hector";
+            server.register(
+                Register {
+                    rules: vec![Rule {
+                        name: query_name.to_string(),
+                        plan: plan,
+                    }],
+                    publish: vec![query_name.to_string()],
+                },
+                &mut scope,
+            );
+
+            server
+                .interest(query_name.to_string(), &mut scope)
+                .inspect(move |x| {
+                    println!("{:?}", x);
+                    // send_results.send((x.0.clone(), x.2)).unwrap();
+                });
+        });
+
+        server.transact(
+            Transact {
+                tx: Some(0),
+                tx_data: vec![
+                    TxData(1, 100, "edge".to_string(), Value::Eid(200)),
+                    TxData(1, 200, "edge".to_string(), Value::Eid(300)),
+                    TxData(1, 100, "edge".to_string(), Value::Eid(300)),
+                    TxData(1, 100, "edge".to_string(), Value::Eid(400)),
+                    TxData(1, 400, "edge".to_string(), Value::Eid(500)),
+                    TxData(1, 500, "edge".to_string(), Value::Eid(100)),
+                ],
+            },
+            0,
+            0,
+        );
+
+        worker.step_while(|| server.is_any_outdated());
+
+        // thread::spawn(move || {
+        //     // assert_eq!(results.recv().unwrap(), (vec![], 1));
+        // }).join()
+        //     .unwrap();
     }).unwrap();
 }

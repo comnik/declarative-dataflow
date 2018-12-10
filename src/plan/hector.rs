@@ -93,21 +93,14 @@ impl Implementable for Hector {
 
         let joined = nested.scoped::<AltNeu<Product<u64,u64>>, _, _>("AltNeu", |inner| {
 
-            // We prepare the input relations.
-
-            let name = "edge";
-            let (a, b, c) = (1, 2, 3);
-
-            let bindings = vec![
-                Binding { symbols: (a,b), source_name: name.to_string() },
-                Binding { symbols: (b,c), source_name: name.to_string() },
-                Binding { symbols: (a,c), source_name: name.to_string() },
-            ];
-           
             let mut scope = inner.clone();
+            
+            // First we prepare the collections that back the
+            // attributes, avoiding duplication.
+           
             let mut collections = HashMap::new();
 
-            for binding in bindings.iter() {
+            for binding in self.bindings.iter() {
                 match global_arrangements.get_mut(&binding.source_name) {
                     None => panic!("{:?} not in query map", binding.source_name),
                     Some(named) => {
@@ -127,15 +120,21 @@ impl Implementable for Hector {
                 }
             }
 
+            // For every collection, we create the corresponding
+            // attribute, which will keep track of all required
+            // indices on the backing collections.
+            //
+            // @TODO move these into a global store
+
             let mut attributes = HashMap::new();
             for (name, collection) in collections.iter() {
                 attributes.insert(name.clone(), Attribute::new(collection));
             }
             
-            // For each relation, we construct a delta query driven by
-            // changes to that relation.
+            // For each binding, we construct a delta query driven by
+            // changes to that binding.
 
-            let changes = bindings.iter().enumerate().map(|(idx, delta_binding)| {
+            let changes = self.bindings.iter().enumerate().map(|(idx, delta_binding)| {
 
                 println!("IDX {:?}", idx);
                 
@@ -147,7 +146,7 @@ impl Implementable for Hector {
                     // Conflicting relations that appear before the
                     // current one in the sequence (< idx)
 
-                    for preceeding in bindings.iter().take(idx) {
+                    for preceeding in self.bindings.iter().take(idx) {
 
                         let attribute = attributes.get(&preceeding.source_name).unwrap();
                         
@@ -171,11 +170,11 @@ impl Implementable for Hector {
                     }
                 }
 
-                if idx < bindings.len() {
+                if idx < self.bindings.len() {
                     // Conflicting relations that appear after the
                     // current one in the sequence (> idx)
 
-                    for succeeding in bindings.iter().skip(idx + 1) {
+                    for succeeding in self.bindings.iter().skip(idx + 1) {
 
                         let attribute = attributes.get(&succeeding.source_name).unwrap();
                         
@@ -200,7 +199,6 @@ impl Implementable for Hector {
                 }
                 
                 // @TODO project correctly
-                // @TODO fix hardcoded backing collection
                 collections.get_mut(&delta_binding.source_name)
                     .unwrap()
                     .extend(&mut extenders[..])
