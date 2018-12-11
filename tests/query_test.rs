@@ -166,7 +166,7 @@ fn join() {
 fn hector() {
     timely::execute(Configuration::Thread, move |worker| {
         let mut server = Server::new(Default::default());
-        // let (send_results, results) = channel();
+        let (send_results, results) = channel();
 
         // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
         let (a,b,c) = (1,2,3);
@@ -196,8 +196,7 @@ fn hector() {
             server
                 .interest(query_name.to_string(), &mut scope)
                 .inspect(move |x| {
-                    println!("{:?}", x);
-                    // send_results.send((x.0.clone(), x.2)).unwrap();
+                    send_results.send((x.0.clone(), x.2)).unwrap();
                 });
         });
 
@@ -219,9 +218,71 @@ fn hector() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        // thread::spawn(move || {
-        //     // assert_eq!(results.recv().unwrap(), (vec![], 1));
-        // }).join()
-        //     .unwrap();
+        thread::spawn(move || {
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(100), Value::Eid(300), Value::Eid(200)], 1));
+        }).join().unwrap();
+    }).unwrap();
+}
+
+
+#[test]
+fn hector_join() {
+    timely::execute(Configuration::Thread, move |worker| {
+        let mut server = Server::new(Default::default());
+        let (send_results, results) = channel();
+
+        // [?e :age ?a] [?e :name ?n]
+        let (e, a, n) = (1, 2, 3);
+        let plan = Plan::Hector(Hector {
+            bindings: vec![
+                Binding { symbols: (e,n), source_name: ":name".to_string() },
+                Binding { symbols: (e,a), source_name: ":age".to_string() },
+            ]
+        });
+
+        worker.dataflow::<u64, _, _>(|mut scope| {
+            server.create_input(":name".to_string(), scope);
+            server.create_input(":age".to_string(), scope);
+
+            let query_name = "join";
+            server.register(
+                Register {
+                    rules: vec![Rule {
+                        name: query_name.to_string(),
+                        plan: plan,
+                    }],
+                    publish: vec![query_name.to_string()],
+                },
+                &mut scope,
+            );
+
+            server
+                .interest(query_name.to_string(), &mut scope)
+                .inspect(move |x| {
+                    send_results.send((x.0.clone(), x.2)).unwrap();
+                });
+        });
+
+        server.transact(
+            Transact {
+                tx: Some(0),
+                tx_data: vec![
+                    TxData(1, 1, ":name".to_string(), Value::String("Dipper".to_string())),
+                    TxData(1, 1, ":age".to_string(), Value::Number(12)),
+                    TxData(1, 2, ":name".to_string(), Value::String("Mabel".to_string())),
+                    TxData(1, 2, ":age".to_string(), Value::Number(13)),
+                    TxData(1, 3, ":name".to_string(), Value::String("Soos".to_string())),
+                ],
+            },
+            0,
+            0,
+        );
+
+        worker.step_while(|| server.is_any_outdated());
+
+        thread::spawn(move || {
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(12), Value::String("Dipper".to_string())], 1));
+            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(13), Value::String("Mabel".to_string())], 1));
+        }).join().unwrap();
     }).unwrap();
 }
