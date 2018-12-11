@@ -1,11 +1,12 @@
 [package]
-name = "declarative dataflow experiments"
+name = "declarative_dataflow_experiments"
 version = "0.1.0"
 authors = ["Nikolas Göbel <me@nikolasgoebel.com>"]
 
 [dependencies]
-differential-dataflow = { git = "https://github.com/frankmcsherry/differential-dataflow" }
-timely = { git = "https://github.com/frankmcsherry/timely-dataflow", features = ["bincode"] }
+timely = { version = "0.8.0", features = ["bincode"] }
+differential-dataflow = "0.8.0"
+graph_map = "0.1"
 
 [dependencies.declarative_dataflow]
 path = ".."

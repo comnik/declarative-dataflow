@@ -174,7 +174,7 @@ fn hector() {
             bindings: vec![
                 Binding { symbols: (a,b), source_name: "edge".to_string() },
                 Binding { symbols: (b,c), source_name: "edge".to_string() },
-                Binding { symbols: (c,a), source_name: "edge".to_string() },
+                Binding { symbols: (a,c), source_name: "edge".to_string() },
             ]
         });
 
