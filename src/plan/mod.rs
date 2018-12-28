@@ -119,7 +119,7 @@ impl Implementable for Plan {
                 let tuples = match global_arrangements.get_mut(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(named) => named
-                        .import(&nested.parent)
+                        .import_named(&nested.parent, a)
                         .enter(nested)
                         .as_collection(|tuple, _| tuple.clone()),
                 };
@@ -133,7 +133,7 @@ impl Implementable for Plan {
                 let tuples = match global_arrangements.get_mut(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(named) => named
-                        .import(&nested.parent)
+                        .import_named(&nested.parent, a)
                         .enter(nested)
                         .as_collection(|tuple, _| tuple.clone())
                         .filter(move |tuple| tuple[0] == Value::Eid(e))
@@ -151,7 +151,7 @@ impl Implementable for Plan {
                     Some(named) => {
                         let v = v.clone();
                         named
-                            .import(&nested.parent)
+                            .import_named(&nested.parent, a)
                             .enter(nested)
                             .as_collection(|tuple, _| tuple.clone())
                             .filter(move |tuple| tuple[1] == v)
@@ -176,7 +176,7 @@ impl Implementable for Plan {
                 Some(named) => SimpleRelation {
                     symbols: syms.clone(),
                     tuples: named
-                        .import(&nested.parent)
+                        .import_named(&nested.parent, name)
                         .enter(nested)
                         .as_collection(|tuple, _| tuple.clone()),
                 },

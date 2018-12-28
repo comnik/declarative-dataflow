@@ -237,7 +237,7 @@ impl Server {
         self.global_arrangements
             .get_mut(&name)
             .expect(&format!("Could not find relation {:?}", name))
-            .import(scope)
+            .import_named(scope, &name)
             .as_collection(|tuple, _| tuple.clone())
             .probe_with(&mut self.probe)
     }

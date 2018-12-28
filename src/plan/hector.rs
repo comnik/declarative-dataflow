@@ -108,7 +108,7 @@ impl Implementable for Hector {
                             Entry::Occupied(x) => { x.into_mut(); },
                             Entry::Vacant(x) => {
                                 let collection = named
-                                    .import(&nested_copy.parent)
+                                    .import_named(&nested_copy.parent, &binding.source_name)
                                     .enter(&nested_copy)
                                     .enter(&mut scope)
                                     .as_collection(|tuple, _| (tuple[0].clone(), tuple[1].clone()));
@@ -335,7 +335,7 @@ where
     pub fn index<G: Scope<Timestamp=T>>(name: &str, collection: &Collection<G, (K, V), isize>) -> Self {
         let counts = collection.map(|(k,_v)| (k,())).arrange_named(&format!("Counts({})", name)).trace;
         let propose = collection.arrange_named(&format!("Proposals({})", &name)).trace;
-        let validate = collection.map(|t| (t,())).arrange_named(&format!("Validate({})", &name)).trace;
+        let validate = collection.map(|t| (t,())).arrange_named(&format!("Validations({})", &name)).trace;
 
         CollectionIndex {
             count_trace: counts,
