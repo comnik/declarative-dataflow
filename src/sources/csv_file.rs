@@ -29,9 +29,11 @@ impl Sourceable for CsvFile {
     fn source<G: Scope<Timestamp = u64>>(&self, scope: &G, _names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
         let filename = self.path.clone();
 
-        generic::operator::source(scope, &format!("File({})", filename), |capability| {
+        generic::operator::source(scope, &format!("File({})", filename), |capability, info| {
 
-            let mut capability = Some(capability);
+            let activator = scope.activator_for(&info.address[..]);
+            
+            let mut cap = Some(capability);
 
             let worker_index = scope.index();
             let num_workers = scope.peers();
@@ -51,7 +53,7 @@ impl Sourceable for CsvFile {
             move |output| {
                 if iterator.peek().is_some() {
 
-                    let mut session = output.session(capability.as_ref().unwrap());
+                    let mut session = output.session(cap.as_ref().unwrap());
                     
                     for readline in iterator.by_ref().take(255) {
                         
@@ -77,9 +79,12 @@ impl Sourceable for CsvFile {
 
                         datum_index += 1;
                     }
+
+                    activator.activate();
+                    
                 } else {
                     println!("[WORKER {}] read {} out of {} datums", worker_index, num_datums_read, datum_index);
-                    capability = None;
+                    cap = None;
                 }
             }
         })

@@ -28,8 +28,10 @@ impl Sourceable for JsonFile {
     fn source<G: Scope>(&self, scope: &G, names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
         let filename = self.path.clone();
 
-        generic::operator::source(scope, &format!("File({})", filename), move |capability| {
+        generic::operator::source(scope, &format!("File({})", filename), move |capability, info| {
 
+            let activator = scope.activator_for(&info.address[..]);
+            
             let mut cap = Some(capability);
 
             let worker_index = scope.index();
@@ -96,6 +98,9 @@ impl Sourceable for JsonFile {
                     }
 
                     // println!("[WORKER {}] read {} out of {} objects", worker_index, num_objects_read, object_index);
+
+                    activator.activate();
+                    
                 } else {
                     cap = None;
                 }
