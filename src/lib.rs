@@ -28,7 +28,7 @@ use timely::order::Product;
 use timely::worker::Worker;
 
 use differential_dataflow::collection::Collection;
-use differential_dataflow::operators::arrange::{ArrangeBySelf, TraceAgent};
+use differential_dataflow::operators::arrange::{Arrange, TraceAgent};
 use differential_dataflow::operators::group::Threshold;
 use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
@@ -265,8 +265,9 @@ pub fn implement<A: Allocate>(
             if let Some(relation) = local_arrangements.get(&name) {
                 let trace = relation.leave()
                     // .inspect(|x| { println!("OUTPUT {:?}", x); })
-                    // .probe_with(probe)
-                    .arrange_by_self()
+                // .probe_with(probe)
+                    .map(|t| (t,()))
+                    .arrange_named(&name)
                     .trace;
 
                 result_map.insert(name, trace);

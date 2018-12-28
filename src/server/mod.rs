@@ -13,7 +13,7 @@ use timely::worker::Worker;
 
 use differential_dataflow::collection::Collection;
 use differential_dataflow::input::{Input, InputSession};
-use differential_dataflow::operators::arrange::ArrangeBySelf;
+use differential_dataflow::operators::arrange::Arrange;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
@@ -279,8 +279,8 @@ impl Server {
                 panic!("Source name clashes with registered relation.");
             } else {
                 let trace = datoms
-                    .map(|(_idx, tuple)| tuple)
-                    .arrange_by_self()
+                    .map(|(_idx, tuple)| (tuple,()))
+                    .arrange_named(&name)
                     .trace;
                 
                 self.register_global_arrangement(name, trace);
@@ -294,8 +294,8 @@ impl Server {
                 } else {
                     let trace = datoms
                         .filter(move |(idx, _tuple)| *idx == name_idx)
-                        .map(|(_idx, tuple)| tuple)
-                        .arrange_by_self()
+                        .map(|(_idx, tuple)| (tuple,()))
+                        .arrange_named(&name)
                         .trace;
 
                     self.register_global_arrangement(name.to_string(), trace);
@@ -314,7 +314,7 @@ impl Server {
             panic!("Input name clashes with existing trace.");
         } else {
             let (handle, tuples) = scope.new_collection::<Vec<Value>, isize>();
-            let trace = tuples.arrange_by_self().trace;
+            let trace = tuples.map(|t| (t,())).arrange_named(&name).trace;
 
             self.register_global_arrangement(name.clone(), trace);
             self.input_handles.insert(name, handle);

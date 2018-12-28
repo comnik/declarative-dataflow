@@ -25,7 +25,7 @@ use differential_dataflow::{Data, Collection, AsCollection, Hashable};
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Threshold;
 use differential_dataflow::operators::arrange::TraceAgent;
-use differential_dataflow::operators::arrange::{ArrangeBySelf, ArrangeByKey};
+use differential_dataflow::operators::arrange::Arrange;
 use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
 use differential_dataflow::trace::implementations::spine_fueled::Spine;
 use differential_dataflow::trace::implementations::ord::{OrdValBatch, OrdKeyBatch};
@@ -65,15 +65,15 @@ struct Attribute {
 }
 
 impl Attribute {
-    pub fn new<G: Scope<Timestamp=AltNeu<Product<u64,u64>>>> (collection: &Collection<G, (Value,Value), isize>) -> Self {
+    pub fn new<G: Scope<Timestamp=AltNeu<Product<u64,u64>>>> (name: &str, collection: &Collection<G, (Value,Value), isize>) -> Self {
         let forward = collection.clone();
         let reverse = collection.map(|(e,v)| (v,e));
         
         Attribute {
-            alt_forward: CollectionIndex::index(&forward),
-            neu_forward: CollectionIndex::index(&forward.delay(|time| AltNeu::neu(time.time.clone()))),
-            alt_reverse: CollectionIndex::index(&reverse),
-            neu_reverse: CollectionIndex::index(&reverse.delay(|time| AltNeu::neu(time.time.clone()))),
+            alt_forward: CollectionIndex::index(name, &forward),
+            neu_forward: CollectionIndex::index(name, &forward.delay(|time| AltNeu::neu(time.time.clone()))),
+            alt_reverse: CollectionIndex::index(name, &reverse),
+            neu_reverse: CollectionIndex::index(name, &reverse.delay(|time| AltNeu::neu(time.time.clone()))),
         }
     }
 }
@@ -128,7 +128,7 @@ impl Implementable for Hector {
 
             let mut attributes = HashMap::new();
             for (name, collection) in collections.iter() {
-                attributes.insert(name.clone(), Attribute::new(collection));
+                attributes.insert(name.clone(), Attribute::new(&name, collection));
             }
             
             // For each binding, we construct a delta query driven by
@@ -332,10 +332,10 @@ where
     V: Data+Hash,
     T: Lattice+Data+Timestamp,
 {    
-    pub fn index<G: Scope<Timestamp=T>>(collection: &Collection<G, (K, V), isize>) -> Self {
-        let counts = collection.map(|(k,_v)| k).arrange_by_self().trace;
-        let propose = collection.arrange_by_key().trace;
-        let validate = collection.arrange_by_self().trace;
+    pub fn index<G: Scope<Timestamp=T>>(name: &str, collection: &Collection<G, (K, V), isize>) -> Self {
+        let counts = collection.map(|(k,_v)| (k,())).arrange_named(&format!("Counts({})", name)).trace;
+        let propose = collection.arrange_named(&format!("Proposals({})", &name)).trace;
+        let validate = collection.map(|t| (t,())).arrange_named(&format!("Validate({})", &name)).trace;
 
         CollectionIndex {
             count_trace: counts,
