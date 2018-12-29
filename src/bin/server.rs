@@ -428,7 +428,7 @@ fn main() {
                                     worker.dataflow::<u64, _, _>(|mut scope| {
                                         let name = req.name.clone();
 
-                                        server.interest(req.name.clone(), &mut scope)
+                                        server.interest(&req.name, &mut scope)
                                             .inner
                                             .unary_notify(
                                                 Exchange::new(move |_| owner as u64),

@@ -36,7 +36,7 @@ fn match_ea() {
             );
 
             server
-                .interest(query_name.to_string(), scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -120,7 +120,7 @@ fn join() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -194,7 +194,7 @@ fn hector() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -257,7 +257,7 @@ fn hector_join() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

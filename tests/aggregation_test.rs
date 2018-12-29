@@ -62,7 +62,7 @@ fn count() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -80,7 +80,7 @@ fn count() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -167,7 +167,7 @@ fn max() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -185,7 +185,7 @@ fn max() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -271,7 +271,7 @@ fn min() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -289,7 +289,7 @@ fn min() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -375,7 +375,7 @@ fn sum() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -393,7 +393,7 @@ fn sum() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -479,7 +479,7 @@ fn avg() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -497,7 +497,7 @@ fn avg() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -582,7 +582,7 @@ fn avg() {
 //             );
 
 //             server
-//                 .interest(query_name.to_string(), &mut scope)
+//                 .interest(query_name, &mut scope)
 //                 .inspect(move |x| {
 //                     send_results.send((x.0.clone(), x.2)).unwrap();
 //                 });
@@ -600,7 +600,7 @@ fn avg() {
 //             );
 
 //             server
-//                 .interest(query_name.to_string(), &mut scope)
+//                 .interest(query_name, &mut scope)
 //                 .inspect(move |x| {
 //                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
 //                 });
@@ -692,7 +692,7 @@ fn median() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -710,7 +710,7 @@ fn median() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -825,7 +825,7 @@ fn multi() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -843,7 +843,7 @@ fn multi() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -971,7 +971,7 @@ fn with() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

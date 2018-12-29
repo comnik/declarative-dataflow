@@ -231,15 +231,26 @@ impl Server {
     /// Handle an Interest request.
     pub fn interest<'a, A: Allocate>(
         &mut self,
-        name: String,
+        name: &str,
         scope: &mut Child<'a, Worker<A>, u64>,
     ) -> Collection<Child<'a, Worker<A>, u64>, Vec<Value>, isize> {
-        self.global_arrangements
-            .get_mut(&name)
-            .expect(&format!("Could not find relation {:?}", name))
-            .import_named(scope, &name)
-            .as_collection(|tuple, _| tuple.clone())
-            .probe_with(&mut self.probe)
+
+        // @TODO this should be able to assume that it will be called
+        // at most once per, no matter how many clients are interested
+
+        match name {
+            "3df.timely/operates" => {
+                panic!("not yet implemented")
+            },
+            _ => {
+                self.global_arrangements
+                    .get_mut(name)
+                    .expect(&format!("Could not find relation {:?}", name))
+                    .import_named(scope, name)
+                    .as_collection(|tuple, _| tuple.clone())
+                    .probe_with(&mut self.probe)
+            }
+        }        
     }
 
     /// Handle a Register request.

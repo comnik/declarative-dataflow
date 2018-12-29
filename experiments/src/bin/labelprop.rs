@@ -65,13 +65,8 @@ fn main() {
             
             server.register(Register { rules, publish: vec!["labelprop".to_string()] }, &mut scope);
 
-            server.interest("labelprop".to_string(), &mut scope)
-                .map(|_x| ())
-                .count()
-                .inspect(move |x| {
-                    println!("{:?}", x);
-                    send_results.send((x.0.clone(), x.2)).unwrap();
-                });
+            server.interest("labelprop", &mut scope)
+                .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
         });
 
         let timer = Instant::now();

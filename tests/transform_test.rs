@@ -45,7 +45,7 @@ fn truncate() {
             );
 
             server
-                .interest(query_name.to_string(), &mut scope)
+                .interest(query_name, &mut scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

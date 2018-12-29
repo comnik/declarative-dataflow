@@ -48,7 +48,7 @@ fn main() {
             );
 
             server
-                .interest("triangles".to_string(), &mut scope)
+                .interest("triangles", &mut scope)
                 .filter(move |_| inspect)
                 .inspect(|x| println!("\tTriangle: {:?}", x));
         });

@@ -49,7 +49,7 @@ fn main() {
             
             server.register(Register { rules, publish: vec!["q2".to_string()] }, &mut scope);
 
-            server.interest("q2".to_string(), &mut scope)
+            server.interest("q2", &mut scope)
                 .map(|_x| ())
                 .count()
                 .inspect(|x| println!("RESULT {:?}", x));
