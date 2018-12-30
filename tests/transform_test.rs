@@ -30,7 +30,7 @@ fn truncate() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":timestamp".to_string(), &mut scope);
+            server.create_input(":timestamp", &mut scope);
 
             let query_name = "truncate";
             server.register(

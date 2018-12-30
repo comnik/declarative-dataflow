@@ -318,17 +318,17 @@ impl Server {
     /// Handle a CreateInput request.
     pub fn create_input<A: Allocate>(
         &mut self,
-        name: String,
+        name: &str,
         scope: &mut Child<Worker<A>, u64>,
     ) {
-        if self.global_arrangements.contains_key(&name) {
+        if self.global_arrangements.contains_key(name) {
             panic!("Input name clashes with existing trace.");
         } else {
             let (handle, tuples) = scope.new_collection::<Vec<Value>, isize>();
-            let trace = tuples.map(|t| (t,())).arrange_named(&name).trace;
+            let trace = tuples.map(|t| (t,())).arrange_named(name).trace;
 
-            self.register_global_arrangement(name.clone(), trace);
-            self.input_handles.insert(name, handle);
+            self.register_global_arrangement(name.to_string(), trace);
+            self.input_handles.insert(name.to_string(), handle);
         }
     }
 

@@ -466,7 +466,7 @@ fn main() {
                                 }
                                 Request::CreateInput(CreateInput { name }) => {
                                     worker.dataflow::<u64, _, _>(|mut scope| {
-                                        server.create_input(name, &mut scope);
+                                        server.create_input(&name, &mut scope);
                                     });
                                 }
                                 Request::AdvanceInput(name, tx) => server.advance_input(name, tx),

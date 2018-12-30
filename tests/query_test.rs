@@ -21,7 +21,7 @@ fn match_ea() {
         let plan = Plan::MatchEA(1, ":name".to_string(), 1);
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":name".to_string(), scope);
+            server.create_input(":name", scope);
 
             let query_name = "match_ea";
             server.register(
@@ -104,8 +104,8 @@ fn join() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":name".to_string(), scope);
-            server.create_input(":age".to_string(), scope);
+            server.create_input(":name", scope);
+            server.create_input(":age", scope);
 
             let query_name = "join";
             server.register(
@@ -179,7 +179,7 @@ fn hector() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input("edge".to_string(), scope);
+            server.create_input("edge", scope);
 
             let query_name = "hector";
             server.register(
@@ -241,8 +241,8 @@ fn hector_join() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":name".to_string(), scope);
-            server.create_input(":age".to_string(), scope);
+            server.create_input(":name", scope);
+            server.create_input(":age", scope);
 
             let query_name = "join";
             server.register(

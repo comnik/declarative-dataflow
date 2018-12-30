@@ -47,7 +47,7 @@ fn count() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":amount".to_string(), scope);
+            server.create_input(":amount", scope);
 
             let query_name = "count";
             server.register(
@@ -152,7 +152,7 @@ fn max() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":amount".to_string(), scope);
+            server.create_input(":amount", scope);
 
             let query_name = "max";
             server.register(
@@ -256,7 +256,7 @@ fn min() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":amount".to_string(), scope);
+            server.create_input(":amount", scope);
 
             let query_name = "min";
             server.register(
@@ -360,7 +360,7 @@ fn sum() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":amount".to_string(), scope);
+            server.create_input(":amount", scope);
 
             let query_name = "sum";
             server.register(
@@ -464,7 +464,7 @@ fn avg() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":amount".to_string(), scope);
+            server.create_input(":amount", scope);
 
             let query_name = "avg";
             server.register(
@@ -567,7 +567,7 @@ fn avg() {
 //         });
 
 //         worker.dataflow::<u64, _, _>(|mut scope| {
-//             server.create_input(":amount".to_string(), scope);
+//             server.create_input(":amount", scope);
 
 //             let query_name = "var";
 //             server.register(
@@ -677,7 +677,7 @@ fn median() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":amount".to_string(), scope);
+            server.create_input(":amount", scope);
 
             let query_name = "median";
             server.register(
@@ -809,8 +809,8 @@ fn multi() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":amount".to_string(), scope);
-            server.create_input(":debt".to_string(), scope);
+            server.create_input(":amount", scope);
+            server.create_input(":debt", scope);
 
             let query_name = "multi";
             server.register(
@@ -955,8 +955,8 @@ fn with() {
         });
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":monster".to_string(), scope);
-            server.create_input(":heads".to_string(), scope);
+            server.create_input(":monster", scope);
+            server.create_input(":heads", scope);
 
             let query_name = "with";
             server.register(

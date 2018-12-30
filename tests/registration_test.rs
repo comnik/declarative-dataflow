@@ -20,7 +20,7 @@ fn match_ea_after_input() {
         let plan = Plan::MatchEA(1, ":name".to_string(), 1);
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":name".to_string(), &mut scope);
+            server.create_input(":name", &mut scope);
         });
 
         let tx_data = vec![
@@ -75,8 +75,8 @@ fn join_after_input() {
         let (send_results, results) = channel();
 
         worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":transfer/from".to_string(), &mut scope);
-            server.create_input(":user/id".to_string(), &mut scope);
+            server.create_input(":transfer/from", &mut scope);
+            server.create_input(":user/id", &mut scope);
         });
 
         worker.step_while(|| server.is_any_outdated());
