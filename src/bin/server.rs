@@ -93,9 +93,6 @@ fn main() {
         // setup interpretation context
         let mut server = Server::<Token>::new(config.clone());
 
-        // mapping from query names to interested client tokens
-        let mut interests: HashMap<String, Vec<Token>> = HashMap::new();
-
         // setup serialized command queue (shared between all workers)
         let mut sequencer: Sequencer<Command> = Sequencer::new(worker, Instant::now());
 
@@ -257,7 +254,7 @@ fn main() {
                         while let Ok((query_name, results)) = recv_results.try_recv() {
                             info!("[WORKER {}] {:?} {:?}", worker.index(), query_name, results);
 
-                            match interests.get(&query_name) {
+                            match server.interests.get(&query_name) {
                                 None => {
                                     /* @TODO unregister this flow */
                                     info!("NO INTEREST FOR THIS RESULT");
@@ -415,7 +412,7 @@ fn main() {
                                             None => {}
                                             Some(client) => {
                                                 let client_token = Token(client);
-                                                interests
+                                                server.interests
                                                     .entry(req.name.clone())
                                                     .or_insert(Vec::new())
                                                     .push(client_token);
