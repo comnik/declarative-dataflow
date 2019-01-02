@@ -14,7 +14,7 @@ use declarative_dataflow::{Plan, Rule, Value};
 #[test]
 fn match_ea() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [:find ?v :where [1 :name ?n]]
@@ -89,7 +89,7 @@ fn match_ea() {
 #[test]
 fn join() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [:find ?e ?n ?a :where [?e :age ?a] [?e :name ?n]]
@@ -103,7 +103,7 @@ fn join() {
             })),
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":name", scope);
             server.create_input(":age", scope);
 
@@ -116,11 +116,11 @@ fn join() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -165,7 +165,7 @@ fn join() {
 #[test]
 fn hector() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
@@ -178,7 +178,7 @@ fn hector() {
             ]
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input("edge", scope);
 
             let query_name = "hector";
@@ -190,11 +190,11 @@ fn hector() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -228,7 +228,7 @@ fn hector() {
 #[test]
 fn hector_join() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [?e :age ?a] [?e :name ?n]
@@ -240,7 +240,7 @@ fn hector_join() {
             ]
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":name", scope);
             server.create_input(":age", scope);
 
@@ -253,11 +253,11 @@ fn hector_join() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

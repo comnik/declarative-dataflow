@@ -1,8 +1,7 @@
 //! Antijoin expression plan.
 
-use timely::communication::Allocate;
-use timely::dataflow::scopes::child::{Child, Iterative};
-use timely::worker::Worker;
+use timely::dataflow::Scope;
+use timely::dataflow::scopes::child::Iterative;
 
 use differential_dataflow::operators::Join;
 use differential_dataflow::operators::Threshold;
@@ -25,12 +24,12 @@ pub struct Antijoin<P1: Implementable, P2: Implementable> {
 }
 
 impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
-    fn implement<'a, 'b, A: Allocate>(
+    fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
-        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        nested: &mut Iterative<'b, S, u64>,
+        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut QueryMap<isize>,
-    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
+    ) -> SimpleRelation<'b, S> {
         let left = self.left_plan
             .implement(nested, local_arrangements, global_arrangements);
         let right = self.right_plan

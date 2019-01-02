@@ -19,7 +19,7 @@ fn main() {
 
     timely::execute(Configuration::Process(1), move |worker| {
 
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
 
         let e = 1;
         let rules = vec![
@@ -35,16 +35,16 @@ fn main() {
 
         let obj_source = Source::JsonFile(JsonFile { path: filename.clone() });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             
             server.register_source(RegisterSource {
                 names: vec!["target".to_string(), "guess".to_string()],
                 source: obj_source
-            }, &mut scope);
+            }, scope);
             
-            server.register(Register { rules, publish: vec!["q1".to_string()] }, &mut scope);
+            server.register(Register { rules, publish: vec!["q1".to_string()] }, scope);
 
-            server.interest("q1", &mut scope)
+            server.interest("q1", scope)
                 .map(|_x| ())
                 .count()
                 .inspect(|x| println!("RESULT {:?}", x));

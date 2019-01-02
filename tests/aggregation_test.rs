@@ -17,7 +17,7 @@ use num_rational::Ratio;
 #[test]
 fn count() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
         let send_results_copy = send_results.clone();
 
@@ -46,7 +46,7 @@ fn count() {
             with_symbols: vec![],
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
             let query_name = "count";
@@ -58,11 +58,11 @@ fn count() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -76,11 +76,11 @@ fn count() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -123,7 +123,7 @@ fn count() {
 #[test]
 fn max() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
         let send_results_copy = send_results.clone();
 
@@ -151,7 +151,7 @@ fn max() {
             with_symbols: vec![],
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
             let query_name = "max";
@@ -163,11 +163,11 @@ fn max() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -181,11 +181,11 @@ fn max() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -227,7 +227,7 @@ fn max() {
 #[test]
 fn min() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
         let send_results_copy = send_results.clone();
 
@@ -255,7 +255,7 @@ fn min() {
             with_symbols: vec![],
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
             let query_name = "min";
@@ -267,11 +267,11 @@ fn min() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -285,11 +285,11 @@ fn min() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -331,7 +331,7 @@ fn min() {
 #[test]
 fn sum() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
         let send_results_copy = send_results.clone();
 
@@ -359,7 +359,7 @@ fn sum() {
             with_symbols: vec![],
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
             let query_name = "sum";
@@ -371,11 +371,11 @@ fn sum() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -389,11 +389,11 @@ fn sum() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -435,7 +435,7 @@ fn sum() {
 #[test]
 fn avg() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
         let send_results_copy = send_results.clone();
 
@@ -463,7 +463,7 @@ fn avg() {
             with_symbols: vec![],
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
             let query_name = "avg";
@@ -475,11 +475,11 @@ fn avg() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -493,11 +493,11 @@ fn avg() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -542,7 +542,7 @@ fn avg() {
 // #[test]
 // fn var() {
 //     timely::execute(Configuration::Thread, move |worker| {
-//         let mut server = Server::new(Default::default());
+//         let mut server = Server::<u64>::new(Default::default());
 //         let (send_results, results) = channel();
 //         let send_results_copy = send_results.clone();
 
@@ -566,7 +566,7 @@ fn avg() {
 //             key_symbols: vec![e],
 //         });
 
-//         worker.dataflow::<u64, _, _>(|mut scope| {
+//         worker.dataflow::<u64, _, _>(|scope| {
 //             server.create_input(":amount", scope);
 
 //             let query_name = "var";
@@ -578,11 +578,11 @@ fn avg() {
 //                     }],
 //                     publish: vec![query_name.to_string()],
 //                 },
-//                 &mut scope,
+//                 scope,
 //             );
 
 //             server
-//                 .interest(query_name, &mut scope)
+//                 .interest(query_name, scope)
 //                 .inspect(move |x| {
 //                     send_results.send((x.0.clone(), x.2)).unwrap();
 //                 });
@@ -596,11 +596,11 @@ fn avg() {
 //                     }],
 //                     publish: vec![query_name.to_string()],
 //                 },
-//                 &mut scope,
+//                 scope,
 //             );
 
 //             server
-//                 .interest(query_name, &mut scope)
+//                 .interest(query_name, scope)
 //                 .inspect(move |x| {
 //                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
 //                 });
@@ -648,7 +648,7 @@ fn avg() {
 #[test]
 fn median() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
         let send_results_copy = send_results.clone();
 
@@ -676,7 +676,7 @@ fn median() {
             with_symbols: vec![],
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
             let query_name = "median";
@@ -688,11 +688,11 @@ fn median() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -706,11 +706,11 @@ fn median() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -754,7 +754,7 @@ fn median() {
 #[test]
 fn multi() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
         let send_results_copy = send_results.clone();
 
@@ -808,7 +808,7 @@ fn multi() {
             with_symbols: vec![],
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
             server.create_input(":debt", scope);
 
@@ -821,11 +821,11 @@ fn multi() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -839,11 +839,11 @@ fn multi() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -931,7 +931,7 @@ fn multi() {
 #[test]
 fn with() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [:find (sum ?heads) :with ?monster :where [?e :monster ?monster][?e :head ?head]] 
@@ -954,7 +954,7 @@ fn with() {
             with_symbols: vec![monster],
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":monster", scope);
             server.create_input(":heads", scope);
 
@@ -967,11 +967,11 @@ fn with() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

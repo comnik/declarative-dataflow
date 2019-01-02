@@ -1,8 +1,7 @@
 //! Projection expression plan.
 
-use timely::communication::Allocate;
-use timely::dataflow::scopes::child::{Child, Iterative};
-use timely::worker::Worker;
+use timely::dataflow::Scope;
+use timely::dataflow::scopes::child::Iterative;
 
 use plan::Implementable;
 use Relation;
@@ -20,12 +19,13 @@ pub struct Project<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Project<P> {
-    fn implement<'a, 'b, A: Allocate>(
+    fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
-        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        nested: &mut Iterative<'b, S, u64>,
+        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut QueryMap<isize>,
-    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
+    ) -> SimpleRelation<'b, S> {
+        
         let relation = self.plan
             .implement(nested, local_arrangements, global_arrangements);
         let tuples = relation

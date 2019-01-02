@@ -19,7 +19,7 @@ fn main() {
 
     timely::execute(Configuration::Process(1), move |worker| {
 
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
 
         let (e, country, target, count,) = (1, 2, 3, 4,);
         let rules = vec![
@@ -32,24 +32,25 @@ fn main() {
                         left_plan: Box::new(Plan::MatchA(e, "country".to_string(), country)),
                         right_plan: Box::new(Plan::MatchA(e, "target".to_string(), target)),
                     })),
-                    aggregation_fn: AggregationFn::COUNT,
-                    key_symbols: vec![country, target]
+                    aggregation_fns: vec![AggregationFn::COUNT],
+                    key_symbols: vec![country, target],
+                    with_symbols: vec![],
                 })
             }
         ];
 
         let obj_source = Source::JsonFile(JsonFile { path: filename.clone() });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             
             server.register_source(RegisterSource {
                 names: vec!["country".to_string(), "target".to_string(), "guess".to_string()],
                 source: obj_source
-            }, &mut scope);
+            }, scope);
             
-            server.register(Register { rules, publish: vec!["q2".to_string()] }, &mut scope);
+            server.register(Register { rules, publish: vec!["q2".to_string()] }, scope);
 
-            server.interest("q2", &mut scope)
+            server.interest("q2", scope)
                 .map(|_x| ())
                 .count()
                 .inspect(|x| println!("RESULT {:?}", x));

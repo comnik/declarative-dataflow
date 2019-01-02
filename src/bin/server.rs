@@ -91,7 +91,7 @@ fn main() {
         };
 
         // setup interpretation context
-        let mut server = Server::new(config.clone());
+        let mut server = Server::<Token>::new(config.clone());
 
         // mapping from query names to interested client tokens
         let mut interests: HashMap<String, Vec<Token>> = HashMap::new();
@@ -425,10 +425,10 @@ fn main() {
 
                                     let send_results_handle = send_results.clone();
 
-                                    worker.dataflow::<u64, _, _>(|mut scope| {
+                                    worker.dataflow::<u64, _, _>(|scope| {
                                         let name = req.name.clone();
 
-                                        server.interest(&req.name, &mut scope)
+                                        server.interest(&req.name, scope)
                                             .inner
                                             .unary_notify(
                                                 Exchange::new(move |_| owner as u64),
@@ -455,18 +455,18 @@ fn main() {
                                     });
                                 }
                                 Request::Register(req) => {
-                                    worker.dataflow::<u64, _, _>(|mut scope| {
-                                        server.register(req, &mut scope);
+                                    worker.dataflow::<u64, _, _>(|scope| {
+                                        server.register(req, scope);
                                     });
                                 }
                                 Request::RegisterSource(req) => {
-                                    worker.dataflow::<u64, _, _>(|mut scope| {
-                                        server.register_source(req, &mut scope);
+                                    worker.dataflow::<u64, _, _>(|scope| {
+                                        server.register_source(req, scope);
                                     });
                                 }
                                 Request::CreateInput(CreateInput { name }) => {
-                                    worker.dataflow::<u64, _, _>(|mut scope| {
-                                        server.create_input(&name, &mut scope);
+                                    worker.dataflow::<u64, _, _>(|scope| {
+                                        server.create_input(&name, scope);
                                     });
                                 }
                                 Request::AdvanceInput(name, tx) => server.advance_input(name, tx),

@@ -13,14 +13,14 @@ use declarative_dataflow::{Plan, Rule, Value};
 #[test]
 fn match_ea_after_input() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [:find ?v :where [1 :name ?n]]
         let plan = Plan::MatchEA(1, ":name".to_string(), 1);
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":name", &mut scope);
+        worker.dataflow::<u64, _, _>(|scope| {
+            server.create_input(":name", scope);
         });
 
         let tx_data = vec![
@@ -33,7 +33,7 @@ fn match_ea_after_input() {
 
         worker.step_while(|| server.is_any_outdated());
         
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             let query_name = "match_ea";
             server.register(
                 Register {
@@ -47,7 +47,7 @@ fn match_ea_after_input() {
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -71,12 +71,12 @@ fn match_ea_after_input() {
 #[test]
 fn join_after_input() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":transfer/from", &mut scope);
-            server.create_input(":user/id", &mut scope);
+        worker.dataflow::<u64, _, _>(|scope| {
+            server.create_input(":transfer/from", scope);
+            server.create_input(":user/id", scope);
         });
 
         worker.step_while(|| server.is_any_outdated());
@@ -101,7 +101,7 @@ fn join_after_input() {
             worker.step_while(|| server.is_any_outdated());
         }
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
 
             let (transfer, sender, uuid) = (1, 2, 3);
             let plan = Plan::Project(Project {
@@ -122,11 +122,11 @@ fn join_after_input() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

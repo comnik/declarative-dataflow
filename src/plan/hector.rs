@@ -14,10 +14,8 @@ use timely::progress::Timestamp;
 use timely::order::Product;
 use timely::dataflow::operators::Partition;
 use timely::dataflow::operators::Concatenate;
-use timely::communication::Allocate;
 // use timely::dataflow::operators::Inspect;
 use timely::dataflow::scopes::child::{Child, Iterative};
-use timely::worker::Worker;
 
 use timely_sort::Unsigned;
 
@@ -82,12 +80,12 @@ fn select_e((e,_v): &(Value,Value)) -> Value { e.clone() }
 fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
 
 impl Implementable for Hector {
-    fn implement<'a, 'b, A: Allocate>(
+    fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
-        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
-        _local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        nested: &mut Iterative<'b, S, u64>,
+        _local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut QueryMap<isize>,
-    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
+    ) -> SimpleRelation<'b, S> {
 
         let nested_copy = nested.clone();
 
@@ -138,7 +136,7 @@ impl Implementable for Hector {
 
                 println!("IDX {:?}", idx);
                 
-                let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Child<'_, Child<'_, Worker<A>, u64>, Product<u64, u64>>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
+                let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Child<'_, S, Product<u64, u64>>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
                 
                 // @TODO reverse if necessary
                 

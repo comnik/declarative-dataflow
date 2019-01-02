@@ -14,7 +14,7 @@ use declarative_dataflow::{Plan, Rule, Value};
 #[test]
 fn truncate() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [:find ?h :where [?e :timestamp ?t] [(interval ?t) ?h]]
@@ -29,8 +29,8 @@ fn truncate() {
             constants: constants
         });
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
-            server.create_input(":timestamp", &mut scope);
+        worker.dataflow::<u64, _, _>(|scope| {
+            server.create_input(":timestamp", scope);
 
             let query_name = "truncate";
             server.register(
@@ -41,11 +41,11 @@ fn truncate() {
                     }],
                     publish: vec![query_name.to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest(query_name, &mut scope)
+                .interest(query_name, scope)
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

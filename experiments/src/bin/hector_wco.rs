@@ -19,7 +19,7 @@ fn main() {
 
         let timer = std::time::Instant::now();
         let graph = GraphMMap::new(&filename);
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
 
         // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
         let (a,b,c) = (1,2,3);
@@ -34,7 +34,7 @@ fn main() {
         let peers = worker.peers();
         let index = worker.index();
 
-        worker.dataflow::<u64,_,_>(|mut scope| {
+        worker.dataflow::<u64,_,_>(|scope| {
             server.create_input("edge", scope);
 
             server.register(
@@ -44,11 +44,11 @@ fn main() {
                     ],
                     publish: vec!["triangles".to_string()],
                 },
-                &mut scope,
+                scope,
             );
 
             server
-                .interest("triangles", &mut scope)
+                .interest("triangles", scope)
                 .filter(move |_| inspect)
                 .inspect(|x| println!("\tTriangle: {:?}", x));
         });

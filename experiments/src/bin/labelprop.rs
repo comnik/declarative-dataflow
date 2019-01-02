@@ -18,7 +18,7 @@ use declarative_dataflow::server::{Server, Register, RegisterSource};
 fn main() {
     timely::execute(Configuration::Thread, move |worker| {
 
-        let mut server = Server::new(Default::default());
+        let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
         let (x, y, z) = (0, 1, 2);

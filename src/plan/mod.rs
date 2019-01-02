@@ -1,39 +1,38 @@
 //! Types and traits for implementing query plans.
 
-use timely::communication::Allocate;
-use timely::dataflow::scopes::child::{Child, Iterative};
-use timely::worker::Worker;
+use timely::dataflow::Scope;
+use timely::dataflow::scopes::child::Iterative;
 
 use {Attribute, Entity, Value, Var};
 use {QueryMap, Relation, RelationMap, SimpleRelation};
 
+pub mod project;
 pub mod aggregate;
-pub mod antijoin;
-pub mod filter;
+pub mod union;
 pub mod join;
 pub mod hector;
-pub mod project;
+pub mod antijoin;
+pub mod filter;
 pub mod transform;
-pub mod union;
 
+pub use self::project::Project;
 pub use self::aggregate::{Aggregate, AggregationFn};
-pub use self::antijoin::Antijoin;
-pub use self::filter::{Filter, Predicate};
+pub use self::union::Union;
 pub use self::join::Join;
 pub use self::hector::{Hector, Binding};
-pub use self::project::Project;
+pub use self::antijoin::Antijoin;
+pub use self::filter::{Filter, Predicate};
 pub use self::transform::{Function, Transform};
-pub use self::union::Union;
 
 /// A type that can be implemented as a simple relation.
 pub trait Implementable {
     /// Implements the type as a simple relation.
-    fn implement<'a, 'b, A: Allocate>(
+    fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
-        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        nested: &mut Iterative<'b, S, u64>,
+        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut QueryMap<isize>,
-    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>>;
+    ) -> SimpleRelation<'b, S>;
 }
 
 /// Possible query plan types.
@@ -57,8 +56,6 @@ pub enum Plan {
     Filter(Filter<Plan>),
     /// Transforms a binding by a function expression
     Transform(Transform<Plan>),
-    // /// Data pattern of the form [e ?a ?v]
-    // MatchE(Entity, Var, Var),
     /// Data pattern of the form [?e a ?v]
     MatchA(Var, Attribute, Var),
     /// Data pattern of the form [e a ?v]
@@ -72,12 +69,13 @@ pub enum Plan {
 }
 
 impl Implementable for Plan {
-    fn implement<'a, 'b, A: Allocate>(
+    fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
-        nested: &mut Iterative<'b, Child<'a, Worker<A>, u64>, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, Child<'a, Worker<A>, u64>, u64>>,
+        nested: &mut Iterative<'b, S, u64>,
+        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut QueryMap<isize>,
-    ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
+    ) -> SimpleRelation<'b, S> {
+        
         // use differential_dataflow::AsCollection;
         // use timely::dataflow::operators::ToStream;
         // use differential_dataflow::operators::arrange::ArrangeBySelf;

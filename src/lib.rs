@@ -9,6 +9,8 @@
 extern crate differential_dataflow;
 extern crate timely;
 extern crate timely_sort;
+#[macro_use]
+extern crate log;
 
 // #[macro_use]
 // extern crate abomonation_derive;
@@ -21,11 +23,9 @@ extern crate num_rational;
 
 use std::collections::{HashMap, HashSet};
 
-use timely::communication::Allocate;
-use timely::dataflow::scopes::child::{Child, Iterative};
+use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::*;
 use timely::order::Product;
-use timely::worker::Worker;
 
 use differential_dataflow::collection::Collection;
 use differential_dataflow::operators::arrange::{Arrange, TraceAgent};
@@ -236,10 +236,10 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> {
 /// Takes a query plan and turns it into a differential dataflow. The
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
-pub fn implement<A: Allocate>(
+pub fn implement<S: Scope<Timestamp = u64>>(
     mut rules: Vec<Rule>,
     publish: Vec<String>,
-    scope: &mut Child<Worker<A>, u64>,
+    scope: &mut S,
     global_arrangements: &mut QueryMap<isize>,
     _probe: &mut ProbeHandle<u64>,
 ) -> HashMap<String, RelationHandle> {
@@ -279,7 +279,7 @@ pub fn implement<A: Allocate>(
         // Step 3: define the executions for each rule ...
         let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
-            println!("Planning {:?}", rule.name);
+            info!("planning {:?}", rule.name);
             executions.push(
                 rule.plan
                     .implement(nested, &local_arrangements, global_arrangements),
@@ -294,20 +294,6 @@ pub fn implement<A: Allocate>(
                 .set(&execution.tuples().distinct());
         }
 
-        println!("Done");
         result_map
     })
 }
-
-// /// Create a new DB instance and interactive session.
-// pub fn create_db<A: Allocate, T: Timestamp+Lattice>(scope: &mut Child<Worker<A>, T>) -> (InputSession<T, Datom, isize>, DB<T>) {
-//     let (input_handle, datoms) = scope.new_collection::<Datom, isize>();
-//     let db = DB {
-//         e_av: datoms.map(|Datom(e, a, v)| (e, (a, v))).arrange_by_key().trace,
-//         a_ev: datoms.map(|Datom(e, a, v)| (a, (e, v))).arrange_by_key().trace,
-//         ea_v: datoms.map(|Datom(e, a, v)| ((e, a), v)).arrange_by_key().trace,
-//         av_e: datoms.map(|Datom(e, a, v)| ((a, v), e)).arrange_by_key().trace,
-//     };
-
-//     (input_handle, db)
-// }

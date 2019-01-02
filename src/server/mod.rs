@@ -3,13 +3,11 @@
 extern crate differential_dataflow;
 extern crate timely;
 
+use std::hash::Hash;
 use std::collections::HashMap;
 
-use timely::communication::Allocate;
-use timely::dataflow::scopes::Child;
 // use timely::dataflow::operators::Inspect;
-use timely::dataflow::ProbeHandle;
-use timely::worker::Worker;
+use timely::dataflow::{Scope, ProbeHandle};
 
 use differential_dataflow::collection::Collection;
 use differential_dataflow::input::{Input, InputSession};
@@ -116,7 +114,7 @@ pub enum Request {
 
 /// Server context maintaining globally registered arrangements and
 /// input handles.
-pub struct Server {
+pub struct Server<Token: Hash> {
     /// Server configuration.
     pub config: Config,
     /// Input handles to global arrangements.
@@ -125,9 +123,11 @@ pub struct Server {
     pub global_arrangements: QueryMap<isize>,
     /// A probe for the transaction id time domain.
     pub probe: ProbeHandle<u64>,
+    /// Mapping from query names to interested client tokens.
+    pub interests: HashMap<String, Vec<Token>>,
 }
 
-impl Server {
+impl<Token: Hash> Server<Token> {
     /// Creates a new server state from a configuration.
     pub fn new(config: Config) -> Self {
         Server {
@@ -135,6 +135,7 @@ impl Server {
             input_handles: HashMap::new(),
             global_arrangements: HashMap::new(),
             probe: ProbeHandle::new(),
+            interests: HashMap::new(),
         }
     }
 
@@ -229,18 +230,33 @@ impl Server {
     }
 
     /// Handle an Interest request.
-    pub fn interest<'a, A: Allocate>(
-        &mut self,
-        name: &str,
-        scope: &mut Child<'a, Worker<A>, u64>,
-    ) -> Collection<Child<'a, Worker<A>, u64>, Vec<Value>, isize> {
+    pub fn interest<S: Scope<Timestamp = u64>>
+        (&mut self, name: &str, scope: &mut S) -> Collection<S, Vec<Value>, isize> {
 
         // @TODO this should be able to assume that it will be called
-        // at most once per, no matter how many clients are interested
+        // at most once per distinct name, no matter how many clients
+        // are interested
 
         match name {
             "3df.timely/operates" => {
-                panic!("not yet implemented")
+
+                // use timely::logging::{BatchLogger, TimelyEvent};
+                // use timely::dataflow::operators::capture::EventWriter;
+
+                // let writer = EventWriter::new(stream);
+                // let mut logger = BatchLogger::new(writer);
+                // scope.log_register()
+                //     .insert::<TimelyEvent,_>("timely", move |time, data| logger.publish_batch(time, data));
+
+                // logging_stream
+                //     .flat_map(|(t,_,x)| {
+                //         if let Operates(event) = x {
+                //             Some((event, t, 1 as isize))
+                //         } else { None }
+                //     })
+                //     .as_collection()
+
+                panic!("not quite there yet")
             },
             _ => {
                 self.global_arrangements
@@ -250,11 +266,11 @@ impl Server {
                     .as_collection(|tuple, _| tuple.clone())
                     .probe_with(&mut self.probe)
             }
-        }        
+        }
     }
 
     /// Handle a Register request.
-    pub fn register<A: Allocate>(&mut self, req: Register, scope: &mut Child<Worker<A>, u64>) {
+    pub fn register<S: Scope<Timestamp = u64>>(&mut self, req: Register, scope: &mut S) {
         let Register { rules, publish } = req;
 
         let rel_map = implement(
@@ -275,11 +291,8 @@ impl Server {
     }
 
     /// Handle a RegisterSource request.
-    pub fn register_source<A: Allocate>(
-        &mut self,
-        req: RegisterSource,
-        scope: &mut Child<Worker<A>, u64>,
-    ) {
+    pub fn register_source<S: Scope<Timestamp = u64>>(&mut self, req: RegisterSource, scope: &mut S) {
+        
         let RegisterSource { mut names, source } = req;
 
         if names.len() == 1 {
@@ -316,11 +329,7 @@ impl Server {
     }
 
     /// Handle a CreateInput request.
-    pub fn create_input<A: Allocate>(
-        &mut self,
-        name: &str,
-        scope: &mut Child<Worker<A>, u64>,
-    ) {
+    pub fn create_input<S: Scope<Timestamp = u64>>(&mut self, name: &str, scope: &mut S) {
         if self.global_arrangements.contains_key(name) {
             panic!("Input name clashes with existing trace.");
         } else {
