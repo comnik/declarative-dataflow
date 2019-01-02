@@ -38,22 +38,8 @@ use slab::Slab;
 use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, Request, Server, CreateInput};
+use declarative_dataflow::server_impl::{Command, Result};
 use declarative_dataflow::Value;
-
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug)]
-struct Command {
-    id: usize,
-    // the worker (typically a controller) that issued this command
-    // and is the one that should receive outputs
-    owner: usize,
-    // the client token that issued the command (only relevant to the
-    // owning worker, no one else has the connection)
-    client: Option<usize>,
-    cmd: String,
-}
-
-/// (tuple, diff) as sent back to external clients.
-pub type Output = (Vec<Value>, isize, u64);
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
@@ -260,7 +246,7 @@ fn main() {
                                     info!("NO INTEREST FOR THIS RESULT");
                                 }
                                 Some(tokens) => {
-                                    let serialized = serde_json::to_string::<(String, Vec<Output>)>(
+                                    let serialized = serde_json::to_string::<(String, Vec<Result>)>(
                                         &(query_name, results),
                                     ).expect("failed to serialize outputs");
                                     let msg = ws::Message::text(serialized);
@@ -429,7 +415,7 @@ fn main() {
                                             .inner
                                             .unary_notify(
                                                 Exchange::new(move |_| owner as u64),
-                                                "OutputsRecv",
+                                                "ResultsRecv",
                                                 vec![],
                                                 move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
 
@@ -438,7 +424,7 @@ fn main() {
 
                                                     input.for_each(|_time, data| {
                                                         // notificator.notify_at(time.retain());
-                                                        let out: Vec<Output> = data.iter()
+                                                        let out: Vec<Result> = data.iter()
                                                             .map(|(tuple, t, diff)| (tuple.clone(), *diff, *t))
                                                             .collect();
 
@@ -483,7 +469,7 @@ fn main() {
     }).unwrap(); // asserts error-free execution
 }
 
-// fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Output>)>) {
+// fn run_tcp_server(command_channel: Sender<String>, results_channel: Receiver<(String, Vec<Result>)>) {
 
 //     let send_handle = &command_channel;
 
@@ -505,7 +491,7 @@ fn main() {
 //                     match results_channel.recv() {
 //                         Err(_err) => break,
 //                         Ok(results) => {
-//                             let serialized = serde_json::to_string::<(String, Vec<Output>)>(&results)
+//                             let serialized = serde_json::to_string::<(String, Vec<Result>)>(&results)
 //                                 .expect("failed to serialize outputs");
 
 //                             writer.write(serialized.as_bytes()).expect("failed to send output");
