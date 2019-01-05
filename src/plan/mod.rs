@@ -14,6 +14,7 @@ pub mod hector;
 pub mod antijoin;
 pub mod filter;
 pub mod transform;
+pub mod pull_level;
 
 pub use self::project::Project;
 pub use self::aggregate::{Aggregate, AggregationFn};
@@ -23,6 +24,7 @@ pub use self::hector::{Hector, Binding};
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
 pub use self::transform::{Function, Transform};
+pub use self::pull_level::PullLevel;
 
 /// A type that can be implemented as a simple relation.
 pub trait Implementable {
@@ -66,6 +68,8 @@ pub enum Plan {
     RuleExpr(Vec<Var>, String),
     /// Sources data from a published relation
     NameExpr(Vec<Var>, String),
+    /// Single-level pull expression
+    PullLevel(PullLevel<Plan>),
 }
 
 impl Implementable for Plan {
@@ -178,6 +182,9 @@ impl Implementable for Plan {
                         .enter(nested)
                         .as_collection(|tuple, _| tuple.clone()),
                 },
+            },
+            &Plan::PullLevel(ref pull) => {
+                pull.implement(nested, local_arrangements, global_arrangements)
             },
         }
     }
