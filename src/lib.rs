@@ -153,6 +153,8 @@ trait Relation<'a, G: Scope> {
     fn symbols(&self) -> &[Var];
     /// A collection containing all tuples.
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
+    /// Returns the offset at which values for this symbol occur.
+    fn offset(&self, sym: &Var) -> usize;
     /// A collection with tuples partitioned by `syms`.
     ///
     /// Variables present in `syms` are collected in order and populate a first "key"
@@ -178,6 +180,9 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> {
     }
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
         self.tuples
+    }
+    fn offset(&self, sym: &Var) -> usize {
+        self.symbols().iter().position(|&x| *sym == x).unwrap()
     }
 
     /// Separates tuple fields by those in `syms` and those not.
