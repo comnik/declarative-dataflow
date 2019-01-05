@@ -2,7 +2,6 @@ extern crate declarative_dataflow;
 extern crate timely;
 
 use std::sync::mpsc::channel;
-use std::thread;
 
 use timely::Configuration;
 
@@ -55,16 +54,8 @@ fn match_ea_after_input() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::String("Alias".to_string())], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::String("Dipper".to_string())], 1)
-            );
-        }).join().unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::String("Alias".to_string())], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::String("Dipper".to_string())], 1));
     }).unwrap();
 }
 
@@ -134,11 +125,6 @@ fn join_after_input() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(101), Value::Eid(1)], 1)
-            );
-        }).join().unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(101), Value::Eid(1)], 1));
     }).unwrap();
 }

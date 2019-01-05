@@ -2,8 +2,9 @@ extern crate declarative_dataflow;
 extern crate num_rational;
 extern crate timely;
 
+use std::time::Duration;
+use std::collections::HashSet;
 use std::sync::mpsc::channel;
-use std::thread;
 
 use timely::Configuration;
 
@@ -105,18 +106,9 @@ fn count() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(4)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Number(1)], 1)
-            );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(4)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(1)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
     }).unwrap();
 }
 
@@ -209,18 +201,9 @@ fn max() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(6)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Number(10)], 1)
-            );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(10)], 1));
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(6)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Number(10)], 1));
     }).unwrap();
 }
 
@@ -313,18 +296,9 @@ fn min() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(2)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Number(10)], 1)
-            );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(2)], 1));
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(2)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Number(2)], 1));
     }).unwrap();
 }
 
@@ -417,18 +391,9 @@ fn sum() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(17)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Number(10)], 1)
-            );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(27)], 1));
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(17)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Number(27)], 1));
     }).unwrap();
 }
 
@@ -521,21 +486,9 @@ fn avg() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Rational32(Ratio::new(17, 4))], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Rational32(Ratio::new(10, 1))], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Rational32(Ratio::new(27, 5))], 1)
-            );
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Rational32(Ratio::new(17, 4))], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Rational32(Ratio::new(10, 1))], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(27, 5))], 1));
     }).unwrap();
 }
 
@@ -624,24 +577,9 @@ fn avg() {
 
 //         worker.step_while(|| server.is_any_outdated());
 
-//         thread::spawn(move || {
-//             assert_eq!(
-//                 results.recv().unwrap(),
-//                 (
-//                     vec![Value::Eid(1), Value::Rational32(Ratio::new(35, 16))],
-//                     1
-//                 )
-//             );
-//             assert_eq!(
-//                 results.recv().unwrap(),
-//                 (vec![Value::Eid(2), Value::Rational32(Ratio::new(0, 1))], 1)
-//             );
-//             assert_eq!(
-//                 results.recv().unwrap(),
-//                 (vec![Value::Rational32(Ratio::new(176, 25))], 1)
-//             );
-//         }).join()
-//             .unwrap();
+            // assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Rational32(Ratio::new(35, 16))], 1));
+            // assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Rational32(Ratio::new(0, 1))], 1));
+            // assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(176, 25))], 1));
 //     }).unwrap();
 // }
 
@@ -734,18 +672,9 @@ fn median() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Number(5)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Number(10)], 1)
-            );
-            assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(5)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
     }).unwrap();
 }
 
@@ -875,56 +804,42 @@ fn multi() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (
-                    vec![
-                        Value::Number(10),
-                        Value::Number(4),
-                        Value::Number(36),
-                        Value::Rational32(Ratio::new(14, 1)),
-                    ],
-                    1
-                )
-            );
-            assert_eq!(
+        let mut expected = HashSet::new();
+        expected.insert((vec![
+            Value::Number(10),
+            Value::Number(4),
+            Value::Number(36),
+            Value::Rational32(Ratio::new(14, 1))
+        ], 1));
+        expected.insert((vec![
+            Value::Eid(1),
+            Value::Number(2),
+            Value::Number(10),
+            Value::Number(6),
+            Value::Number(5),
+            Value::Number(4),
+            Value::Number(15),
+            Value::Number(10),
+            Value::Number(5),
+        ], 1));
+        expected.insert((vec![
+            Value::Eid(2),
+            Value::Number(2),
+            Value::Number(4),
+            Value::Number(4),
+            Value::Number(2),
+            Value::Number(5),
+            Value::Number(42),
+            Value::Number(42),
+            Value::Number(2),
+        ], 1));
 
-                results.recv().unwrap(),
-                (
-                    vec![
-                        Value::Eid(1),
-                        Value::Number(2),
-                        Value::Number(10),
-                        Value::Number(6),
-                        Value::Number(5),
-                        Value::Number(4),
-                        Value::Number(15),
-                        Value::Number(10),
-                        Value::Number(5),
-                    ],
-                    1
-                )
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (
-                    vec![
-                        Value::Eid(2),
-                        Value::Number(2),
-                        Value::Number(4),
-                        Value::Number(4),
-                        Value::Number(2),
-                        Value::Number(5),
-                        Value::Number(42),
-                        Value::Number(42),
-                        Value::Number(2),
-                    ],
-                    1
-                )
-            );
-        }).join()
-            .unwrap();
+        for _i in 0..expected.len() {
+            let result = results.recv().unwrap();
+            if !expected.remove(&result) { panic!("unknown result {:?}", result); }
+        }
+
+        assert!(results.recv_timeout(Duration::from_millis(400)).is_err());
     }).unwrap();
 }
 
@@ -997,17 +912,6 @@ fn with() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (
-                    vec![
-                        Value::Number(6),
-                    ],
-                    1
-                )
-            );
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Number(6)], 1));
     }).unwrap();
 }

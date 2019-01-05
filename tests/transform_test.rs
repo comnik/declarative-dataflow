@@ -2,7 +2,6 @@ extern crate declarative_dataflow;
 extern crate timely;
 
 use std::sync::mpsc::channel;
-use std::thread;
 use std::collections::HashMap;
 
 use timely::Configuration;
@@ -75,16 +74,7 @@ fn truncate() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(1), Value::Instant(1540048515500), Value::Instant(1540047600000)], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::Eid(2), Value::Instant(1540048515616), Value::Instant(1540047600000)], 1)
-            );
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Instant(1540048515500), Value::Instant(1540047600000)], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Instant(1540048515616), Value::Instant(1540047600000)], 1));
     }).unwrap();
 }

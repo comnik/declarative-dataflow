@@ -1,9 +1,7 @@
 extern crate declarative_dataflow;
-extern crate num_rational;
 extern crate timely;
 
 use std::sync::mpsc::channel;
-use std::thread;
 
 use timely::Configuration;
 
@@ -72,17 +70,8 @@ fn match_ea() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::String("Alias".to_string())], 1)
-            );
-            assert_eq!(
-                results.recv().unwrap(),
-                (vec![Value::String("Dipper".to_string())], 1)
-            );
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::String("Alias".to_string())], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::String("Dipper".to_string())], 1));
     }).unwrap();
 }
 
@@ -145,20 +134,7 @@ fn join() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(
-                results.recv().unwrap(),
-                (
-                    vec![
-                        Value::Eid(1),
-                        Value::String("Dipper".to_string()),
-                        Value::Number(12),
-                    ],
-                    1
-                )
-            );
-        }).join()
-            .unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::String("Dipper".to_string()), Value::Number(12)], 1));
     }).unwrap();
 }
 
@@ -218,9 +194,7 @@ fn hector() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(100), Value::Eid(300), Value::Eid(200)], 1));
-        }).join().unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(100), Value::Eid(300), Value::Eid(200)], 1));
     }).unwrap();
 }
 
@@ -280,9 +254,7 @@ fn hector_join() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        thread::spawn(move || {
-            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(12), Value::String("Dipper".to_string())], 1));
-            assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(13), Value::String("Mabel".to_string())], 1));
-        }).join().unwrap();
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(12), Value::String("Dipper".to_string())], 1));
+        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(13), Value::String("Mabel".to_string())], 1));
     }).unwrap();
 }
