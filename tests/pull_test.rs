@@ -30,7 +30,7 @@ fn pull_level() {
             server.create_input("age", scope);
 
             server
-                .test_single(scope, Rule { name: "pull_level".to_string(), plan: plan, })
+                .test_single(scope, Rule { name: "pull_level".to_string(), plan })
                 .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
         });
 
@@ -87,7 +87,7 @@ fn pull_children() {
             server.create_input("age", scope);
 
             server
-                .test_single(scope, Rule { name: "pull_children".to_string(), plan: plan, })
+                .test_single(scope, Rule { name: "pull_children".to_string(), plan })
                 .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
         });
 

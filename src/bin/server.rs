@@ -171,7 +171,6 @@ fn main() {
                     CLI => {
                         while let Ok(cli_input) = recv_cli.try_recv() {
                             let command = Command {
-                                id: 0, // @TODO command ids?
                                 owner: worker.index(),
                                 client: None,
                                 cmd: cli_input,
@@ -303,7 +302,6 @@ fn main() {
                                             match conn_event {
                                                 ConnEvent::Message(msg) => {
                                                     let command = Command {
-                                                        id: 0, // @TODO command ids?
                                                         owner: worker.index(),
                                                         client: Some(token.into()),
                                                         cmd: msg.into_text().unwrap(),

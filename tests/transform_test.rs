@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Function, Transform};
-use declarative_dataflow::server::{Register, Server, Transact, TxData};
+use declarative_dataflow::server::{Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
 
 #[test]
@@ -31,41 +31,17 @@ fn truncate() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":timestamp", scope);
 
-            let query_name = "truncate";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
-                .inspect(move |x| {
-                    send_results.send((x.0.clone(), x.2)).unwrap();
-                });
+                .test_single(scope, Rule { name: "truncate".to_string(), plan })
+                .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
         });
 
         server.transact(
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(
-                        1,
-                        1,
-                        ":timestamp".to_string(),
-                        Value::Instant(1540048515500),
-                    ),
-                    TxData(
-                        1,
-                        2,
-                        ":timestamp".to_string(),
-                        Value::Instant(1540048515616),
-                    ),
+                    TxData(1, 1, ":timestamp".to_string(), Value::Instant(1540048515500)),
+                    TxData(1, 2, ":timestamp".to_string(), Value::Instant(1540048515616)),
                 ],
             },
             0,

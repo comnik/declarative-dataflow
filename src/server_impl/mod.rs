@@ -13,8 +13,6 @@ use {Value};
 /// A mutation of server state.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug)]
 pub struct Command {
-    /// Unique command identifier.
-    pub id: usize,
     /// The worker that received this command from a client originally
     /// and is therefore the one that should receive all outputs.
     pub owner: usize,
