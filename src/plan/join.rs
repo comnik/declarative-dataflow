@@ -13,7 +13,7 @@ use {QueryMap, RelationMap, SimpleRelation, Var};
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
 /// sources.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Join<P1: Implementable, P2: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

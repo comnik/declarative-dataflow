@@ -9,7 +9,7 @@ use Relation;
 use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 
 /// Permitted functions.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Function {
     /// Truncates a unix timestamp into an hourly interval
     TRUNCATE,
@@ -23,7 +23,7 @@ pub enum Function {
 /// Frontends are responsible for ensuring that the source
 /// binds the argument symbols and that the result is projected onto
 /// the right symbol.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Transform<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

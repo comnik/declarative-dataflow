@@ -10,7 +10,7 @@ use {QueryMap, RelationMap, SimpleRelation, Var};
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible
 /// for ensuring that the source binds all requested symbols.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Project<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

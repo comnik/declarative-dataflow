@@ -9,7 +9,7 @@ use {QueryMap, RelationMap, SimpleRelation, Var, Attribute, Value};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct PullLevel<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

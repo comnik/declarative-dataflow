@@ -10,7 +10,7 @@ use Relation;
 use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 
 /// Permitted comparison predicates.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Predicate {
     /// Less than
     LT,
@@ -48,7 +48,7 @@ fn neq(a: &Value, b: &Value) -> bool {
 /// A plan stage filtering source tuples by the specified
 /// predicate. Frontends are responsible for ensuring that the source
 /// binds the argument symbols.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Filter<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

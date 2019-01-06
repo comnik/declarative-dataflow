@@ -12,7 +12,7 @@ use {QueryMap, RelationMap, SimpleRelation, Var};
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
 /// (i.e. bind all of the same symbols in the same order).
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Union<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

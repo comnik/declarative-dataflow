@@ -17,7 +17,7 @@ extern crate env_logger;
 extern crate abomonation_derive;
 extern crate abomonation;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::io::BufRead;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
@@ -79,8 +79,17 @@ fn main() {
         // setup interpretation context
         let mut server = Server::<Token>::new(config.clone());
 
+        // pre-load builtins for the sequencer
+        let builtins = Server::<Token>::builtins();
+        let preload_command = Command {
+            owner: worker.index(),
+            client: None,
+            cmd: serde_json::to_string::<Vec<Request>>(&builtins).expect("failed to serialize built-in request"),
+        };
+        
         // setup serialized command queue (shared between all workers)
-        let mut sequencer: Sequencer<Command> = Sequencer::new(worker, Instant::now());
+        let mut sequencer: Sequencer<Command> =
+            Sequencer::new(worker, Instant::now(), VecDeque::from(vec![preload_command]));
 
         // configure websocket server
         let ws_settings = ws::Settings {

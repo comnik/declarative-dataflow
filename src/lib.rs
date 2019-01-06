@@ -129,7 +129,7 @@ pub struct DB {
 //
 
 /// A named relation.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Rule {
     /// The name binding the relation.
     pub name: String,

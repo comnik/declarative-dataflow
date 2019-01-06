@@ -14,7 +14,7 @@ use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 use num_rational::{Ratio, Rational32};
 
 /// Permitted aggregation function.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum AggregationFn {
     /// Minimum
     MIN,
@@ -38,7 +38,7 @@ pub enum AggregationFn {
 /// A plan stage applying the specified aggregation functions to
 /// bindings for the specified symbols.
 /// Given multiple aggregations we iterate and n-1 joins are applied to the results.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Aggregate<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

@@ -39,7 +39,7 @@ use {QueryMap, RelationMap, SimpleRelation, Value, Var};
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
 /// sources.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Hector {
     /// Bindings to join.
     pub bindings: Vec<Binding>,
@@ -47,7 +47,7 @@ pub struct Hector {
 
 /// Describes symbols whose possible values are given by a global
 /// arrangement.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Binding {
     /// The symbols this binding talks about.
     pub symbols: (Var,Var),

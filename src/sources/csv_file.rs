@@ -14,7 +14,7 @@ use {Value, Entity};
 use sources::Sourceable;
 
 /// A local filesystem data source.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct CsvFile {
     /// Path to a file on each workers local filesystem.
     pub path: String,

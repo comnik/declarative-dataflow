@@ -41,12 +41,12 @@ impl Default for Config {
 
 /// Transaction data. Conceptually a pair (Datom, diff) but it's kept
 /// intentionally flat to be more directly compatible with Datomic.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
 
 /// A request expressing the arrival of inputs to one or more
 /// collections. Optionally a timestamp may be specified.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Transact {
     /// The timestamp at which this transaction occured.
     pub tx: Option<u64>,
@@ -56,7 +56,7 @@ pub struct Transact {
 
 /// A request expressing interest in receiving results published under
 /// the specified name.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Interest {
     /// The name of a previously registered dataflow.
     pub name: String,
@@ -64,7 +64,7 @@ pub struct Interest {
 
 /// A request with the intent of synthesising one or more new rules
 /// and optionally publishing one or more of them.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct Register {
     /// A list of rules to synthesise in order.
     pub rules: Vec<Rule>,
@@ -74,7 +74,7 @@ pub struct Register {
 
 /// A request with the intent of attaching to an external data source
 /// and publishing it under a globally unique name.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct RegisterSource {
     /// One or more globally unique names.
     pub names: Vec<String>,
@@ -84,7 +84,7 @@ pub struct RegisterSource {
 
 /// A request with the intent of creating a new named, globally
 /// available input that can be transacted upon.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct CreateInput {
     /// A globally unique name under which to publish data sent via
     /// this input.
@@ -92,7 +92,7 @@ pub struct CreateInput {
 }
 
 /// Possible request types.
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
     /// Sends a single datom.
     Datom(Entity, Attribute, Value, isize, u64),
@@ -137,6 +137,26 @@ impl<Token: Hash> Server<Token> {
             probe: ProbeHandle::new(),
             interests: HashMap::new(),
         }
+    }
+
+    /// Returns commands to install built-in plans.
+    pub fn builtins() -> Vec<Request> {
+        vec![
+            Request::CreateInput(CreateInput { name: "3df.pattern/e".to_string() }), 
+            Request::CreateInput(CreateInput { name: "3df.pattern/a".to_string() }), 
+            Request::CreateInput(CreateInput { name: "3df.pattern/v".to_string() }), 
+
+            Request::CreateInput(CreateInput { name: "3df.join/binding".to_string() }), 
+
+            Request::CreateInput(CreateInput { name: "3df.union/binding".to_string() }), 
+
+            Request::CreateInput(CreateInput { name: "3df.project/binding".to_string() }), 
+            Request::CreateInput(CreateInput { name: "3df.project/symbols".to_string() }), 
+
+            Request::CreateInput(CreateInput { name: "3df.name".to_string() }), 
+            Request::CreateInput(CreateInput { name: "3df.name/symbols".to_string() }), 
+            Request::CreateInput(CreateInput { name: "3df.name/plan".to_string() }), 
+        ]
     }
 
     fn register_global_arrangement(

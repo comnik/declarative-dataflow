@@ -13,7 +13,7 @@ use {QueryMap, RelationMap, SimpleRelation, Var};
 /// A plan stage anti-joining both its sources on the specified
 /// symbols. Throws if the sources are not union-compatible, i.e. bind
 /// all of the same symbols in the same order.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Antijoin<P1: Implementable, P2: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

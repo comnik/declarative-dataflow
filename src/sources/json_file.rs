@@ -18,7 +18,7 @@ use {Value, Entity};
 use sources::Sourceable;
 
 /// A local filesystem data source containing JSON objects.
-#[derive(Deserialize, Clone, Debug)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct JsonFile {
     /// Path to a file on each workers local filesystem.
     pub path: String,
