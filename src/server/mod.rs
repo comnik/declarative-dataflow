@@ -390,4 +390,20 @@ impl<Token: Hash> Server<Token> {
 
         handle.close();
     }
+
+    /// Helper for registering, publishing, and indicating interest in
+    /// a single, named query. Used for testing.
+    pub fn test_single<S: Scope<Timestamp = u64>>
+        (&mut self, scope: &mut S, rule: Rule) -> Collection<S, Vec<Value>, isize> {
+            
+        let interest_name = rule.name.clone();
+        let publish_name = rule.name.clone();
+
+        self.register(Register {
+            rules: vec![rule],
+            publish: vec![publish_name],
+        }, scope);
+
+        self.interest(&interest_name, scope)
+    }
 }
