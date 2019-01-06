@@ -79,7 +79,10 @@ fn main() {
         // setup interpretation context
         let mut server = Server::<Token>::new(config.clone());
 
-        // pre-load builtins for the sequencer
+        // The server might specify a sequence of requests for
+        // setting-up built-in arrangements. We serialize those here
+        // and pre-load the sequencer with them, such that they will
+        // flow through the regular request handling.
         let builtins = Server::<Token>::builtins();
         let preload_command = Command {
             owner: worker.index(),

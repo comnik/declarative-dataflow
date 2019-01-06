@@ -16,6 +16,7 @@ use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
 use sources::{Source, Sourceable};
+use plan::{Plan, Pull, PullLevel};
 use {implement, Attribute, Entity, QueryMap, Rule, TraceKeyHandle, Value};
 
 /// Server configuration.
