@@ -17,7 +17,7 @@ extern crate env_logger;
 extern crate abomonation_derive;
 extern crate abomonation;
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 use std::io::BufRead;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
@@ -39,7 +39,6 @@ use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, Request, Server, CreateInput};
 use declarative_dataflow::server_impl::{Command, Result};
-use declarative_dataflow::Value;
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);

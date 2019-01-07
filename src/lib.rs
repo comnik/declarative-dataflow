@@ -90,39 +90,9 @@ pub struct Datom(pub Entity, pub Attribute, pub Value);
 /// A handle to a collection trace.
 pub type TraceKeyHandle<K, R> = TraceAgent<K, (), u64, R, OrdKeySpine<K, u64, R>>;
 type TraceValHandle<K, V, R> = TraceAgent<K, V, u64, R, OrdValSpine<K, V, u64, R>>;
-// type Arrange<G, K, V, R> = Arranged<G, K, V, R, TraceValHandle<K, V, <G as ScopeParent>::Timestamp, R>>;
 /// A map from global names to registered traces.
 pub type QueryMap<R> = HashMap<String, TraceKeyHandle<Vec<Value>, R>>;
 type RelationMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
-
-//
-// CONTEXT
-//
-
-/// Handles to maintained indices
-///
-/// A `DB` contains multiple indices for (entity, attribute, value) triples, by various
-/// subsets of these three fields. These indices can be shared between all queries that
-/// need access to the common data.
-pub struct DB {
-    /// Indexed by entity.
-    pub e_av: TraceValHandle<Entity, (Attribute, Value), isize>,
-    /// Indexed by attribute.
-    pub a_ev: TraceValHandle<Attribute, (Entity, Value), isize>,
-    /// Indexed by (entity, attribute).
-    pub ea_v: TraceValHandle<(Entity, Attribute), Value, isize>,
-    /// Indexed by (attribute, value).
-    pub av_e: TraceValHandle<(Attribute, Value), Entity, isize>,
-}
-
-// /// Live arrangements.
-// pub struct ImplContext<G: Scope + ScopeParent> where G::Timestamp : Lattice {
-//     // Imported traces
-//     e_av: Arrange<G, Entity, (Attribute, Value), isize>,
-//     a_ev: Arrange<G, Attribute, (Entity, Value), isize>,
-//     ea_v: Arrange<G, (Entity, Attribute), Value, isize>,
-//     av_e: Arrange<G, (Attribute, Value), Entity, isize>,
-// }
 
 //
 // QUERY PLAN GRAMMAR
