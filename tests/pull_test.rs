@@ -23,7 +23,8 @@ fn pull_level() {
         let plan = Plan::PullLevel(PullLevel {
             variables: vec![],
             plan: Box::new(Plan::MatchAV(e.clone(), "admin?".to_string(), Value::Bool(false))),
-            attributes: vec!["name".to_string(), "age".to_string()],
+            pull_attributes: vec!["name".to_string(), "age".to_string()],
+            path_attributes: vec![],
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
@@ -80,7 +81,8 @@ fn pull_children() {
         let plan = Plan::PullLevel(PullLevel {
             variables: vec![],
             plan: Box::new(Plan::MatchA(parent, "parent/child".to_string(), child)),
-            attributes: vec!["name".to_string(), "age".to_string()],
+            pull_attributes: vec!["name".to_string(), "age".to_string()],
+            path_attributes: vec!["parent/child".to_string()],
         });
         
         worker.dataflow::<u64, _, _>(|scope| {
@@ -114,10 +116,10 @@ fn pull_children() {
         worker.step_while(|| server.is_any_outdated());
 
         let mut expected = HashSet::new();
-        expected.insert((vec![Value::Eid(100), Value::Eid(300), Value::Attribute("age".to_string()), Value::Number(13)], 1));
-        expected.insert((vec![Value::Eid(100), Value::Eid(300), Value::Attribute("name".to_string()), Value::String("Mabel".to_string())], 1));
-        expected.insert((vec![Value::Eid(200), Value::Eid(400), Value::Attribute("age".to_string()), Value::Number(12)], 1));
-        expected.insert((vec![Value::Eid(200), Value::Eid(400), Value::Attribute("name".to_string()), Value::String("Dipper".to_string())], 1));
+        expected.insert((vec![Value::Eid(100), Value::Attribute("parent/child".to_string()), Value::Eid(300), Value::Attribute("age".to_string()), Value::Number(13)], 1));
+        expected.insert((vec![Value::Eid(100), Value::Attribute("parent/child".to_string()), Value::Eid(300), Value::Attribute("name".to_string()), Value::String("Mabel".to_string())], 1));
+        expected.insert((vec![Value::Eid(200), Value::Attribute("parent/child".to_string()), Value::Eid(400), Value::Attribute("age".to_string()), Value::Number(12)], 1));
+        expected.insert((vec![Value::Eid(200), Value::Attribute("parent/child".to_string()), Value::Eid(400), Value::Attribute("name".to_string()), Value::String("Dipper".to_string())], 1));
 
         for _i in 0..expected.len() {
             let result = results.recv().unwrap();
@@ -200,14 +202,16 @@ fn pull() {
                 PullLevel {
                     variables: vec![],
                     plan: Box::new(Plan::MatchA(a, "join/binding".to_string(), b)),
-                    attributes: vec!["pattern/e".to_string(),
-                                     "pattern/a".to_string(),
-                                     "pattern/v".to_string()],
+                    pull_attributes: vec!["pattern/e".to_string(),
+                                          "pattern/a".to_string(),
+                                          "pattern/v".to_string()],
+                    path_attributes: vec!["join/binding".to_string()],
                 },
                 PullLevel {
                     variables: vec![],
                     plan: Box::new(Plan::MatchA(a, "name".to_string(), c)),
-                    attributes: vec![],
+                    pull_attributes: vec![],
+                    path_attributes: vec!["name".to_string()],
                 }
             ]
         });
@@ -244,14 +248,12 @@ fn pull() {
 
         let mut expected = HashSet::new();
         expected.insert((vec![Value::Eid(100), Value::Attribute("name".to_string()), Value::String("rule".to_string())], 1));
-        expected.insert((vec![Value::Eid(100), Value::Attribute("join/binding".to_string()), Value::Eid(200)], 1));
-        expected.insert((vec![Value::Eid(100), Value::Attribute("join/binding".to_string()), Value::Eid(300)], 1));
-        expected.insert((vec![Value::Eid(200), Value::Attribute("pattern/a".to_string()), Value::Attribute("xyz".to_string())], 1));
-        expected.insert((vec![Value::Eid(300), Value::Attribute("pattern/e".to_string()), Value::Eid(12345)], 1));
-        expected.insert((vec![Value::Eid(300), Value::Attribute("pattern/a".to_string()), Value::Attribute("asd".to_string())], 1));
-
+        expected.insert((vec![Value::Eid(100), Value::Attribute("join/binding".to_string()), Value::Eid(200), Value::Attribute("pattern/a".to_string()), Value::Attribute("xyz".to_string())], 1));
+        expected.insert((vec![Value::Eid(100), Value::Attribute("join/binding".to_string()), Value::Eid(300), Value::Attribute("pattern/e".to_string()), Value::Eid(12345)], 1));
+        expected.insert((vec![Value::Eid(100), Value::Attribute("join/binding".to_string()), Value::Eid(300), Value::Attribute("pattern/a".to_string()), Value::Attribute("asd".to_string())], 1));
+        
         for _i in 0..expected.len() {
-            let result = results.recv().unwrap();
+            let result = results.recv_timeout(Duration::from_millis(400)).unwrap();
             if !expected.remove(&result) { panic!("unknown result {:?}", result); }
         }
 

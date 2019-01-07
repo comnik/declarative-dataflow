@@ -19,7 +19,10 @@ pub struct PullLevel<P: Implementable> {
     /// Plan for the input relation.
     pub plan: Box<P>,
     /// Attributes to pull for the input entities.
-    pub attributes: Vec<Attribute>,
+    pub pull_attributes: Vec<Attribute>,
+    /// Attribute names to distinguish plans of the same
+    /// length. Useful to feed into a nested hash-map directly.
+    pub path_attributes: Vec<Attribute>,
 }
 
 /// A plan stage for pull queries split into individual paths. So
@@ -32,6 +35,34 @@ pub struct PullLevel<P: Implementable> {
 pub struct Pull<P: Implementable> {
     /// Individual paths to pull.
     pub paths: Vec<PullLevel<P>>,
+}
+
+fn interleave(values: &Vec<Value>, constants: &Vec<Attribute>) -> Vec<Value> {
+    if values.is_empty() || constants.is_empty() {
+        values.clone()
+    } else {
+        let size: usize = values.len() + constants.len();
+        // + 2, because we know there'll be a and v coming...
+        let mut result: Vec<Value> = Vec::with_capacity(size + 2);
+
+        let mut next_value = 0;
+        let mut next_const = 0;
+
+        for i in 0..size {
+            if i % 2 == 0 {
+                // on even indices we take from the result tuple
+                result.push(values[next_value].clone());
+                next_value = next_value + 1;
+            } else {
+                // on odd indices we interleave an attribute
+                let a = constants[next_const].clone();
+                result.push(Value::Attribute(a));
+                next_const = next_const + 1;
+            }
+        }
+
+        result
+    }
 }
 
 impl<P: Implementable> Implementable for PullLevel<P> {
@@ -53,9 +84,16 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         let input = self.plan
             .implement(nested, local_arrangements, global_arrangements);
 
-        if self.attributes.is_empty() {
-            // Nothing to pull.
-            input
+        if self.pull_attributes.is_empty() {
+            if self.path_attributes.is_empty() {
+                // nothing to pull
+                input
+            } else {
+                let path_attributes = self.path_attributes.clone();
+                let tuples = input.tuples().map(move |tuple| interleave(&tuple, &path_attributes));
+
+                SimpleRelation { symbols: vec![], tuples, }
+            }
         } else {
             
             // Arrange input entities by eid.
@@ -66,7 +104,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                 .map(|t| (t.last().unwrap().clone(), t))
                 .arrange();
             
-            let streams = self.attributes.iter().map(|a| {
+            let streams = self.pull_attributes.iter().map(|a| {
                 let e_v: Arranged<Iterative<S, u64>, Value, Value, isize,
                                   TraceAgent<Value, Value, Product<u64,u64>, isize,
                                              OrdValSpine<Value, Value, Product<u64, u64>, isize>>> = match global_arrangements.get_mut(a) {
@@ -79,10 +117,14 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                 };
 
                 let attribute = Value::Attribute(a.clone());
+                let path_attributes: Vec<Attribute> = self.path_attributes.clone();
                 
                 e_path
                     .join_core(&e_v, move |_e, path: &Vec<Value>, v: &Value| {
-                        let mut result: Vec<Value> = path.clone();
+                        // Each result tuple must hold the interleaved
+                        // path, the attribute, and the value,
+                        // i.e. [?p "parent/child" ?c ?a ?v]
+                        let mut result = interleave(path, &path_attributes);
                         result.push(attribute.clone());
                         result.push(v.clone());
                         
