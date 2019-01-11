@@ -5,7 +5,8 @@ authors = ["Nikolas Göbel <me@nikolasgoebel.com>"]
 
 [dependencies]
 # timely = { version = "0.8.0", features = ["bincode"] }
-timely = { git = "https://github.com/frankmcsherry/timely-dataflow", features = ["bincode"] }
+# timely = { git = "https://github.com/frankmcsherry/timely-dataflow", features = ["bincode"] }
+timely = { path = "/Users/niko/repos/timely-dataflow", features = ["bincode"] }
 # differential-dataflow = "0.8.0"
 differential-dataflow = { path = "/Users/niko/repos/differential-dataflow" }
 graph_map = "0.1"

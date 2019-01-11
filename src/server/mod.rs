@@ -143,20 +143,48 @@ impl<Token: Hash> Server<Token> {
     /// Returns commands to install built-in plans.
     pub fn builtins() -> Vec<Request> {
         vec![
-            Request::CreateInput(CreateInput { name: "3df.pattern/e".to_string() }), 
-            Request::CreateInput(CreateInput { name: "3df.pattern/a".to_string() }), 
-            Request::CreateInput(CreateInput { name: "3df.pattern/v".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.pattern/e".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.pattern/a".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.pattern/v".to_string() }), 
 
-            Request::CreateInput(CreateInput { name: "3df.join/binding".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.join/binding".to_string() }), 
 
-            Request::CreateInput(CreateInput { name: "3df.union/binding".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.union/binding".to_string() }), 
 
-            Request::CreateInput(CreateInput { name: "3df.project/binding".to_string() }), 
-            Request::CreateInput(CreateInput { name: "3df.project/symbols".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.project/binding".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.project/symbols".to_string() }), 
 
-            Request::CreateInput(CreateInput { name: "3df.name".to_string() }), 
-            Request::CreateInput(CreateInput { name: "3df.name/symbols".to_string() }), 
-            Request::CreateInput(CreateInput { name: "3df.name/plan".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df/name".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.name/symbols".to_string() }), 
+            Request::CreateInput(CreateInput { name: "df.name/plan".to_string() }),
+
+            Request::Register(Register {
+                publish: vec!["df.rules".to_string()],
+                rules: vec![
+                    // [:name {:join/binding [:pattern/e :pattern/a :pattern/v]}]
+                    Rule {
+                        name: "df.rules".to_string(),
+                        plan: Plan::Pull(Pull {
+                            paths: vec![
+                                PullLevel {
+                                    variables: vec![],
+                                    plan: Box::new(Plan::MatchA(0, "df.join/binding".to_string(), 1)),
+                                    pull_attributes: vec!["df.pattern/e".to_string(),
+                                                          "df.pattern/a".to_string(),
+                                                          "df.pattern/v".to_string()],
+                                    path_attributes: vec!["df.join/binding".to_string()],
+                                },
+                                PullLevel {
+                                    variables: vec![],
+                                    plan: Box::new(Plan::MatchA(0, "df/name".to_string(), 2)),
+                                    pull_attributes: vec![],
+                                    path_attributes: vec![],
+                                }
+                            ]
+                        })
+                    }
+                ],
+            }),
         ]
     }
 
@@ -259,7 +287,7 @@ impl<Token: Hash> Server<Token> {
         // are interested
 
         match name {
-            "3df.timely/operates" => {
+            "df.timely/operates" => {
 
                 // use timely::logging::{BatchLogger, TimelyEvent};
                 // use timely::dataflow::operators::capture::EventWriter;
