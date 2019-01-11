@@ -3,7 +3,7 @@ __UGLY_DIFF_HOOK = (datum) => {
 }
 
 function main () {
-  Rust.declarative_dataflow.then(df => {
+  Rust.wasm.then(df => {
     console.log("Loaded")
   })
 }
