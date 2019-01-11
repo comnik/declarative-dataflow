@@ -13,18 +13,29 @@ abomonation_derive = "0.3"
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
-mio = "0.6.16"
+mio = { version = "0.6.16", optional = true }
 slab = "0.4.1"
 # ws = { path = "../ws-rs/" }
-ws = { git = "https://github.com/comnik/ws-rs" }
+ws = { git = "https://github.com/comnik/ws-rs", optional = true }
 log = "0.4"
 env_logger = "0.5.6"
 getopts = "0.2.18"
 num-rational = { version = "0.2", features = ["std", "serde"] }
 timely_sort = "0.1.6"
 
+stdweb = "0.4.13"
+lazy_static = "1.2.0"
+
 [features]
 uuids = []
+web-socket-server = ["mio", "ws"]
+
+[[bin]]
+name = "server"
+required-features = ["web-socket-server"]
+
+[[bin]]
+name = "wasm"
 
 [[bin]]
 name = "server"
