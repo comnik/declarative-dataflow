@@ -81,6 +81,9 @@ pub enum Value {
     Uuid([u8; 16]),
 }
 
+js_serializable!(Value);
+js_deserializable!(Value);
+
 /// A client-facing, non-exceptional error.
 #[derive(Debug)]
 pub struct Error {
@@ -97,6 +100,8 @@ pub struct TxData(pub isize, pub Eid, pub Aid, pub Value);
 
 /// A (tuple, time, diff) triple, as sent back to clients.
 pub type ResultDiff = (Vec<Value>, u64, isize);
+
+// js_serializable!(ResultDiff);
 
 /// An entity, attribute, value triple.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]

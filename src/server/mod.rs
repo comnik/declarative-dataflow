@@ -44,6 +44,21 @@ impl Default for Config {
     }
 }
 
+/// Transaction data. Conceptually a pair (Datom, diff) but it's kept
+/// intentionally flat to be more directly compatible with Datomic.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
+
+/// A request expressing the arrival of inputs to one or more
+/// collections. Optionally a timestamp may be specified.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Transact {
+    /// The timestamp at which this transaction occured.
+    pub tx: Option<u64>,
+    /// A sequence of additions and retractions.
+    pub tx_data: Vec<TxData>,
+}
+
 /// A request expressing interest in receiving results published under
 /// the specified name.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -102,6 +117,9 @@ pub enum Request {
     /// Closes a named input handle.
     CloseInput(String),
 }
+
+js_serializable!(Request);
+js_deserializable!(Request);
 
 /// Server context maintaining globally registered arrangements and
 /// input handles.
