@@ -40,7 +40,8 @@ name = "wasm"
 name = "server"
 
 [profile.release]
-opt-level = 3
+# opt-level = 3
+opt-level = "z" # for wasm
 debug = true
 debug-assertions = false
 rpath = false
