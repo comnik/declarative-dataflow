@@ -22,15 +22,11 @@ use timely_sort::Unsigned;
 use differential_dataflow::{Data, Collection, AsCollection, Hashable};
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Threshold;
-use differential_dataflow::operators::arrange::TraceAgent;
-use differential_dataflow::operators::arrange::Arrange;
 use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
-use differential_dataflow::trace::implementations::spine_fueled::Spine;
-use differential_dataflow::trace::implementations::ord::{OrdValBatch, OrdKeyBatch};
 
 use timestamp::altneu::AltNeu;
 use plan::Implementable;
-use {RelationHandle, VariableMap, SimpleRelation, Value, Var};
+use {RelationHandle, VariableMap, SimpleRelation, Value, Var, CollectionIndex};
 
 //
 // OPERATOR
@@ -287,62 +283,22 @@ impl<G: Scope, P, E> ValidateExtensionMethod<G, P, E> for Collection<G, (P, E)> 
 // SPECIFIC IMPLEMENTATION
 //
 
-// These are all defined here so that users can be assured a common layout.
-type TraceValSpine<K,V,T,R> = Spine<K, V, T, R, Rc<OrdValBatch<K,V,T,R>>>;
-type TraceValHandle<K,V,T,R> = TraceAgent<K, V, T, R, TraceValSpine<K,V,T,R>>;
-type TraceKeySpine<K,T,R> = Spine<K, (), T, R, Rc<OrdKeyBatch<K,T,R>>>;
-type TraceKeyHandle<K,T,R> = TraceAgent<K, (), T, R, TraceKeySpine<K,T,R>>;
-
-struct CollectionIndex<K, V, T>
-where
-    K: Data,
-    V: Data,
-    T: Lattice+Data,
-{
-    /// A trace of type (K, ()), used to count extensions for each prefix.
-    count_trace: TraceKeyHandle<K, T, isize>,
-
-    /// A trace of type (K, V), used to propose extensions for each prefix.
-    propose_trace: TraceValHandle<K, V, T, isize>,
-
-    /// A trace of type ((K, V), ()), used to validate proposed extensions.
-    validate_trace: TraceKeyHandle<(K, V), T, isize>,
-}
-
-impl<K, V, T> Clone for CollectionIndex<K, V, T>
+trait ExtendUsing<K, V, T>
 where
     K: Data+Hash,
     V: Data+Hash,
     T: Lattice+Data+Timestamp,
 {
-    fn clone(&self) -> Self {
-        CollectionIndex {
-            count_trace: self.count_trace.clone(),
-            propose_trace: self.propose_trace.clone(),
-            validate_trace: self.validate_trace.clone(),
-        }
-    }
+    fn extend_using<P, F: Fn(&P)->K>(&self, logic: F) -> CollectionExtender<K, V, T, P, F>;
 }
 
-impl<K, V, T> CollectionIndex<K, V, T>
+impl<K, V, T> ExtendUsing<K, V, T> for CollectionIndex<K, V, T>
 where
     K: Data+Hash,
     V: Data+Hash,
     T: Lattice+Data+Timestamp,
 {    
-    pub fn index<G: Scope<Timestamp=T>>(name: &str, collection: &Collection<G, (K, V), isize>) -> Self {
-        let counts = collection.map(|(k,_v)| (k,())).arrange_named(&format!("Counts({})", name)).trace;
-        let propose = collection.arrange_named(&format!("Proposals({})", &name)).trace;
-        let validate = collection.map(|t| (t,())).arrange_named(&format!("Validations({})", &name)).trace;
-
-        CollectionIndex {
-            count_trace: counts,
-            propose_trace: propose,
-            validate_trace: validate,
-        }
-    }
-
-    pub fn extend_using<P, F: Fn(&P)->K>(&self, logic: F) -> CollectionExtender<K, V, T, P, F> {
+    fn extend_using<P, F: Fn(&P)->K>(&self, logic: F) -> CollectionExtender<K, V, T, P, F> {
         CollectionExtender {
             phantom: std::marker::PhantomData,
             indices: self.clone(),

@@ -21,13 +21,16 @@ extern crate serde_derive;
 
 extern crate num_rational;
 
+use std::hash::Hash;
 use std::collections::{HashMap, HashSet};
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::*;
 use timely::order::Product;
+use timely::progress::Timestamp;
 
-use differential_dataflow::collection::Collection;
+use differential_dataflow::{Data, Collection};
+use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::{Arrange, TraceAgent};
 use differential_dataflow::operators::group::Threshold;
 use differential_dataflow::operators::iterate::Variable;
@@ -87,21 +90,74 @@ pub type Result = (Vec<Value>, u64, isize);
 pub struct Datom(pub Entity, pub Attribute, pub Value);
 
 // A trace of values indexed by self. 
-type TraceKeyHandle<K, R> = TraceAgent<K, (), u64, R, OrdKeySpine<K, u64, R>>;
+type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 
-// A trace of key-value pairs indexed by key.
-type TraceValHandle<K, V, R> = TraceAgent<K, V, u64, R, OrdValSpine<K, V, u64, R>>;
+// A trace of (K, V) pairs indexed by key.
+type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 
 // @TODO change this to TraceValHandle<Entity, Value> eventually
 /// A handle to an arranged attribute.
-pub type AttributeHandle = TraceValHandle<Value, Value, isize>;
+pub type AttributeHandle = TraceValHandle<Value, Value, u64, isize>;
 
 /// A handle to an arranged relation.
-pub type RelationHandle = TraceKeyHandle<Vec<Value>, isize>;
+pub type RelationHandle = TraceKeyHandle<Vec<Value>, u64, isize>;
 
 // A map for keeping track of collections that are being actively
 // synthesized (i.e. that are not fully defined yet).
 type VariableMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
+
+/// Various indices over a collection of (K, V) pairs, required to
+/// participate in delta-join pipelines.
+pub struct CollectionIndex<K, V, T>
+where
+    K: Data,
+    V: Data,
+    T: Lattice+Data,
+{
+    /// A trace of type (K, ()), used to count extensions for each prefix.
+    count_trace: TraceKeyHandle<K, T, isize>,
+
+    /// A trace of type (K, V), used to propose extensions for each prefix.
+    propose_trace: TraceValHandle<K, V, T, isize>,
+
+    /// A trace of type ((K, V), ()), used to validate proposed extensions.
+    validate_trace: TraceKeyHandle<(K, V), T, isize>,
+}
+
+impl<K, V, T> Clone for CollectionIndex<K, V, T>
+where
+    K: Data+Hash,
+    V: Data+Hash,
+    T: Lattice+Data+Timestamp,
+{
+    fn clone(&self) -> Self {
+        CollectionIndex {
+            count_trace: self.count_trace.clone(),
+            propose_trace: self.propose_trace.clone(),
+            validate_trace: self.validate_trace.clone(),
+        }
+    }
+}
+
+impl<K, V, T> CollectionIndex<K, V, T>
+where
+    K: Data+Hash,
+    V: Data+Hash,
+    T: Lattice+Data+Timestamp,
+{
+    /// Create a named CollectionIndex from a (K, V) collection.
+    pub fn index<G: Scope<Timestamp=T>>(name: &str, collection: &Collection<G, (K, V), isize>) -> Self {
+        let counts = collection.map(|(k,_v)| (k,())).arrange_named(&format!("Counts({})", name)).trace;
+        let propose = collection.arrange_named(&format!("Proposals({})", &name)).trace;
+        let validate = collection.map(|t| (t,())).arrange_named(&format!("Validations({})", &name)).trace;
+
+        CollectionIndex {
+            count_trace: counts,
+            propose_trace: propose,
+            validate_trace: validate,
+        }
+    }
+}
 
 /// A symbol used in a query.
 type Var = u32;
