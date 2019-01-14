@@ -8,10 +8,10 @@ use timely::communication::allocator::AllocateBuilder;
 use timely::communication::allocator::thread::{ThreadBuilder, Thread};
 
 use timely::worker::Worker;
-use timely::dataflow::operators::{Operator, Probe, Map, ToStream};
+use timely::dataflow::operators::{Operator, Probe};
 use timely::dataflow::channels::pact::Pipeline;
 
-use declarative_dataflow::{Value, Out};
+use declarative_dataflow::Out;
 use declarative_dataflow::server::{Config, Request, Server, CreateInput};
 
 use std::rc::Rc;
@@ -77,15 +77,16 @@ fn handle(requests: Vec<Request>) {
                             server.interest(&req.name, scope)
                                 .inner
                                 .probe_with(&mut server.probe)
-                                .sink(Pipeline, "wasm_out", |input| {
-                                    while let Some((time, data)) = input.next() {
+                                .sink(Pipeline, "wasm_out", move |input| {
+                                    while let Some((_time, data)) = input.next() {
                                         let out: Vec<Out> = data.iter().cloned()
                                             .map(|(tuple, t, diff)| Out(tuple, t, diff))
                                             .collect();
                                         
                                         js! {
+                                            const name = @{name.clone()};
                                             const batch = @{out};
-                                            __UGLY_DIFF_HOOK(batch);
+                                            __UGLY_DIFF_HOOK(name, batch);
                                         }
                                     }
                                 });

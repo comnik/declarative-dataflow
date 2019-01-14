@@ -1,5 +1,5 @@
-__UGLY_DIFF_HOOK = (datum) => {
-  console.log(datum);
+__UGLY_DIFF_HOOK = (name, datum) => {
+  console.log(name, datum);
 }
 
 function reconcile (t) {
