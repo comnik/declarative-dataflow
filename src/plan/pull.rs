@@ -1,5 +1,7 @@
 //! Pull expression plan, but without nesting.
 
+use std::collections::HashMap;
+
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::operators::Concatenate;
@@ -8,7 +10,7 @@ use differential_dataflow::AsCollection;
 
 use plan::Implementable;
 use Relation;
-use {QueryMap, RelationMap, SimpleRelation, Var, Attribute, Value};
+use {RelationHandle, VariableMap, SimpleRelation, Var, Attribute, Value};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
@@ -69,8 +71,8 @@ impl<P: Implementable> Implementable for PullLevel<P> {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        global_arrangements: &mut HashMap<String, RelationHandle>,
     ) -> SimpleRelation<'b, S> {
 
         use timely::order::Product;
@@ -147,8 +149,8 @@ impl<P: Implementable> Implementable for Pull<P> {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        global_arrangements: &mut HashMap<String, RelationHandle>,
     ) -> SimpleRelation<'b, S> {
 
         let mut scope = nested.clone();

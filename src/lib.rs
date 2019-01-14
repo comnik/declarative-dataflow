@@ -1,8 +1,8 @@
 //! Declarative dataflow infrastructure
 //!
-//! This crate contains types, traits, and logic for assembling differential
-//! dataflow computations from declaratively specified programs, without any
-//! additional compilation.
+//! This crate contains types, traits, and logic for assembling
+//! differential dataflow computations from declaratively specified
+//! programs, without any additional compilation.
 
 #![forbid(missing_docs)]
 
@@ -44,10 +44,6 @@ pub mod server;
 pub mod server_impl;
 pub mod sources;
 
-//
-// TYPES
-//
-
 /// A unique entity identifier.
 #[cfg(not(feature = "uuids"))]
 pub type Entity = u64;
@@ -83,20 +79,32 @@ pub enum Value {
     Uuid([u8; 16]),
 }
 
+/// A (tuple, time, diff) triple, as sent back to clients.
+pub type Result = (Vec<Value>, u64, isize);
+
 /// An entity, attribute, value triple.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Datom(pub Entity, pub Attribute, pub Value);
 
-/// A handle to a collection trace.
-pub type TraceKeyHandle<K, R> = TraceAgent<K, (), u64, R, OrdKeySpine<K, u64, R>>;
-type TraceValHandle<K, V, R> = TraceAgent<K, V, u64, R, OrdValSpine<K, V, u64, R>>;
-/// A map from global names to registered traces.
-pub type QueryMap<R> = HashMap<String, TraceKeyHandle<Vec<Value>, R>>;
-type RelationMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
+// A trace of values indexed by self. 
+type TraceKeyHandle<K, R> = TraceAgent<K, (), u64, R, OrdKeySpine<K, u64, R>>;
 
-//
-// QUERY PLAN GRAMMAR
-//
+// A trace of key-value pairs indexed by key.
+type TraceValHandle<K, V, R> = TraceAgent<K, V, u64, R, OrdValSpine<K, V, u64, R>>;
+
+// @TODO change this to TraceValHandle<Entity, Value> eventually
+/// A handle to an arranged attribute.
+pub type AttributeHandle = TraceValHandle<Value, Value, isize>;
+
+/// A handle to an arranged relation.
+pub type RelationHandle = TraceKeyHandle<Vec<Value>, isize>;
+
+// A map for keeping track of collections that are being actively
+// synthesized (i.e. that are not fully defined yet).
+type VariableMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
+
+/// A symbol used in a query.
+type Var = u32;
 
 /// A named relation.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -106,12 +114,6 @@ pub struct Rule {
     /// The plan describing contents of the relation.
     pub plan: Plan,
 }
-
-type Var = u32;
-
-//
-// RELATIONS
-//
 
 /// A relation with identified attributes
 ///
@@ -134,9 +136,6 @@ trait Relation<'a, G: Scope> {
         syms: &[Var],
     ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
 }
-
-/// A handle to an arranged relation.
-pub type RelationHandle = TraceKeyHandle<Vec<Value>, isize>;
 
 /// A collection and variable bindings.
 pub struct SimpleRelation<'a, G: Scope> {
@@ -205,10 +204,6 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> {
     }
 }
 
-//
-// QUERY PLAN IMPLEMENTATION
-//
-
 /// Takes a query plan and turns it into a differential dataflow. The
 /// dataflow is extended to feed output tuples to JS clients. A probe
 /// on the dataflow is returned.
@@ -216,12 +211,12 @@ pub fn implement<S: Scope<Timestamp = u64>>(
     mut rules: Vec<Rule>,
     publish: Vec<String>,
     scope: &mut S,
-    global_arrangements: &mut QueryMap<isize>,
+    global_arrangements: &mut HashMap<String, RelationHandle>,
     _probe: &mut ProbeHandle<u64>,
 ) -> HashMap<String, RelationHandle> {
     scope.iterative::<u64, _, _>(|nested| {
-        let mut local_arrangements = RelationMap::new();
-        let mut result_map = QueryMap::new();
+        let mut local_arrangements = VariableMap::new();
+        let mut result_map = HashMap::new();
 
         // Step 0: Canonicalize, check uniqueness of bindings.
         rules.sort_by(|x, y| x.name.cmp(&y.name));

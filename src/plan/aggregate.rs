@@ -1,5 +1,7 @@
 //! Aggregate expression plan.
 
+use std::collections::HashMap;
+
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
@@ -9,7 +11,7 @@ use differential_dataflow::operators::Join as JoinMap;
 
 use plan::Implementable;
 use Relation;
-use {QueryMap, RelationMap, SimpleRelation, Value, Var};
+use {RelationHandle, VariableMap, SimpleRelation, Value, Var};
 
 use num_rational::{Ratio, Rational32};
 
@@ -58,8 +60,8 @@ impl<P: Implementable> Implementable for Aggregate<P> {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        global_arrangements: &mut HashMap<String, RelationHandle>,
     ) -> SimpleRelation<'b, S> {
         
         let relation = self.plan.implement(nested, local_arrangements, global_arrangements);

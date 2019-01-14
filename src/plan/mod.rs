@@ -1,10 +1,12 @@
 //! Types and traits for implementing query plans.
 
+use std::collections::HashMap;
+
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use {Attribute, Entity, Value, Var};
-use {QueryMap, Relation, RelationMap, SimpleRelation};
+use {RelationHandle, Relation, VariableMap, SimpleRelation};
 
 pub mod project;
 pub mod aggregate;
@@ -32,8 +34,8 @@ pub trait Implementable {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        global_arrangements: &mut HashMap<String, RelationHandle>,
     ) -> SimpleRelation<'b, S>;
 }
 
@@ -78,8 +80,8 @@ impl Implementable for Plan {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        global_arrangements: &mut HashMap<String, RelationHandle>,
     ) -> SimpleRelation<'b, S> {
         
         // use differential_dataflow::AsCollection;

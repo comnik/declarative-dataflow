@@ -38,7 +38,8 @@ use slab::Slab;
 use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, Request, Server, CreateInput};
-use declarative_dataflow::server_impl::{Command, Result};
+use declarative_dataflow::server_impl::Command;
+use declarative_dataflow::Result;
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
@@ -432,16 +433,10 @@ fn main() {
                                                     // executed by the owning worker
 
                                                     input.for_each(|_time, data| {
-                                                        // notificator.notify_at(time.retain());
-                                                        let out: Vec<Result> = data.iter()
-                                                            .map(|(tuple, t, diff)| (tuple.clone(), *diff, *t))
-                                                            .collect();
-
-                                                        send_results_handle.send((name.clone(), out)).unwrap();
+                                                        send_results_handle
+                                                            .send((name.clone(), data.to_vec()))
+                                                            .unwrap();
                                                     });
-
-                                                    // @TODO only send results here?
-                                                    // notificator.for_each(|time, _, _| { });
                                                 })
                                             .probe_with(&mut server.probe);
                                     });

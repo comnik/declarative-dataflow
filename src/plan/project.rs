@@ -1,11 +1,13 @@
 //! Projection expression plan.
 
+use std::collections::HashMap;
+
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use plan::Implementable;
 use Relation;
-use {QueryMap, RelationMap, SimpleRelation, Var};
+use {RelationHandle, VariableMap, SimpleRelation, Var};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible
@@ -22,8 +24,8 @@ impl<P: Implementable> Implementable for Project<P> {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        global_arrangements: &mut HashMap<String, RelationHandle>,
     ) -> SimpleRelation<'b, S> {
         
         let relation = self.plan

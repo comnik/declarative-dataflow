@@ -3,8 +3,6 @@
 
 extern crate timely;
 
-use {Value};
-
 // pub mod handler;
 // pub mod output;
 
@@ -22,6 +20,3 @@ pub struct Command {
     /// Unparsed representation of the command.
     pub cmd: String,
 }
-
-/// (tuple, diff) as sent back to external clients.
-pub type Result = (Vec<Value>, isize, u64);

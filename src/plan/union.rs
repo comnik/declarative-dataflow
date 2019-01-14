@@ -1,5 +1,7 @@
 //! Union expression plan.
 
+use std::collections::HashMap;
+
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
@@ -7,7 +9,7 @@ use differential_dataflow::operators::Threshold;
 
 use plan::Implementable;
 use Relation;
-use {QueryMap, RelationMap, SimpleRelation, Var};
+use {RelationHandle, VariableMap, SimpleRelation, Var};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -24,8 +26,8 @@ impl<P: Implementable> Implementable for Union<P> {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        global_arrangements: &mut HashMap<String, RelationHandle>,
     ) -> SimpleRelation<'b, S> {
         
         use differential_dataflow::AsCollection;

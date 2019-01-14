@@ -17,7 +17,7 @@ use differential_dataflow::AsCollection;
 
 use sources::{Source, Sourceable};
 use plan::{Plan, Pull, PullLevel};
-use {implement, Attribute, Entity, QueryMap, Rule, TraceKeyHandle, Value};
+use {implement, Attribute, Entity, RelationHandle, AttributeHandle, Rule, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -121,7 +121,9 @@ pub struct Server<Token: Hash> {
     /// Input handles to global arrangements.
     pub input_handles: HashMap<String, InputSession<u64, Vec<Value>, isize>>,
     /// Named relations.
-    pub global_arrangements: QueryMap<isize>,
+    pub global_arrangements: HashMap<String, RelationHandle>,
+    /// Attributes / Base Relations.
+    pub attributes: HashMap<String, AttributeHandle>,
     /// A probe for the transaction id time domain.
     pub probe: ProbeHandle<u64>,
     /// Mapping from query names to interested client tokens.
@@ -135,6 +137,7 @@ impl<Token: Hash> Server<Token> {
             config: config,
             input_handles: HashMap::new(),
             global_arrangements: HashMap::new(),
+            attributes: HashMap::new(),
             probe: ProbeHandle::new(),
             interests: HashMap::new(),
         }
@@ -188,16 +191,20 @@ impl<Token: Hash> Server<Token> {
         ]
     }
 
-    fn register_global_arrangement(
-        &mut self,
-        name: String,
-        mut trace: TraceKeyHandle<Vec<Value>, isize>,
-    ) {
+    fn register_global_arrangement(&mut self, name: String, mut trace: RelationHandle) {
         // decline the capability for that trace handle to subset its
         // view of the data
         trace.distinguish_since(&[]);
 
         self.global_arrangements.insert(name, trace);
+    }
+
+    fn register_attribute(&mut self, name: String, mut trace: AttributeHandle) {
+        // decline the capability for that trace handle to subset its
+        // view of the data
+        trace.distinguish_since(&[]);
+
+        self.attributes.insert(name, trace);
     }
 
     /// Returns true iff the probe is behind any input handle. Mostly
@@ -318,6 +325,22 @@ impl<Token: Hash> Server<Token> {
         }
     }
 
+    /// Handle an AttributeInterest request.
+    pub fn attribute_interest<S: Scope<Timestamp = u64>>
+        (&mut self, name: &str, scope: &mut S) -> Collection<S, Vec<Value>, isize> {
+
+            // @TODO this should be able to assume that it will be called
+            // at most once per distinct name, no matter how many clients
+            // are interested
+
+            self.attributes
+                .get_mut(name)
+                .expect(&format!("Could not find attribute {:?}", name))
+                .import_named(scope, name)
+                .as_collection(|e, v| vec![e.clone(), v.clone()])
+                .probe_with(&mut self.probe)
+        }
+    
     /// Handle a Register request.
     pub fn register<S: Scope<Timestamp = u64>>(&mut self, req: Register, scope: &mut S) {
         let Register { rules, publish } = req;
@@ -386,6 +409,20 @@ impl<Token: Hash> Server<Token> {
             let trace = tuples.map(|t| (t,())).arrange_named(name).trace;
 
             self.register_global_arrangement(name.to_string(), trace);
+            self.input_handles.insert(name.to_string(), handle);
+        }
+    }
+
+    /// Handle a CreateInput request.
+    pub fn create_attribute<S: Scope<Timestamp = u64>>(&mut self, name: &str, scope: &mut S) {
+        if self.attributes.contains_key(name) {
+            panic!("Attribute name clashes with existing trace.");
+        } else {
+            // @TODO use (Value,Value) inputs here
+            let (handle, tuples) = scope.new_collection::<Vec<Value>, isize>();
+            let trace = tuples.map(|t| (t[0].clone(),t[1].clone())).arrange_named(name).trace;
+
+            self.register_attribute(name.to_string(), trace);
             self.input_handles.insert(name.to_string(), handle);
         }
     }

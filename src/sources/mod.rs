@@ -43,8 +43,8 @@ impl Sourceable for Source {
 //     fn implement<'a, 'b, A: Allocate>(
 //         &self,
 //         nested: &mut Child<'b, Child<'a, Worker<A>, u64>, u64>,
-//         local_arrangements: &RelationMap<'b, Child<'a, Worker<A>, u64>>,
-//         global_arrangements: &mut QueryMap<isize>
+//         local_arrangements: &VariableMap<'b, Child<'a, Worker<A>, u64>>,
+//         global_arrangements: &mut HashMap<String, RelationHandle>
 //     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
 //         SimpleRelation {
 //             symbols: vec![], // @TODO

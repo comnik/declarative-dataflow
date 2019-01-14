@@ -30,7 +30,7 @@ use differential_dataflow::trace::implementations::ord::{OrdValBatch, OrdKeyBatc
 
 use timestamp::altneu::AltNeu;
 use plan::Implementable;
-use {QueryMap, RelationMap, SimpleRelation, Value, Var};
+use {RelationHandle, VariableMap, SimpleRelation, Value, Var};
 
 //
 // OPERATOR
@@ -83,8 +83,8 @@ impl Implementable for Hector {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        _local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
+        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        global_arrangements: &mut HashMap<String, RelationHandle>,
     ) -> SimpleRelation<'b, S> {
 
         let nested_copy = nested.clone();

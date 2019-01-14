@@ -35,8 +35,8 @@ use slab::Slab;
 use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, Server};
-use declarative_dataflow::server_impl::{Command, Result, Handler};
-use declarative_dataflow::Value;
+use declarative_dataflow::server_impl::{Command, Handler};
+use declarative_dataflow::{Value, Result};
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);

@@ -12,9 +12,10 @@ use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::Operator;
 use timely::worker::Worker;
 
+use Result;
 use server::{Server, Request, CreateInput};
 
-use super::{Command, Result};
+use super::Command;
 
 type Owner = u64;
 type Query = String;
