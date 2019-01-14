@@ -9,7 +9,7 @@ use std::path::Path;
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
 
-use {Value, Entity};
+use {Value, Eid};
 
 use sources::Sourceable;
 
@@ -64,7 +64,7 @@ impl Sourceable for CsvFile {
                             let columns: Vec<&str> = line.split(separator).collect();
 
                             for (name_idx, (offset, type_hint)) in schema.iter().enumerate() {
-                                let eid = Value::Eid(datum_index as Entity);
+                                let eid = Value::Eid(datum_index as Eid);
                                 let v = match type_hint {
                                     Value::String(_) => Value::String(columns[*offset].trim().trim_matches('"').to_string()),
                                     Value::Number(_) => Value::Number(columns[*offset].trim().trim_matches('"').parse::<i64>().expect("not a number")),

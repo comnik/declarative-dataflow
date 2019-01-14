@@ -10,7 +10,7 @@ use differential_dataflow::AsCollection;
 
 use plan::Implementable;
 use Relation;
-use {RelationHandle, VariableMap, SimpleRelation, Var, Attribute, Value};
+use {RelationHandle, VariableMap, SimpleRelation, Var, Aid, Value};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
@@ -21,10 +21,10 @@ pub struct PullLevel<P: Implementable> {
     /// Plan for the input relation.
     pub plan: Box<P>,
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<Attribute>,
+    pub pull_attributes: Vec<Aid>,
     /// Attribute names to distinguish plans of the same
     /// length. Useful to feed into a nested hash-map directly.
-    pub path_attributes: Vec<Attribute>,
+    pub path_attributes: Vec<Aid>,
 }
 
 /// A plan stage for pull queries split into individual paths. So
@@ -39,7 +39,7 @@ pub struct Pull<P: Implementable> {
     pub paths: Vec<PullLevel<P>>,
 }
 
-fn interleave(values: &Vec<Value>, constants: &Vec<Attribute>) -> Vec<Value> {
+fn interleave(values: &Vec<Value>, constants: &Vec<Aid>) -> Vec<Value> {
     if values.is_empty() || constants.is_empty() {
         values.clone()
     } else {
@@ -58,7 +58,7 @@ fn interleave(values: &Vec<Value>, constants: &Vec<Attribute>) -> Vec<Value> {
             } else {
                 // on odd indices we interleave an attribute
                 let a = constants[next_const].clone();
-                result.push(Value::Attribute(a));
+                result.push(Value::Aid(a));
                 next_const = next_const + 1;
             }
         }
@@ -118,8 +118,8 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                         .arrange(),
                 };
 
-                let attribute = Value::Attribute(a.clone());
-                let path_attributes: Vec<Attribute> = self.path_attributes.clone();
+                let attribute = Value::Aid(a.clone());
+                let path_attributes: Vec<Aid> = self.path_attributes.clone();
                 
                 e_path
                     .join_core(&e_v, move |_e, path: &Vec<Value>, v: &Value| {

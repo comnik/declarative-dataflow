@@ -17,7 +17,7 @@ use differential_dataflow::AsCollection;
 
 use sources::{Source, Sourceable};
 use plan::{Plan, Pull, PullLevel};
-use {implement, Attribute, Entity, RelationHandle, AttributeHandle, Rule, Value};
+use {implement, Aid, Eid, RelationHandle, AttributeHandle, Rule, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -43,7 +43,7 @@ impl Default for Config {
 /// Transaction data. Conceptually a pair (Datom, diff) but it's kept
 /// intentionally flat to be more directly compatible with Datomic.
 #[derive(Serialize, Deserialize, Debug)]
-pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
+pub struct TxData(pub isize, pub Eid, pub Aid, pub Value);
 
 /// A request expressing the arrival of inputs to one or more
 /// collections. Optionally a timestamp may be specified.
@@ -96,7 +96,7 @@ pub struct CreateInput {
 #[derive(Serialize, Deserialize, Debug)]
 pub enum Request {
     /// Sends a single datom.
-    Datom(Entity, Attribute, Value, isize, u64),
+    Datom(Eid, Aid, Value, isize, u64),
     /// Sends inputs via one or more registered handles.
     Transact(Transact),
     /// Expresses interest in a named relation.
@@ -224,8 +224,8 @@ impl<Token: Hash> Server<Token> {
         &mut self,
         owner: usize,
         worker_index: usize,
-        e: Entity,
-        a: Attribute,
+        e: Eid,
+        a: Aid,
         v: Value,
         diff: isize,
         _tx: u64,

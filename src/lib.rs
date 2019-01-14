@@ -49,14 +49,14 @@ pub mod sources;
 
 /// A unique entity identifier.
 #[cfg(not(feature = "uuids"))]
-pub type Entity = u64;
+pub type Eid = u64;
 
 /// A unique entity identifier.
 #[cfg(feature = "uuids")]
-pub type Entity = u128;
+pub type Eid = u128;
 
 /// A unique attribute identifier.
-pub type Attribute = String; // u32
+pub type Aid = String; // u32
 
 /// Possible data values.
 ///
@@ -65,7 +65,7 @@ pub type Attribute = String; // u32
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Value {
     /// An attribute identifier
-    Attribute(Attribute),
+    Aid(Aid),
     /// A string
     String(String),
     /// A boolean
@@ -75,7 +75,7 @@ pub enum Value {
     /// A 32 bit rational
     Rational32(Rational32),
     /// An entity identifier
-    Eid(Entity),
+    Eid(Eid),
     /// Milliseconds since midnight, January 1, 1970 UTC
     Instant(u64),
     /// A 16 byte unique identifier.
@@ -87,7 +87,7 @@ pub type Result = (Vec<Value>, u64, isize);
 
 /// An entity, attribute, value triple.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct Datom(pub Entity, pub Attribute, pub Value);
+pub struct Datom(pub Eid, pub Aid, pub Value);
 
 // A trace of values indexed by self. 
 type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
@@ -95,7 +95,7 @@ type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 // A trace of (K, V) pairs indexed by key.
 type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 
-// @TODO change this to TraceValHandle<Entity, Value> eventually
+// @TODO change this to TraceValHandle<Eid, Value> eventually
 /// A handle to an arranged attribute.
 pub type AttributeHandle = TraceValHandle<Value, Value, u64, isize>;
 

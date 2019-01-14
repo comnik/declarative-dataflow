@@ -11,7 +11,7 @@ use timely::Configuration;
 
 use declarative_dataflow::plan::{Pull, PullLevel};
 use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Plan, Rule, Value, Entity};
+use declarative_dataflow::{Plan, Rule, Value, Eid};
 
 #[test]
 fn pull_level() {
@@ -58,9 +58,9 @@ fn pull_level() {
         worker.step_while(|| server.is_any_outdated());
 
         let mut expected = HashSet::new();
-        expected.insert((vec![Value::Eid(200), Value::Attribute("age".to_string()), Value::Number(13)], 1));
-        expected.insert((vec![Value::Eid(200), Value::Attribute("name".to_string()), Value::String("Dipper".to_string())], 1));
-        expected.insert((vec![Value::Eid(300), Value::Attribute("name".to_string()), Value::String("Soos".to_string())], 1));
+        expected.insert((vec![Value::Eid(200), Value::Aid("age".to_string()), Value::Number(13)], 1));
+        expected.insert((vec![Value::Eid(200), Value::Aid("name".to_string()), Value::String("Dipper".to_string())], 1));
+        expected.insert((vec![Value::Eid(300), Value::Aid("name".to_string()), Value::String("Soos".to_string())], 1));
 
         for _i in 0..expected.len() {
             let result = results.recv().unwrap();
@@ -116,10 +116,10 @@ fn pull_children() {
         worker.step_while(|| server.is_any_outdated());
 
         let mut expected = HashSet::new();
-        expected.insert((vec![Value::Eid(100), Value::Attribute("parent/child".to_string()), Value::Eid(300), Value::Attribute("age".to_string()), Value::Number(13)], 1));
-        expected.insert((vec![Value::Eid(100), Value::Attribute("parent/child".to_string()), Value::Eid(300), Value::Attribute("name".to_string()), Value::String("Mabel".to_string())], 1));
-        expected.insert((vec![Value::Eid(200), Value::Attribute("parent/child".to_string()), Value::Eid(400), Value::Attribute("age".to_string()), Value::Number(12)], 1));
-        expected.insert((vec![Value::Eid(200), Value::Attribute("parent/child".to_string()), Value::Eid(400), Value::Attribute("name".to_string()), Value::String("Dipper".to_string())], 1));
+        expected.insert((vec![Value::Eid(100), Value::Aid("parent/child".to_string()), Value::Eid(300), Value::Aid("age".to_string()), Value::Number(13)], 1));
+        expected.insert((vec![Value::Eid(100), Value::Aid("parent/child".to_string()), Value::Eid(300), Value::Aid("name".to_string()), Value::String("Mabel".to_string())], 1));
+        expected.insert((vec![Value::Eid(200), Value::Aid("parent/child".to_string()), Value::Eid(400), Value::Aid("age".to_string()), Value::Number(12)], 1));
+        expected.insert((vec![Value::Eid(200), Value::Aid("parent/child".to_string()), Value::Eid(400), Value::Aid("name".to_string()), Value::String("Dipper".to_string())], 1));
 
         for _i in 0..expected.len() {
             let result = results.recv().unwrap();
@@ -235,9 +235,9 @@ fn pull() {
                     TxData(1, 100, "name".to_string(), Value::String("rule".to_string())),
                     TxData(1, 100, "join/binding".to_string(), Value::Eid(200)),
                     TxData(1, 100, "join/binding".to_string(), Value::Eid(300)),
-                    TxData(1, 200, "pattern/a".to_string(), Value::Attribute("xyz".to_string())),
+                    TxData(1, 200, "pattern/a".to_string(), Value::Aid("xyz".to_string())),
                     TxData(1, 300, "pattern/e".to_string(), Value::Eid(12345)),
-                    TxData(1, 300, "pattern/a".to_string(), Value::Attribute("asd".to_string())),
+                    TxData(1, 300, "pattern/a".to_string(), Value::Aid("asd".to_string())),
                 ],
             },
             0,
@@ -247,10 +247,10 @@ fn pull() {
         worker.step_while(|| server.is_any_outdated());
 
         let mut expected = HashSet::new();
-        expected.insert((vec![Value::Eid(100), Value::Attribute("name".to_string()), Value::String("rule".to_string())], 1));
-        expected.insert((vec![Value::Eid(100), Value::Attribute("join/binding".to_string()), Value::Eid(200), Value::Attribute("pattern/a".to_string()), Value::Attribute("xyz".to_string())], 1));
-        expected.insert((vec![Value::Eid(100), Value::Attribute("join/binding".to_string()), Value::Eid(300), Value::Attribute("pattern/e".to_string()), Value::Eid(12345)], 1));
-        expected.insert((vec![Value::Eid(100), Value::Attribute("join/binding".to_string()), Value::Eid(300), Value::Attribute("pattern/a".to_string()), Value::Attribute("asd".to_string())], 1));
+        expected.insert((vec![Value::Eid(100), Value::Aid("name".to_string()), Value::String("rule".to_string())], 1));
+        expected.insert((vec![Value::Eid(100), Value::Aid("join/binding".to_string()), Value::Eid(200), Value::Aid("pattern/a".to_string()), Value::Aid("xyz".to_string())], 1));
+        expected.insert((vec![Value::Eid(100), Value::Aid("join/binding".to_string()), Value::Eid(300), Value::Aid("pattern/e".to_string()), Value::Eid(12345)], 1));
+        expected.insert((vec![Value::Eid(100), Value::Aid("join/binding".to_string()), Value::Eid(300), Value::Aid("pattern/a".to_string()), Value::Aid("asd".to_string())], 1));
         
         for _i in 0..expected.len() {
             let result = results.recv_timeout(Duration::from_millis(400)).unwrap();

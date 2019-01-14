@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
-use {Attribute, Entity, Value, Var};
+use {Aid, Eid, Value, Var};
 use {RelationHandle, Relation, VariableMap, SimpleRelation};
 
 pub mod project;
@@ -61,11 +61,11 @@ pub enum Plan {
     /// Transforms a binding by a function expression
     Transform(Transform<Plan>),
     /// Data pattern of the form [?e a ?v]
-    MatchA(Var, Attribute, Var),
+    MatchA(Var, Aid, Var),
     /// Data pattern of the form [e a ?v]
-    MatchEA(Entity, Attribute, Var),
+    MatchEA(Eid, Aid, Var),
     /// Data pattern of the form [?e a v]
-    MatchAV(Var, Attribute, Value),
+    MatchAV(Var, Aid, Value),
     /// Sources data from a query-local relation
     RuleExpr(Vec<Var>, String),
     /// Sources data from a published relation

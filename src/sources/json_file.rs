@@ -13,7 +13,7 @@ use timely::dataflow::{Scope, Stream};
 
 // use sources::json_file::flate2::read::GzDecoder;
 
-use {Value, Entity};
+use {Value, Eid};
 
 use sources::Sourceable;
 
@@ -86,7 +86,7 @@ impl Sourceable for JsonFile {
                                             _ => panic!("only strings, booleans, and i64 types supported at the moment"),
                                         };
 
-                                        session.give(((name_idx, vec![Value::Eid(object_index as Entity), v]), 0, 1));
+                                        session.give(((name_idx, vec![Value::Eid(object_index as Eid), v]), 0, 1));
                                     }
                                 }
                             }
