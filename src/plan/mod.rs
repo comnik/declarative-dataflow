@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use {Aid, Eid, Value, Var};
-use {RelationHandle, Relation, VariableMap, SimpleRelation};
+use {Attribute, RelationHandle, Relation, VariableMap, SimpleRelation};
 
 pub mod project;
 pub mod aggregate;
@@ -36,6 +36,7 @@ pub trait Implementable {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut HashMap<String, RelationHandle>,
+        attributes: &mut HashMap<String, Attribute>,
     ) -> SimpleRelation<'b, S>;
 }
 
@@ -82,6 +83,7 @@ impl Implementable for Plan {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut HashMap<String, RelationHandle>,
+        attributes: &mut HashMap<String, Attribute>,
     ) -> SimpleRelation<'b, S> {
         
         // use differential_dataflow::AsCollection;
@@ -91,35 +93,35 @@ impl Implementable for Plan {
 
         match self {
             &Plan::Project(ref projection) => {
-                projection.implement(nested, local_arrangements, global_arrangements)
+                projection.implement(nested, local_arrangements, global_arrangements, attributes)
             }
             &Plan::Aggregate(ref aggregate) => {
-                aggregate.implement(nested, local_arrangements, global_arrangements)
+                aggregate.implement(nested, local_arrangements, global_arrangements, attributes)
             }
             &Plan::Union(ref union) => {
-                union.implement(nested, local_arrangements, global_arrangements)
+                union.implement(nested, local_arrangements, global_arrangements, attributes)
             }
             &Plan::Join(ref join) => {
-                join.implement(nested, local_arrangements, global_arrangements)
+                join.implement(nested, local_arrangements, global_arrangements, attributes)
             }
             &Plan::Hector(ref hector) => {
-                hector.implement(nested, local_arrangements, global_arrangements)
+                hector.implement(nested, local_arrangements, global_arrangements, attributes)
             }
             &Plan::Antijoin(ref antijoin) => {
-                antijoin.implement(nested, local_arrangements, global_arrangements)
+                antijoin.implement(nested, local_arrangements, global_arrangements, attributes)
             }
             &Plan::Negate(ref plan) => {
-                let mut rel = plan.implement(nested, local_arrangements, global_arrangements);
+                let mut rel = plan.implement(nested, local_arrangements, global_arrangements, attributes);
                 SimpleRelation {
                     symbols: rel.symbols().to_vec(),
                     tuples: rel.tuples().negate(),
                 }
             }
             &Plan::Filter(ref filter) => {
-                filter.implement(nested, local_arrangements, global_arrangements)
+                filter.implement(nested, local_arrangements, global_arrangements, attributes)
             }
             &Plan::Transform(ref transform) => {
-                transform.implement(nested, local_arrangements, global_arrangements)
+                transform.implement(nested, local_arrangements, global_arrangements, attributes)
             }
             &Plan::MatchA(sym1, ref a, sym2) => {
                 let tuples = match global_arrangements.get_mut(a) {
@@ -188,10 +190,10 @@ impl Implementable for Plan {
                 },
             },
             &Plan::Pull(ref pull) => {
-                pull.implement(nested, local_arrangements, global_arrangements)
+                pull.implement(nested, local_arrangements, global_arrangements, attributes)
             },
             &Plan::PullLevel(ref path) => {
-                path.implement(nested, local_arrangements, global_arrangements)
+                path.implement(nested, local_arrangements, global_arrangements, attributes)
             },
         }
     }

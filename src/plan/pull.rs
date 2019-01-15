@@ -10,7 +10,7 @@ use differential_dataflow::AsCollection;
 
 use plan::Implementable;
 use Relation;
-use {RelationHandle, VariableMap, SimpleRelation, Var, Aid, Value};
+use {Attribute, RelationHandle, VariableMap, SimpleRelation, Var, Aid, Value};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
@@ -73,6 +73,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut HashMap<String, RelationHandle>,
+        attributes: &mut HashMap<String, Attribute>,
     ) -> SimpleRelation<'b, S> {
 
         use timely::order::Product;
@@ -84,7 +85,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         // @TODO use CollectionIndex
         
         let input = self.plan
-            .implement(nested, local_arrangements, global_arrangements);
+            .implement(nested, local_arrangements, global_arrangements, attributes);
 
         if self.pull_attributes.is_empty() {
             if self.path_attributes.is_empty() {
@@ -151,12 +152,13 @@ impl<P: Implementable> Implementable for Pull<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut HashMap<String, RelationHandle>,
+        attributes: &mut HashMap<String, Attribute>,
     ) -> SimpleRelation<'b, S> {
 
         let mut scope = nested.clone();
         let streams = self.paths.iter().map(|path| {
             path
-                .implement(&mut scope, local_arrangements, global_arrangements)
+                .implement(&mut scope, local_arrangements, global_arrangements, attributes)
                 .tuples()
                 .inner
         });

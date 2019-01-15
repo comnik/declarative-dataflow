@@ -7,7 +7,7 @@ use timely::dataflow::scopes::child::Iterative;
 
 use plan::Implementable;
 use Relation;
-use {RelationHandle, VariableMap, SimpleRelation, Value, Var};
+use {Attribute, RelationHandle, VariableMap, SimpleRelation, Value, Var};
 
 /// Permitted functions.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -44,11 +44,12 @@ impl<P: Implementable> Implementable for Transform<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut HashMap<String, RelationHandle>,
+        attributes: &mut HashMap<String, Attribute>,
     ) -> SimpleRelation<'b, S> {
         
         let rel = self
             .plan
-            .implement(nested, local_arrangements, global_arrangements);
+            .implement(nested, local_arrangements, global_arrangements, attributes);
 
         let key_offsets: Vec<usize> = self
             .variables

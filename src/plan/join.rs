@@ -10,7 +10,7 @@ use differential_dataflow::operators::Join as JoinMap;
 
 use plan::Implementable;
 use Relation;
-use {RelationHandle, VariableMap, SimpleRelation, Var};
+use {Attribute, RelationHandle, VariableMap, SimpleRelation, Var};
 
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
@@ -31,11 +31,12 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut HashMap<String, RelationHandle>,
+        attributes: &mut HashMap<String, Attribute>,
     ) -> SimpleRelation<'b, S> {
         let left = self.left_plan
-            .implement(nested, local_arrangements, global_arrangements);
+            .implement(nested, local_arrangements, global_arrangements, attributes);
         let right = self.right_plan
-            .implement(nested, local_arrangements, global_arrangements);
+            .implement(nested, local_arrangements, global_arrangements, attributes);
 
         let symbols = self.variables
             .iter()

@@ -7,7 +7,7 @@ use timely::dataflow::scopes::child::Iterative;
 
 use plan::Implementable;
 use Relation;
-use {RelationHandle, VariableMap, SimpleRelation, Var};
+use {Attribute, RelationHandle, VariableMap, SimpleRelation, Var};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible
@@ -26,10 +26,11 @@ impl<P: Implementable> Implementable for Project<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut HashMap<String, RelationHandle>,
+        attributes: &mut HashMap<String, Attribute>,
     ) -> SimpleRelation<'b, S> {
         
         let relation = self.plan
-            .implement(nested, local_arrangements, global_arrangements);
+            .implement(nested, local_arrangements, global_arrangements, attributes);
         let tuples = relation
             .tuples_by_symbols(&self.variables)
             .map(|(key, _tuple)| key);

@@ -11,7 +11,7 @@ use differential_dataflow::operators::Join as JoinMap;
 
 use plan::Implementable;
 use Relation;
-use {RelationHandle, VariableMap, SimpleRelation, Value, Var};
+use {Attribute, RelationHandle, VariableMap, SimpleRelation, Value, Var};
 
 use num_rational::{Ratio, Rational32};
 
@@ -62,9 +62,10 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         global_arrangements: &mut HashMap<String, RelationHandle>,
+        attributes: &mut HashMap<String, Attribute>,
     ) -> SimpleRelation<'b, S> {
         
-        let relation = self.plan.implement(nested, local_arrangements, global_arrangements);
+        let relation = self.plan.implement(nested, local_arrangements, global_arrangements, attributes);
 
         // We split the incoming tuples into their (key, value) parts.
         let tuples = relation.tuples_by_symbols(&self.key_symbols);

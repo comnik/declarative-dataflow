@@ -24,17 +24,21 @@ extern crate num_rational;
 use std::hash::Hash;
 use std::collections::{HashMap, HashSet};
 
-use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::dataflow::*;
 use timely::order::Product;
 use timely::progress::Timestamp;
+use timely::progress::timestamp::Refines;
 
 use differential_dataflow::{Data, Collection};
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::arrange::{Arrange, TraceAgent};
+use differential_dataflow::operators::arrange::{Arrange, TraceAgent, Arranged};
 use differential_dataflow::operators::group::Threshold;
 use differential_dataflow::operators::iterate::Variable;
+use differential_dataflow::trace::TraceReader;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
+use differential_dataflow::trace::wrappers::enter::TraceEnter;
+use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt;
 
 pub use num_rational::Rational32;
 
@@ -89,11 +93,11 @@ pub type Result = (Vec<Value>, u64, isize);
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Datom(pub Eid, pub Aid, pub Value);
 
-// A trace of values indexed by self. 
-type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
+/// A trace of values indexed by self. 
+pub type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
 
-// A trace of (K, V) pairs indexed by key.
-type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
+/// A trace of (K, V) pairs indexed by key.
+pub type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 
 // @TODO change this to TraceValHandle<Eid, Value> eventually
 /// A handle to an arranged attribute.
@@ -145,7 +149,7 @@ where
     V: Data+Hash,
     T: Lattice+Data+Timestamp,
 {
-    /// Create a named CollectionIndex from a (K, V) collection.
+    /// Creates a named CollectionIndex from a (K, V) collection.
     pub fn index<G: Scope<Timestamp=T>>(name: &str, collection: &Collection<G, (K, V), isize>) -> Self {
         let counts = collection.map(|(k,_v)| (k,())).arrange_named(&format!("Counts({})", name)).trace;
         let propose = collection.arrange_named(&format!("Proposals({})", &name)).trace;
@@ -157,7 +161,147 @@ where
             validate_trace: validate,
         }
     }
+
+    /// Returns a LiveIndex that lives in the specified scope.
+    pub fn import<G: Scope<Timestamp=T>>(
+        &mut self,
+        scope: &G
+    ) -> LiveIndex<G, K, V,
+                   TraceKeyHandle<K, T, isize>,
+                   TraceValHandle<K, V, T, isize>,
+                   TraceKeyHandle<(K, V), T, isize>>
+    {
+        LiveIndex {
+            count_trace: self.count_trace.import(scope),
+            propose_trace: self.propose_trace.import(scope),
+            validate_trace: self.validate_trace.import(scope),
+        }
+    }
 }
+
+/// Attributes are the fundamental unit of data modeling in 3DF.
+pub struct Attribute {
+    forward: CollectionIndex<Value, Value, u64>,
+    reverse: CollectionIndex<Value, Value, u64>,
+}
+
+impl Attribute {
+    /// Create an Attribute from a (K, V) collection.
+    pub fn new<G: Scope<Timestamp=u64>>(name: &str, collection: &Collection<G, (Value,Value), isize>) -> Self {
+        let forward = collection.clone();
+        let reverse = collection.map(|(e,v)| (v,e));
+        
+        Attribute {
+            forward: CollectionIndex::index(name, &forward),
+            reverse: CollectionIndex::index(name, &reverse),
+        }
+    }
+
+    /// Returns a trace to the underlying (K, V) pairs.
+    pub fn tuples(&self) -> TraceKeyHandle<(Value, Value), u64, isize> {
+        self.forward.validate_trace.clone()
+    }
+}
+
+/// CollectionIndex that was imported into a scope.
+pub struct LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
+where
+    G: Scope,
+    G::Timestamp: Lattice+Data,
+    K: Data,
+    V: Data,
+    TrCount: TraceReader<K, (), G::Timestamp, isize>+Clone,
+    TrPropose: TraceReader<K, V, G::Timestamp, isize>+Clone,
+    TrValidate: TraceReader<(K,V), (), G::Timestamp, isize>+Clone,
+{
+    count_trace: Arranged<G, K, (), isize, TrCount>,
+    propose_trace: Arranged<G, K, V, isize, TrPropose>,
+    validate_trace: Arranged<G, (K, V), (), isize, TrValidate>,
+}
+
+impl<G, K, V, TrCount, TrPropose, TrValidate> Clone for LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
+where
+    G: Scope,
+    G::Timestamp: Lattice+Data,
+    K: Data,
+    V: Data,
+    TrCount: TraceReader<K, (), G::Timestamp, isize>+Clone,
+    TrPropose: TraceReader<K, V, G::Timestamp, isize>+Clone,
+    TrValidate: TraceReader<(K,V), (), G::Timestamp, isize>+Clone,
+{
+    fn clone(&self) -> Self {
+        LiveIndex {
+            count_trace: self.count_trace.clone(),
+            propose_trace: self.propose_trace.clone(),
+            validate_trace: self.validate_trace.clone(),
+        }
+    }
+}
+
+impl<G, K, V, TrCount, TrPropose, TrValidate> LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
+where
+    G: Scope,
+    G::Timestamp: Lattice+Data,
+    K: Data,
+    V: Data,
+    TrCount: TraceReader<K, (), G::Timestamp, isize>+Clone,
+    TrPropose: TraceReader<K, V, G::Timestamp, isize>+Clone,
+    TrValidate: TraceReader<(K,V), (), G::Timestamp, isize>+Clone,
+{
+    /// Brings the index's traces into the specified scope.
+    pub fn enter<'a, TInner>(
+        &self,
+        child: &Child<'a, G, TInner>
+    ) -> LiveIndex<Child<'a, G, TInner>, K, V,
+                   TraceEnter<K, (), G::Timestamp, isize, TrCount, TInner>,
+                   TraceEnter<K, V, G::Timestamp, isize, TrPropose, TInner>,
+                   TraceEnter<(K,V), (), G::Timestamp, isize, TrValidate, TInner>>
+    where
+        TrCount::Batch: Clone,
+        TrPropose::Batch: Clone,
+        TrValidate::Batch: Clone,
+        K: 'static,
+        V: 'static,
+        G::Timestamp: Clone+Default+'static,
+        TInner: Refines<G::Timestamp>+Lattice+Timestamp+Clone+Default+'static,
+    {
+        LiveIndex {
+            count_trace: self.count_trace.enter(child),
+            propose_trace: self.propose_trace.enter(child),
+            validate_trace: self.validate_trace.enter(child),
+        }
+    }
+
+    /// Brings the index's traces into the specified scope.
+    pub fn enter_at<'a, TInner, FCount, FPropose, FValidate>(
+        &self,
+        child: &Child<'a, G, TInner>,
+        fcount: FCount,
+        fpropose: FPropose,
+        fvalidate: FValidate,
+    ) -> LiveIndex<Child<'a, G, TInner>, K, V,
+                   TraceEnterAt<K, (), G::Timestamp, isize, TrCount, TInner, FCount>,
+                   TraceEnterAt<K, V, G::Timestamp, isize, TrPropose, TInner, FPropose>,
+                   TraceEnterAt<(K,V), (), G::Timestamp, isize, TrValidate, TInner, FValidate>>
+    where
+        TrCount::Batch: Clone,
+        TrPropose::Batch: Clone,
+        TrValidate::Batch: Clone,
+        K: 'static,
+        V: 'static,
+        G::Timestamp: Clone+Default+'static,
+        TInner: Refines<G::Timestamp>+Lattice+Timestamp+Clone+Default+'static,
+        FCount: Fn(&K, &(), &G::Timestamp)->TInner+'static,
+        FPropose: Fn(&K, &V, &G::Timestamp)->TInner+'static,
+        FValidate: Fn(&(K,V), &(), &G::Timestamp)->TInner+'static,
+    {
+        LiveIndex {
+            count_trace: self.count_trace.enter_at(child, fcount),
+            propose_trace: self.propose_trace.enter_at(child, fpropose),
+            validate_trace: self.validate_trace.enter_at(child, fvalidate),
+        }
+    }
+}   
 
 /// A symbol used in a query.
 type Var = u32;
@@ -268,6 +412,7 @@ pub fn implement<S: Scope<Timestamp = u64>>(
     publish: Vec<String>,
     scope: &mut S,
     global_arrangements: &mut HashMap<String, RelationHandle>,
+    attributes: &mut HashMap<String, Attribute>,
     _probe: &mut ProbeHandle<u64>,
 ) -> HashMap<String, RelationHandle> {
     scope.iterative::<u64, _, _>(|nested| {
@@ -309,7 +454,7 @@ pub fn implement<S: Scope<Timestamp = u64>>(
             info!("planning {:?}", rule.name);
             executions.push(
                 rule.plan
-                    .implement(nested, &local_arrangements, global_arrangements),
+                    .implement(nested, &local_arrangements, global_arrangements, attributes),
             );
         }
 

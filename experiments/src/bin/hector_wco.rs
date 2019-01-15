@@ -35,7 +35,7 @@ fn main() {
         let index = worker.index();
 
         worker.dataflow::<u64,_,_>(|scope| {
-            server.create_input("edge", scope);
+            server.create_attribute("edge", scope);
 
             server.register(
                 Register {
