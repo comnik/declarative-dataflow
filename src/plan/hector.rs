@@ -359,20 +359,6 @@ impl<'a, S: Scope+ScopeParent, P: Data+Ord> ProposeExtensionMethod<'a, S, P>
     }
 }
 
-trait ValidateExtensionMethod<G: Scope, P, E> {
-    fn validate_using<PE: PrefixExtender<G, Prefix=P, Extension=E>>(&self, extender: &mut PE) -> Collection<G, (P, E)>;
-}
-
-impl<G: Scope, P, E> ValidateExtensionMethod<G, P, E> for Collection<G, (P, E)> {
-    fn validate_using<PE: PrefixExtender<G, Prefix=P, Extension=E>>(&self, extender: &mut PE) -> Collection<G, (P, E)> {
-        extender.validate(self)
-    }
-}
-
-//
-// SPECIFIC IMPLEMENTATION
-//
-
 struct CollectionExtender<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate>
 where
     S: Scope+ScopeParent,
