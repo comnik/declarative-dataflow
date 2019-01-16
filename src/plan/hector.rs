@@ -114,7 +114,7 @@ pub struct Binding {
 fn select_e((e,_v): &(Value,Value)) -> Value { e.clone() }
 fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
 
-impl<'c> Implementable for Hector {
+impl Implementable for Hector {
     fn implement<'b, S: Scope<Timestamp = u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
@@ -134,7 +134,7 @@ impl<'c> Implementable for Hector {
                 
                 println!("IDX {:?}", idx);
                 
-                let mut extenders: Vec<Box<dyn PrefixExtender<Child<'c, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
+                let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
 
                 if idx > 0 {
                     // Conflicting relations that appear before the
@@ -295,7 +295,7 @@ trait ProposeExtensionMethod<'a, S: Scope+ScopeParent, P: Data+Ord> {
     
     fn extend<E: Data+Ord>(
         &self,
-        extenders: &mut [Box<dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>,Prefix=P,Extension=E>>]
+        extenders: &mut [Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>,Prefix=P,Extension=E> + 'a)>]
     ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, E)>;
 }
 
@@ -310,7 +310,7 @@ impl<'a, S: Scope+ScopeParent, P: Data+Ord> ProposeExtensionMethod<'a, S, P>
     
     fn extend<E: Data+Ord>(
         &self,
-        extenders: &mut [Box<dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix=P, Extension=E>>]
+        extenders: &mut [Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix=P, Extension=E> + 'a)>]
     ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, E)>
     {
         if extenders.len() == 1 {

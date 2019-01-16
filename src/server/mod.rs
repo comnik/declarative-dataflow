@@ -429,7 +429,6 @@ impl<Token: Hash> Server<Token> {
     pub fn advance_input(&mut self, name: Option<String>, tx: u64) {
         match name {
             None => {
-                println!("Advancing all inputs");
                 for handle in self.input_handles.values_mut() {
                     handle.advance_to(tx);
                     handle.flush();
@@ -439,8 +438,6 @@ impl<Token: Hash> Server<Token> {
                 let handle = self.input_handles
                     .get_mut(&name)
                     .expect(&format!("Input {} does not exist.", name));
-
-                println!("Advancing {}", name);
 
                 handle.advance_to(tx);
                 handle.flush();
@@ -469,8 +466,6 @@ impl<Token: Hash> Server<Token> {
         let handle = self.input_handles
             .remove(&name)
             .expect(&format!("Input {} does not exist.", name));
-
-        println!("Closing {}", name);
 
         handle.close();
     }

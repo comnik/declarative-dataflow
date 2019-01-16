@@ -155,7 +155,7 @@ fn hector() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input("edge", scope);
+            server.create_attribute("edge", scope);
 
             let query_name = "hector";
             server.register(
@@ -215,8 +215,8 @@ fn hector_join() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":name", scope);
-            server.create_input(":age", scope);
+            server.create_attribute(":name", scope);
+            server.create_attribute(":age", scope);
 
             let query_name = "join";
             server.register(
