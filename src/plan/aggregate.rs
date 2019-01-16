@@ -9,9 +9,8 @@ use differential_dataflow::difference::DiffPair;
 use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
 use differential_dataflow::operators::Join as JoinMap;
 
-use plan::Implementable;
-use Relation;
-use {Attribute, RelationHandle, VariableMap, SimpleRelation, Value, Var};
+use plan::{ImplContext, Implementable};
+use { Relation, VariableMap, SimpleRelation, Value, Var};
 
 use num_rational::{Ratio, Rational32};
 
@@ -36,10 +35,9 @@ pub enum AggregationFn {
     // STDDEV,
 }
 
-/// [WIP]
-/// A plan stage applying the specified aggregation functions to
-/// bindings for the specified symbols.
-/// Given multiple aggregations we iterate and n-1 joins are applied to the results.
+/// [WIP] A plan stage applying the specified aggregation functions to
+/// bindings for the specified symbols. Given multiple aggregations
+/// we iterate and n-1 joins are applied to the results.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Aggregate<P: Implementable> {
     /// TODO
@@ -57,15 +55,14 @@ pub struct Aggregate<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S> {
         
-        let relation = self.plan.implement(nested, local_arrangements, global_arrangements, attributes);
+        let relation = self.plan.implement(nested, local_arrangements, context);
 
         // We split the incoming tuples into their (key, value) parts.
         let tuples = relation.tuples_by_symbols(&self.key_symbols);

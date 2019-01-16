@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use {Aid, Eid, Value, Var};
-use {Attribute, RelationHandle, Relation, VariableMap, SimpleRelation};
+use {CollectionIndex, RelationHandle, Relation, VariableMap, SimpleRelation};
 
 pub mod project;
 pub mod aggregate;
@@ -28,15 +28,35 @@ pub use self::filter::{Filter, Predicate};
 pub use self::transform::{Function, Transform};
 pub use self::pull::{Pull, PullLevel};
 
+/// A thing that can provide global state required during the
+/// implementation of plans.
+pub trait ImplContext {
+    /// Returns a mutable reference to a (non-base) relation, if one
+    /// is registered under the given name.
+    fn global_arrangement
+        (&mut self, name: &str) -> Option<&mut RelationHandle>;
+
+    /// Returns a mutable reference to an attribute (a base relation)
+    /// arranged from eid -> value, if one is registered under the
+    /// given name.
+    fn forward_index
+        (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
+
+    /// Returns a mutable reference to an attribute (a base relation)
+    /// arranged from value -> eid, if one is registered under the
+    /// given name.
+    fn reverse_index
+        (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
+}
+
 /// A type that can be implemented as a simple relation.
 pub trait Implementable {
     /// Implements the type as a simple relation.
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S>;
 }
 
@@ -78,12 +98,11 @@ pub enum Plan {
 }
 
 impl Implementable for Plan {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S> {
         
         // use differential_dataflow::AsCollection;
@@ -93,38 +112,38 @@ impl Implementable for Plan {
 
         match self {
             &Plan::Project(ref projection) => {
-                projection.implement(nested, local_arrangements, global_arrangements, attributes)
+                projection.implement(nested, local_arrangements, context)
             }
             &Plan::Aggregate(ref aggregate) => {
-                aggregate.implement(nested, local_arrangements, global_arrangements, attributes)
+                aggregate.implement(nested, local_arrangements, context)
             }
             &Plan::Union(ref union) => {
-                union.implement(nested, local_arrangements, global_arrangements, attributes)
+                union.implement(nested, local_arrangements, context)
             }
             &Plan::Join(ref join) => {
-                join.implement(nested, local_arrangements, global_arrangements, attributes)
+                join.implement(nested, local_arrangements, context)
             }
             &Plan::Hector(ref hector) => {
-                hector.implement(nested, local_arrangements, global_arrangements, attributes)
+                hector.implement(nested, local_arrangements, context)
             }
             &Plan::Antijoin(ref antijoin) => {
-                antijoin.implement(nested, local_arrangements, global_arrangements, attributes)
+                antijoin.implement(nested, local_arrangements, context)
             }
             &Plan::Negate(ref plan) => {
-                let mut rel = plan.implement(nested, local_arrangements, global_arrangements, attributes);
+                let mut rel = plan.implement(nested, local_arrangements, context);
                 SimpleRelation {
                     symbols: rel.symbols().to_vec(),
                     tuples: rel.tuples().negate(),
                 }
             }
             &Plan::Filter(ref filter) => {
-                filter.implement(nested, local_arrangements, global_arrangements, attributes)
+                filter.implement(nested, local_arrangements, context)
             }
             &Plan::Transform(ref transform) => {
-                transform.implement(nested, local_arrangements, global_arrangements, attributes)
+                transform.implement(nested, local_arrangements, context)
             }
             &Plan::MatchA(sym1, ref a, sym2) => {
-                let tuples = match global_arrangements.get_mut(a) {
+                let tuples = match context.global_arrangement(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(named) => named
                         .import_named(&nested.parent, a)
@@ -138,7 +157,7 @@ impl Implementable for Plan {
                 }
             }
             &Plan::MatchEA(e, ref a, sym1) => {
-                let tuples = match global_arrangements.get_mut(a) {
+                let tuples = match context.global_arrangement(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(named) => named
                         .import_named(&nested.parent, a)
@@ -154,7 +173,7 @@ impl Implementable for Plan {
                 }
             }
             &Plan::MatchAV(sym1, ref a, ref v) => {
-                let tuples = match global_arrangements.get_mut(a) {
+                let tuples = match context.global_arrangement(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(named) => {
                         let v = v.clone();
@@ -179,7 +198,7 @@ impl Implementable for Plan {
                     tuples: named.map(|tuple| tuple.clone()),
                 },
             },
-            &Plan::NameExpr(ref syms, ref name) => match global_arrangements.get_mut(name) {
+            &Plan::NameExpr(ref syms, ref name) => match context.global_arrangement(name) {
                 None => panic!("{:?} not in query map", name),
                 Some(named) => SimpleRelation {
                     symbols: syms.clone(),
@@ -190,10 +209,10 @@ impl Implementable for Plan {
                 },
             },
             &Plan::Pull(ref pull) => {
-                pull.implement(nested, local_arrangements, global_arrangements, attributes)
+                pull.implement(nested, local_arrangements, context)
             },
             &Plan::PullLevel(ref path) => {
-                path.implement(nested, local_arrangements, global_arrangements, attributes)
+                path.implement(nested, local_arrangements, context)
             },
         }
     }

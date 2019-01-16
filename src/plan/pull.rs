@@ -8,9 +8,9 @@ use timely::dataflow::operators::Concatenate;
 
 use differential_dataflow::AsCollection;
 
-use plan::Implementable;
+use plan::{ImplContext, Implementable};
 use Relation;
-use {Attribute, RelationHandle, VariableMap, SimpleRelation, Var, Aid, Value};
+use {VariableMap, SimpleRelation, Var, Aid, Value};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
@@ -68,12 +68,11 @@ fn interleave(values: &Vec<Value>, constants: &Vec<Aid>) -> Vec<Value> {
 }
 
 impl<P: Implementable> Implementable for PullLevel<P> {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S> {
 
         use timely::order::Product;
@@ -85,7 +84,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         // @TODO use CollectionIndex
         
         let input = self.plan
-            .implement(nested, local_arrangements, global_arrangements, attributes);
+            .implement(nested, local_arrangements, context);
 
         if self.pull_attributes.is_empty() {
             if self.path_attributes.is_empty() {
@@ -110,7 +109,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
             let streams = self.pull_attributes.iter().map(|a| {
                 let e_v: Arranged<Iterative<S, u64>, Value, Value, isize,
                                   TraceAgent<Value, Value, Product<u64,u64>, isize,
-                                             OrdValSpine<Value, Value, Product<u64, u64>, isize>>> = match global_arrangements.get_mut(a) {
+                                             OrdValSpine<Value, Value, Product<u64, u64>, isize>>> = match context.global_arrangement(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(named) => named
                         .import_named(&nested.parent, a)
@@ -147,18 +146,17 @@ impl<P: Implementable> Implementable for PullLevel<P> {
 }
 
 impl<P: Implementable> Implementable for Pull<P> {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S> {
 
         let mut scope = nested.clone();
         let streams = self.paths.iter().map(|path| {
             path
-                .implement(&mut scope, local_arrangements, global_arrangements, attributes)
+                .implement(&mut scope, local_arrangements, context)
                 .tuples()
                 .inner
         });

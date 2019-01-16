@@ -5,9 +5,9 @@ use std::collections::HashMap;
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
-use plan::Implementable;
+use plan::{ImplContext, Implementable};
 use Relation;
-use {Attribute, RelationHandle, VariableMap, SimpleRelation, Var};
+use {VariableMap, SimpleRelation, Var};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible
@@ -21,16 +21,15 @@ pub struct Project<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Project<P> {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S> {
         
         let relation = self.plan
-            .implement(nested, local_arrangements, global_arrangements, attributes);
+            .implement(nested, local_arrangements, context);
         let tuples = relation
             .tuples_by_symbols(&self.variables)
             .map(|(key, _tuple)| key);

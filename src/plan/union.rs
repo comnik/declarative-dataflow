@@ -7,9 +7,9 @@ use timely::dataflow::scopes::child::Iterative;
 
 use differential_dataflow::operators::Threshold;
 
-use plan::Implementable;
+use plan::{ImplContext, Implementable};
 use Relation;
-use {Attribute, RelationHandle, VariableMap, SimpleRelation, Var};
+use {VariableMap, SimpleRelation, Var};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -23,12 +23,11 @@ pub struct Union<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Union<P> {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S> {
         
         use differential_dataflow::AsCollection;
@@ -36,7 +35,7 @@ impl<P: Implementable> Implementable for Union<P> {
 
         let mut scope = nested.clone();
         let streams = self.plans.iter().map(|plan| {
-            plan.implement(&mut scope, local_arrangements, global_arrangements, attributes)
+            plan.implement(&mut scope, local_arrangements, context)
                 .tuples_by_symbols(&self.variables)
                 .map(|(key, _vals)| key)
                 .inner

@@ -45,7 +45,7 @@ pub use num_rational::Rational32;
 pub mod timestamp;
 
 pub mod plan;
-pub use plan::{Implementable, Plan};
+pub use plan::{ImplContext, Implementable, Plan};
 
 pub mod server;
 pub mod server_impl;
@@ -176,30 +176,6 @@ where
             propose_trace: self.propose_trace.import(scope),
             validate_trace: self.validate_trace.import(scope),
         }
-    }
-}
-
-/// Attributes are the fundamental unit of data modeling in 3DF.
-pub struct Attribute {
-    forward: CollectionIndex<Value, Value, u64>,
-    reverse: CollectionIndex<Value, Value, u64>,
-}
-
-impl Attribute {
-    /// Create an Attribute from a (K, V) collection.
-    pub fn new<G: Scope<Timestamp=u64>>(name: &str, collection: &Collection<G, (Value,Value), isize>) -> Self {
-        let forward = collection.clone();
-        let reverse = collection.map(|(e,v)| (v,e));
-        
-        Attribute {
-            forward: CollectionIndex::index(name, &forward),
-            reverse: CollectionIndex::index(name, &reverse),
-        }
-    }
-
-    /// Returns a trace to the underlying (K, V) pairs.
-    pub fn tuples(&self) -> TraceKeyHandle<(Value, Value), u64, isize> {
-        self.forward.validate_trace.clone()
     }
 }
 
@@ -404,16 +380,12 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> {
     }
 }
 
-/// Takes a query plan and turns it into a differential dataflow. The
-/// dataflow is extended to feed output tuples to JS clients. A probe
-/// on the dataflow is returned.
-pub fn implement<S: Scope<Timestamp = u64>>(
+/// Takes a query plan and turns it into a differential dataflow.
+pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
     mut rules: Vec<Rule>,
     publish: Vec<String>,
     scope: &mut S,
-    global_arrangements: &mut HashMap<String, RelationHandle>,
-    attributes: &mut HashMap<String, Attribute>,
-    _probe: &mut ProbeHandle<u64>,
+    context: &mut I,
 ) -> HashMap<String, RelationHandle> {
     scope.iterative::<u64, _, _>(|nested| {
         let mut local_arrangements = VariableMap::new();
@@ -436,8 +408,6 @@ pub fn implement<S: Scope<Timestamp = u64>>(
         for name in publish.into_iter() {
             if let Some(relation) = local_arrangements.get(&name) {
                 let trace = relation.leave()
-                    // .inspect(|x| { println!("OUTPUT {:?}", x); })
-                // .probe_with(probe)
                     .map(|t| (t,()))
                     .arrange_named(&name)
                     .trace;
@@ -454,7 +424,7 @@ pub fn implement<S: Scope<Timestamp = u64>>(
             info!("planning {:?}", rule.name);
             executions.push(
                 rule.plan
-                    .implement(nested, &local_arrangements, global_arrangements, attributes),
+                    .implement(nested, &local_arrangements, context),
             );
         }
 

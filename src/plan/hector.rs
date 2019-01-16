@@ -24,8 +24,8 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
 
 use timestamp::altneu::AltNeu;
-use plan::Implementable;
-use {Attribute, RelationHandle, VariableMap, SimpleRelation, Value, Var, LiveIndex};
+use plan::{ImplContext, Implementable};
+use {VariableMap, SimpleRelation, Value, Var, LiveIndex};
 
 /// A type capable of extending a stream of prefixes. Implementors of
 /// `PrefixExtension` provide types and methods for extending a
@@ -111,21 +111,48 @@ pub struct Binding {
     pub source_name: String,
 }
 
+enum Direction { Forward(usize), Reverse(usize), }
+
+fn direction(prefix_symbols: (Var,Var), extender_symbols: (Var,Var)) -> Result<Direction, &'static str> {
+    if prefix_symbols == extender_symbols {
+        Err("Attempt to intersect attribute with itself")
+    } else if prefix_symbols.0 == extender_symbols.0 {
+        // forward select_e
+        Ok(Direction::Forward(0))
+    } else if prefix_symbols.0 == extender_symbols.1 {
+        // forward select_v
+        Ok(Direction::Forward(1))
+    } else if prefix_symbols.1 == extender_symbols.0 {
+        // reverse select_e
+        Ok(Direction::Reverse(0))
+    } else if prefix_symbols.1 == extender_symbols.1 {
+        // reverse select_v
+        Ok(Direction::Reverse(1))
+    } else {
+        Err("Requested variable not bound by Attribute")
+    }
+}
+
 fn select_e((e,_v): &(Value,Value)) -> Value { e.clone() }
 fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
 
 impl Implementable for Hector {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        _global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S> {
 
         let joined = nested.scoped::<AltNeu<Product<u64,u64>>, _, _>("AltNeu", |inner| {
 
             let scope = inner.clone();
+
+            // @TODO avoid importing the same thing twice
+            let mut forward_alt = HashMap::new();
+            let mut forward_neu = HashMap::new();
+            let mut reverse_alt = HashMap::new();
+            let mut reverse_neu = HashMap::new();
             
             // For each binding, we construct a delta query driven by
             // changes to that binding.
@@ -142,55 +169,45 @@ impl Implementable for Hector {
 
                     for preceeding in self.bindings.iter().take(idx) {
 
-                        let attribute = attributes.get_mut(&preceeding.source_name).unwrap();
-                        
-                        if preceeding.symbols == delta_binding.symbols {
-                            panic!("Attempt to intersect attribute with itself");
-                        } else if preceeding.symbols.0 == delta_binding.symbols.0 {
+                        match direction(preceeding.symbols, delta_binding.symbols) {
+                            Err(msg) => panic!(msg),
+                            Ok(direction) => match direction {
+                                Direction::Forward(offset) => {
+                                    let forward = forward_alt.entry(&preceeding.source_name)
+                                        .or_insert_with(|| {
+                                            context.forward_index(&preceeding.source_name).unwrap()
+                                                .import(&scope.parent.parent)
+                                                .enter(&scope.parent)
+                                                .enter(&scope)
+                                        });
 
-                            println!("alt forward select_e");
+                                    if offset == 0 {
+                                        println!("alt forward select_e");
+                                        extenders.push(Box::new(forward.extender_using(select_e)));
+                                    } else {
+                                        println!("alt forward select_v");
+                                        extenders.push(Box::new(forward.extender_using(select_v)));
+                                    }
+                                }
+                                Direction::Reverse(offset) => {
+                                    let reverse = reverse_alt.entry(&preceeding.source_name)
+                                        .or_insert_with(|| {
+                                            context.reverse_index(&preceeding.source_name).unwrap()
+                                                .import(&scope.parent.parent)
+                                                .enter(&scope.parent)
+                                                .enter(&scope)
+                                        });
 
-                            // @TODO avoid importing the same thing twice
-                            
-                            let index = attribute.forward.import(&scope.parent.parent)
-                                .enter(&scope.parent)
-                                .enter(&scope);
-                            
-                            extenders.push(Box::new(index.extender_using(select_e)));
-
-                        } else if preceeding.symbols.0 == delta_binding.symbols.1 {
-                            
-                            println!("alt forward select_v");
-
-                            let index = attribute.forward.import(&scope.parent.parent)
-                                .enter(&scope.parent)
-                                .enter(&scope);
-                            
-                            extenders.push(Box::new(index.extender_using(select_v)));
-                            
-                        } else if preceeding.symbols.1 == delta_binding.symbols.0 {
-
-                            println!("alt reverse select_e");
-
-                            let index = attribute.reverse.import(&scope.parent.parent)
-                                .enter(&scope.parent)
-                                .enter(&scope);
-
-                            extenders.push(Box::new(index.extender_using(select_e)));
-                            
-                        } else if preceeding.symbols.1 == delta_binding.symbols.1 {
-
-                            println!("alt reverse select_v");
-
-                            let index = attribute.reverse.import(&scope.parent.parent)
-                                .enter(&scope.parent)
-                                .enter(&scope);
-
-                            extenders.push(Box::new(index.extender_using(select_v)));
-                            
-                        } else {
-                            panic!("Requested variable not bound by Attribute")
-                        }
+                                    if offset == 0 {
+                                        println!("alt reverse select_e");
+                                        extenders.push(Box::new(reverse.extender_using(select_e)));
+                                    } else {
+                                        println!("alt reverse select_v");
+                                        extenders.push(Box::new(reverse.extender_using(select_v)));
+                                    }
+                                }
+                            }
+                        }                        
                     }
                 }
 
@@ -200,72 +217,58 @@ impl Implementable for Hector {
 
                     for succeeding in self.bindings.iter().skip(idx + 1) {
 
-                        let attribute = attributes.get_mut(&succeeding.source_name).unwrap();
-                        
-                        if succeeding.symbols == delta_binding.symbols {
-                            panic!("Attempt to intersect attribute with itself");
-                        } else if succeeding.symbols.0 == delta_binding.symbols.0 {
-                            
-                            println!("neu forward select_e");
+                        match direction(succeeding.symbols, delta_binding.symbols) {
+                            Err(msg) => panic!(msg),
+                            Ok(direction) => match direction {
+                                Direction::Forward(offset) => {
+                                    let forward = forward_neu.entry(&succeeding.source_name)
+                                        .or_insert_with(|| {
+                                            context.forward_index(&succeeding.source_name).unwrap()
+                                                .import(&scope.parent.parent)
+                                                .enter(&scope.parent)
+                                                .enter_at(&scope,
+                                                          |_,_,t| AltNeu::neu(t.clone()),
+                                                          |_,_,t| AltNeu::neu(t.clone()),
+                                                          |_,_,t| AltNeu::neu(t.clone()),)
+                                        });
 
-                            let index = attribute.forward.import(&scope.parent.parent)
-                                .enter(&scope.parent)
-                                .enter_at(&scope,
-                                          |_,_,t| AltNeu::neu(t.clone()),
-                                          |_,_,t| AltNeu::neu(t.clone()),
-                                          |_,_,t| AltNeu::neu(t.clone()),);
+                                    if offset == 0 {
+                                        println!("neu forward select_e");
+                                        extenders.push(Box::new(forward.extender_using(select_e)));
+                                    } else {
+                                        println!("neu forward select_v");
+                                        extenders.push(Box::new(forward.extender_using(select_v)));
+                                    }
+                                }
+                                Direction::Reverse(offset) => {
+                                    let reverse = reverse_neu.entry(&succeeding.source_name)
+                                        .or_insert_with(|| {
+                                            context.reverse_index(&succeeding.source_name).unwrap()
+                                                .import(&scope.parent.parent)
+                                                .enter(&scope.parent)
+                                                .enter_at(&scope,
+                                                          |_,_,t| AltNeu::neu(t.clone()),
+                                                          |_,_,t| AltNeu::neu(t.clone()),
+                                                          |_,_,t| AltNeu::neu(t.clone()),)
+                                        });
 
-                            extenders.push(Box::new(index.extender_using(select_e)));
-                           
-                        } else if succeeding.symbols.0 == delta_binding.symbols.1 {
-                            
-                            println!("neu forward select_v");
-
-                            let index = attribute.forward.import(&scope.parent.parent)
-                                .enter(&scope.parent)
-                                .enter_at(&scope,
-                                          |_,_,t| AltNeu::neu(t.clone()),
-                                          |_,_,t| AltNeu::neu(t.clone()),
-                                          |_,_,t| AltNeu::neu(t.clone()),);
-
-                            extenders.push(Box::new(index.extender_using(select_v)));
-                            
-                        } else if succeeding.symbols.1 == delta_binding.symbols.0 {
-
-                            println!("neu reverse select_e");
-
-                            let index = attribute.reverse.import(&scope.parent.parent)
-                                .enter(&scope.parent)
-                                .enter_at(&scope,
-                                          |_,_,t| AltNeu::neu(t.clone()),
-                                          |_,_,t| AltNeu::neu(t.clone()),
-                                          |_,_,t| AltNeu::neu(t.clone()),);
-
-                            extenders.push(Box::new(index.extender_using(select_e)));
-                            
-                        } else if succeeding.symbols.1 == delta_binding.symbols.1 {
-
-                            println!("neu reverse select_v");
-                            let index = attribute.reverse.import(&scope.parent.parent)
-                                .enter(&scope.parent)
-                                .enter_at(&scope,
-                                          |_,_,t| AltNeu::neu(t.clone()),
-                                          |_,_,t| AltNeu::neu(t.clone()),
-                                          |_,_,t| AltNeu::neu(t.clone()),);
-
-                            extenders.push(Box::new(index.extender_using(select_v)));
-                            
-                        } else {
-                            panic!("Requested variable not bound by Attribute")
+                                    if offset == 0 {
+                                        println!("neu reverse select_e");
+                                        extenders.push(Box::new(reverse.extender_using(select_e)));
+                                    } else {
+                                        println!("neu reverse select_v");
+                                        extenders.push(Box::new(reverse.extender_using(select_v)));
+                                    }
+                                }
+                            }
                         }
                     }
                 }
                 
                 // @TODO project correctly
                 // @TODO impl ProposeExtensionMethod for Arranged
-                attributes.get(&delta_binding.source_name)
-                    .unwrap()
-                    .tuples()
+                context.forward_index(&delta_binding.source_name).expect("base relation missing")
+                    .validate_trace
                     .import(&scope.parent.parent)
                     .enter(&scope.parent)
                     .enter(&scope)

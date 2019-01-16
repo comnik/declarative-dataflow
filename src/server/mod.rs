@@ -16,8 +16,8 @@ use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
 use sources::{Source, Sourceable};
-use plan::{Plan, Pull, PullLevel};
-use {implement, Aid, Eid, RelationHandle, Attribute, Rule, Value};
+use plan::{ImplContext, Plan, Pull, PullLevel};
+use {implement, Aid, Eid, RelationHandle, CollectionIndex, Rule, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -120,14 +120,41 @@ pub struct Server<Token: Hash> {
     pub config: Config,
     /// Input handles to global arrangements.
     pub input_handles: HashMap<String, InputSession<u64, Vec<Value>, isize>>,
-    /// Named relations.
-    pub global_arrangements: HashMap<String, RelationHandle>,
-    /// Attributes / Base Relations.
-    pub attributes: HashMap<String, Attribute>,
+    /// Implementation context.
+    pub context: Context,
     /// A probe for the transaction id time domain.
     pub probe: ProbeHandle<u64>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, Vec<Token>>,
+}
+
+/// Implementation context.
+pub struct Context {
+    /// Named relations.
+    pub global_arrangements: HashMap<String, RelationHandle>,
+    /// Forward attribute indices eid -> v.
+    pub forward: HashMap<String, CollectionIndex<Value, Value, u64>>,
+    /// Reverse attribute indices v -> eid.
+    pub reverse: HashMap<String, CollectionIndex<Value, Value, u64>>,
+}
+
+impl ImplContext for Context {
+    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle>
+    {
+        self.global_arrangements.get_mut(name)
+    }
+
+    fn forward_index
+        (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>
+    {
+        self.forward.get_mut(name)
+    }
+
+    fn reverse_index
+        (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>
+    {
+        self.reverse.get_mut(name)
+    }
 }
 
 impl<Token: Hash> Server<Token> {
@@ -136,8 +163,11 @@ impl<Token: Hash> Server<Token> {
         Server {
             config: config,
             input_handles: HashMap::new(),
-            global_arrangements: HashMap::new(),
-            attributes: HashMap::new(),
+            context: Context {
+                global_arrangements: HashMap::new(),
+                forward: HashMap::new(),
+                reverse: HashMap::new(),
+            },
             probe: ProbeHandle::new(),
             interests: HashMap::new(),
         }
@@ -196,11 +226,7 @@ impl<Token: Hash> Server<Token> {
         // view of the data
         trace.distinguish_since(&[]);
 
-        self.global_arrangements.insert(name, trace);
-    }
-
-    fn register_attribute(&mut self, name: String, attribute: Attribute) {
-        self.attributes.insert(name, attribute);
+        self.context.global_arrangements.insert(name, trace);
     }
 
     /// Returns true iff the probe is behind any input handle. Mostly
@@ -275,7 +301,7 @@ impl<Token: Hash> Server<Token> {
 
             let frontier_ref = &frontier;
 
-            for trace in self.global_arrangements.values_mut() {
+            for trace in self.context.global_arrangements.values_mut() {
                 trace.advance_by(frontier_ref);
             }
         }
@@ -311,7 +337,7 @@ impl<Token: Hash> Server<Token> {
                 panic!("not quite there yet")
             },
             _ => {
-                self.global_arrangements
+                self.context.global_arrangements
                     .get_mut(name)
                     .expect(&format!("Could not find relation {:?}", name))
                     .import_named(scope, name)
@@ -341,17 +367,10 @@ impl<Token: Hash> Server<Token> {
     pub fn register<S: Scope<Timestamp = u64>>(&mut self, req: Register, scope: &mut S) {
         let Register { rules, publish } = req;
 
-        let rel_map = implement(
-            rules,
-            publish,
-            scope,
-            &mut self.global_arrangements,
-            &mut self.attributes,
-            &mut self.probe,
-        );
+        let rel_map = implement(rules, publish, scope, &mut self.context);
 
         for (name, mut trace) in rel_map.into_iter() {
-            if self.global_arrangements.contains_key(&name) {
+            if self.context.global_arrangements.contains_key(&name) {
                 panic!("Attempted to re-register a named relation");
             } else {
                 self.register_global_arrangement(name, trace);
@@ -368,7 +387,7 @@ impl<Token: Hash> Server<Token> {
             let name = names.pop().unwrap();
             let datoms = source.source(scope, names.clone()).as_collection();
 
-            if self.global_arrangements.contains_key(&name) {
+            if self.context.global_arrangements.contains_key(&name) {
                 panic!("Source name clashes with registered relation.");
             } else {
                 let trace = datoms
@@ -382,7 +401,7 @@ impl<Token: Hash> Server<Token> {
             let datoms = source.source(scope, names.clone()).as_collection();
 
             for (name_idx, name) in names.iter().enumerate() {
-                if self.global_arrangements.contains_key(name) {
+                if self.context.global_arrangements.contains_key(name) {
                     panic!("Source name clashes with registered relation.");
                 } else {
                     let trace = datoms
@@ -399,7 +418,7 @@ impl<Token: Hash> Server<Token> {
 
     /// Handle a CreateInput request.
     pub fn create_input<S: Scope<Timestamp = u64>>(&mut self, name: &str, scope: &mut S) {
-        if self.global_arrangements.contains_key(name) {
+        if self.context.global_arrangements.contains_key(name) {
             panic!("Input name clashes with existing trace.");
         } else {
             let (handle, tuples) = scope.new_collection::<Vec<Value>, isize>();
@@ -412,15 +431,18 @@ impl<Token: Hash> Server<Token> {
 
     /// Handle a CreateInput request.
     pub fn create_attribute<S: Scope<Timestamp = u64>>(&mut self, name: &str, scope: &mut S) {
-        if self.attributes.contains_key(name) {
+        if self.context.forward.contains_key(name) {
             panic!("Attribute of name {} already exists.", name);
         } else {
             // @TODO use (Value,Value) inputs here
             let (handle, tuples) = scope.new_collection::<Vec<Value>, isize>();
             let collection = tuples.map(|t| (t[0].clone(),t[1].clone()));
-            let attribute = Attribute::new(name, &collection);
+            let forward = CollectionIndex::index(name, &collection);
+            let reverse = CollectionIndex::index(name, &collection.map(|(e,v)| (v,e)));
 
-            self.register_attribute(name.to_string(), attribute);
+            self.context.forward.insert(name.to_string(), forward);
+            self.context.reverse.insert(name.to_string(), reverse);
+            
             self.input_handles.insert(name.to_string(), handle);
         }
     }
@@ -455,7 +477,7 @@ impl<Token: Hash> Server<Token> {
 
             let frontier_ref = &frontier;
 
-            for trace in self.global_arrangements.values_mut() {
+            for trace in self.context.global_arrangements.values_mut() {
                 trace.advance_by(frontier_ref);
             }
         }

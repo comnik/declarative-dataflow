@@ -8,9 +8,9 @@ use timely::dataflow::scopes::child::Iterative;
 use differential_dataflow::operators::Join;
 use differential_dataflow::operators::Threshold;
 
-use plan::Implementable;
+use plan::{ImplContext, Implementable};
 use Relation;
-use {Attribute, RelationHandle, VariableMap, SimpleRelation, Var};
+use {VariableMap, SimpleRelation, Var};
 
 /// A plan stage anti-joining both its sources on the specified
 /// symbols. Throws if the sources are not union-compatible, i.e. bind
@@ -26,17 +26,16 @@ pub struct Antijoin<P1: Implementable, P2: Implementable> {
 }
 
 impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut HashMap<String, RelationHandle>,
-        attributes: &mut HashMap<String, Attribute>,
+        context: &mut I,
     ) -> SimpleRelation<'b, S> {
         let left = self.left_plan
-            .implement(nested, local_arrangements, global_arrangements, attributes);
+            .implement(nested, local_arrangements, context);
         let right = self.right_plan
-            .implement(nested, local_arrangements, global_arrangements, attributes);
+            .implement(nested, local_arrangements, context);
 
         let symbols = self.variables
             .iter()
