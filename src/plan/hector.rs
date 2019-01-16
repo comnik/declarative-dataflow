@@ -281,7 +281,12 @@ impl Implementable for Hector {
                 
                 // @TODO project correctly
                 // @TODO impl ProposeExtensionMethod for Arranged
-                forward_import.get_mut(&delta_binding.source_name).expect("base relation missing")
+                forward_import.entry(&delta_binding.source_name)
+                    .or_insert_with(|| {
+                        context.forward_index(&delta_binding.source_name).unwrap()
+                            .import(&scope.parent.parent)
+                            .enter(&scope.parent)
+                    })
                     .validate_trace
                     .enter(&scope)
                     .as_collection(|tuple,()| tuple.clone())
