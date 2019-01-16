@@ -148,9 +148,11 @@ impl Implementable for Hector {
 
             let scope = inner.clone();
 
-            // @TODO avoid importing the same thing twice
+            // Avoid importing things more than once.
+            let mut forward_import = HashMap::new();
             let mut forward_alt = HashMap::new();
             let mut forward_neu = HashMap::new();
+            let mut reverse_import = HashMap::new();
             let mut reverse_alt = HashMap::new();
             let mut reverse_neu = HashMap::new();
             
@@ -175,9 +177,12 @@ impl Implementable for Hector {
                                 Direction::Forward(offset) => {
                                     let forward = forward_alt.entry(&preceeding.source_name)
                                         .or_insert_with(|| {
-                                            context.forward_index(&preceeding.source_name).unwrap()
-                                                .import(&scope.parent.parent)
-                                                .enter(&scope.parent)
+                                            forward_import.entry(&preceeding.source_name)
+                                                .or_insert_with(|| {
+                                                    context.forward_index(&preceeding.source_name).unwrap()
+                                                        .import(&scope.parent.parent)
+                                                        .enter(&scope.parent)
+                                                })
                                                 .enter(&scope)
                                         });
 
@@ -192,9 +197,12 @@ impl Implementable for Hector {
                                 Direction::Reverse(offset) => {
                                     let reverse = reverse_alt.entry(&preceeding.source_name)
                                         .or_insert_with(|| {
-                                            context.reverse_index(&preceeding.source_name).unwrap()
-                                                .import(&scope.parent.parent)
-                                                .enter(&scope.parent)
+                                            reverse_import.entry(&preceeding.source_name)
+                                                .or_insert_with(|| {
+                                                    context.reverse_index(&preceeding.source_name).unwrap()
+                                                        .import(&scope.parent.parent)
+                                                        .enter(&scope.parent)
+                                                })
                                                 .enter(&scope)
                                         });
 
@@ -223,9 +231,12 @@ impl Implementable for Hector {
                                 Direction::Forward(offset) => {
                                     let forward = forward_neu.entry(&succeeding.source_name)
                                         .or_insert_with(|| {
-                                            context.forward_index(&succeeding.source_name).unwrap()
-                                                .import(&scope.parent.parent)
-                                                .enter(&scope.parent)
+                                            forward_import.entry(&succeeding.source_name)
+                                                .or_insert_with(|| {
+                                                    context.forward_index(&succeeding.source_name).unwrap()
+                                                        .import(&scope.parent.parent)
+                                                        .enter(&scope.parent)
+                                                })
                                                 .enter_at(&scope,
                                                           |_,_,t| AltNeu::neu(t.clone()),
                                                           |_,_,t| AltNeu::neu(t.clone()),
@@ -243,9 +254,12 @@ impl Implementable for Hector {
                                 Direction::Reverse(offset) => {
                                     let reverse = reverse_neu.entry(&succeeding.source_name)
                                         .or_insert_with(|| {
-                                            context.reverse_index(&succeeding.source_name).unwrap()
-                                                .import(&scope.parent.parent)
-                                                .enter(&scope.parent)
+                                            reverse_import.entry(&succeeding.source_name)
+                                                .or_insert_with(|| {
+                                                    context.reverse_index(&succeeding.source_name).unwrap()
+                                                        .import(&scope.parent.parent)
+                                                        .enter(&scope.parent)
+                                                })
                                                 .enter_at(&scope,
                                                           |_,_,t| AltNeu::neu(t.clone()),
                                                           |_,_,t| AltNeu::neu(t.clone()),
@@ -267,10 +281,8 @@ impl Implementable for Hector {
                 
                 // @TODO project correctly
                 // @TODO impl ProposeExtensionMethod for Arranged
-                context.forward_index(&delta_binding.source_name).expect("base relation missing")
+                forward_import.get_mut(&delta_binding.source_name).expect("base relation missing")
                     .validate_trace
-                    .import(&scope.parent.parent)
-                    .enter(&scope.parent)
                     .enter(&scope)
                     .as_collection(|tuple,()| tuple.clone())
                     .extend(&mut extenders[..])
