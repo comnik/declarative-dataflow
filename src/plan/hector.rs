@@ -48,7 +48,7 @@ trait PrefixExtender<G: Scope> {
 // moment) is a collection. This could be generalized to any type that
 // can return something implementing PrefixExtender.
 
-trait IntoExtender<S, K, V, TrCount, TrPropose, TrValidate>
+trait IntoExtender<'a, S, K, V, TrCount, TrPropose, TrValidate>
 where
     S: Scope+ScopeParent,
     K: Data+Hash,
@@ -61,10 +61,10 @@ where
     fn extender_using<P, F: Fn(&P)->K>(
         &self,
         logic: F
-    ) -> CollectionExtender<S, K, V, P, F, TrCount, TrPropose, TrValidate>;
+    ) -> CollectionExtender<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate>;
 }
 
-impl<'a, S, K, V, TrCount, TrPropose, TrValidate> IntoExtender<S, K, V, TrCount, TrPropose, TrValidate>
+impl<'a, S, K, V, TrCount, TrPropose, TrValidate> IntoExtender<'a, S, K, V, TrCount, TrPropose, TrValidate>
     for LiveIndex<Child<'a, S, AltNeu<S::Timestamp>>, K, V, TrCount, TrPropose, TrValidate>
 where
     S: Scope+ScopeParent,
@@ -78,7 +78,7 @@ where
     fn extender_using<P, F: Fn(&P)->K>(
         &self,
         logic: F
-    ) -> CollectionExtender<Child<'a, S, AltNeu<S::Timestamp>>, K, V, P, F, TrCount, TrPropose, TrValidate>
+    ) -> CollectionExtender<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate>
     {
         CollectionExtender {
             phantom: std::marker::PhantomData,
@@ -134,7 +134,7 @@ impl<'c> Implementable for Hector {
                 
                 println!("IDX {:?}", idx);
                 
-                let mut extenders: Vec<Box<dyn PrefixExtender<Child<'c, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>+'c>> = vec![];
+                let mut extenders: Vec<Box<dyn PrefixExtender<Child<'c, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
 
                 if idx > 0 {
                     // Conflicting relations that appear before the
@@ -289,23 +289,29 @@ impl<'c> Implementable for Hector {
 // GENERIC IMPLEMENTATION
 //
 
-trait ProposeExtensionMethod<G: Scope, P: Data+Ord> {
-    fn propose_using<PE: PrefixExtender<G, Prefix=P>>
-        (&self, extender: &mut PE) -> Collection<G, (P, PE::Extension)>;
+trait ProposeExtensionMethod<'a, S: Scope+ScopeParent, P: Data+Ord> {
+    fn propose_using<PE: PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix=P>>
+        (&self, extender: &mut PE) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, PE::Extension)>;
     
-    fn extend<'a, E: Data+Ord>
-        (&self, extenders: &mut [Box<dyn PrefixExtender<G,Prefix=P,Extension=E>+'a>]) -> Collection<G, (P, E)>;
+    fn extend<E: Data+Ord>(
+        &self,
+        extenders: &mut [Box<dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>,Prefix=P,Extension=E>>]
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, E)>;
 }
 
-impl<G: Scope, P: Data+Ord> ProposeExtensionMethod<G, P> for Collection<G, P> {
-    fn propose_using<PE: PrefixExtender<G, Prefix=P>>
-        (&self, extender: &mut PE) -> Collection<G, (P, PE::Extension)>
+impl<'a, S: Scope+ScopeParent, P: Data+Ord> ProposeExtensionMethod<'a, S, P>
+    for Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>
+{
+    fn propose_using<PE: PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix=P>>
+        (&self, extender: &mut PE) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, PE::Extension)>
     {
         extender.propose(self)
     }
     
-    fn extend<'a, E: Data+Ord>
-        (&self, extenders: &mut [Box<dyn PrefixExtender<G,Prefix=P,Extension=E>+'a>]) -> Collection<G, (P, E)>
+    fn extend<E: Data+Ord>(
+        &self,
+        extenders: &mut [Box<dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix=P, Extension=E>>]
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, E)>
     {
         if extenders.len() == 1 {
             extenders[0].propose(&self.clone())
