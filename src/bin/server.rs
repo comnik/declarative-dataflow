@@ -421,7 +421,11 @@ fn main() {
                                     worker.dataflow::<u64, _, _>(|scope| {
                                         let name = req.name.clone();
 
-                                        server.interest(&req.name, scope)
+                                        server
+                                            .interest(&req.name, scope)
+                                            .import_named(scope, &req.name)
+                                            // @TODO clone entire batches instead of flattening
+                                            .as_collection(|tuple,_| tuple.clone())
                                             .inner
                                             .unary_notify(
                                                 Exchange::new(move |_| owner as u64),

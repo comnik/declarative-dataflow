@@ -17,7 +17,10 @@ use differential_dataflow::AsCollection;
 
 use sources::{Source, Sourceable};
 use plan::{ImplContext, Plan, Pull, PullLevel};
-use {implement, Aid, Eid, RelationHandle, CollectionIndex, Rule, Value};
+
+use {Aid, Eid, Value};
+use {Rule, RuleNeu,};
+use {implement, RelationHandle, CollectionIndex, TraceKeyHandle,};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -337,12 +340,13 @@ impl<Token: Hash> Server<Token> {
                 panic!("not quite there yet")
             },
             _ => {
-                self.context.global_arrangements
-                    .get_mut(name)
-                    .expect(&format!("Could not find relation {:?}", name))
-                    .import_named(scope, name)
-                    .as_collection(|tuple, _| tuple.clone())
-                    .probe_with(&mut self.probe)
+                if let Some(relation_trace) = self.context.global_arrangement(name) {
+                    // Rule is already implemented.
+                    relation_trace
+                } else {
+                    // @TODO implement here
+                    panic!("aaaargh");
+                }
             }
         }
     }
@@ -506,5 +510,8 @@ impl<Token: Hash> Server<Token> {
         }, scope);
 
         self.interest(&interest_name, scope)
+            .import_named(scope, &interest_name)
+            .as_collection(|tuple,_| tuple.clone())
+            .probe_with(&mut self.probe)
     }
 }
