@@ -6,6 +6,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use {Aid, Eid, Value, Var};
+use {RuleNeu, Binding};
 use {CollectionIndex, RelationHandle, Relation, VariableMap, SimpleRelation};
 
 pub mod project;
@@ -22,7 +23,7 @@ pub use self::project::Project;
 pub use self::aggregate::{Aggregate, AggregationFn};
 pub use self::union::Union;
 pub use self::join::Join;
-pub use self::hector::{Hector, Binding};
+pub use self::hector::Hector;
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
 pub use self::transform::{Function, Transform};
@@ -31,6 +32,10 @@ pub use self::pull::{Pull, PullLevel};
 /// A thing that can provide global state required during the
 /// implementation of plans.
 pub trait ImplContext {
+    /// Returns the set of constraints associated with a rule.
+    fn rule
+        (&self, name: &str) -> Option<&RuleNeu>;
+    
     /// Returns a mutable reference to a (non-base) relation, if one
     /// is registered under the given name.
     fn global_arrangement

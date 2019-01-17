@@ -45,7 +45,7 @@ pub use num_rational::Rational32;
 pub mod timestamp;
 
 pub mod plan;
-pub use plan::{ImplContext, Implementable, Plan};
+pub use plan::{ImplContext, Implementable, Plan, Hector};
 
 pub mod server;
 pub mod server_impl;
@@ -285,10 +285,29 @@ type Var = u32;
 /// A named relation.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Rule {
-    /// The name binding the relation.
+    /// The name identifying the relation.
     pub name: String,
     /// The plan describing contents of the relation.
     pub plan: Plan,
+}
+
+/// A named relation.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct RuleNeu {
+    /// The global name identifying this rule.
+    pub name: String,
+    /// The constraints associated with this rule.
+    pub bindings: Vec<Binding>,
+}
+
+/// Describes symbols whose possible values are given by a global
+/// arrangement.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct Binding {
+    /// The symbols this binding talks about.
+    pub symbols: (Var,Var),
+    /// The name of a globally registered arrangement.
+    pub source_name: String,
 }
 
 /// A relation with identified attributes
@@ -418,7 +437,7 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
             }
         }
 
-        // Step 3: define the executions for each rule ...
+        // Step 3: Define the executions for each rule.
         let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
             info!("planning {:?}", rule.name);
@@ -428,7 +447,83 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
             );
         }
 
-        // Step 4: complete named relations in a specific order (sorted by name).
+        // Step 4: Complete named relations in a specific order (sorted by name).
+        for (rule, execution) in rules.iter().zip(executions.drain(..)) {
+            local_arrangements
+                .remove(&rule.name)
+                .expect("Rule should be in local_arrangements, but isn't")
+                .set(&execution.tuples().distinct());
+        }
+
+        result_map
+    })
+}
+
+/// @TODO
+pub fn implement_neu<S, I>(
+    publish: Vec<String>,
+    scope: &mut S,
+    context: &mut I,
+) -> HashMap<String, RelationHandle>
+where
+    S: Scope<Timestamp = u64>,
+    I: ImplContext,
+{
+    scope.iterative::<u64, _, _>(move |nested| {
+
+        let mut local_arrangements = VariableMap::new();
+        let mut result_map = HashMap::new();
+
+        // @TODO recursively grab rules that the requested rules depend on
+        let mut rules: Vec<RuleNeu> = Vec::with_capacity(publish.len());
+        for name in publish.iter() {
+            rules.push(
+                context.rule(name).expect("Requested publish for unknown rule.").clone()
+            );
+        };
+
+        // Step 0: Canonicalize, check uniqueness of bindings.
+        rules.sort_by(|x, y| x.name.cmp(&y.name));
+        for index in 1..rules.len() - 1 {
+            if rules[index].name == rules[index - 1].name {
+                panic!("Duplicate rule definitions for rule {}", rules[index].name);
+            }
+        }
+        
+        // Step 1: Create new recursive variables for each rule.
+        for name in publish.iter() {
+            local_arrangements.insert(name.clone(), Variable::new(nested, Product::new(0, 1)));
+        }
+
+        // Step 2: Create public arrangements for published relations.
+        for name in publish.into_iter() {
+            if let Some(relation) = local_arrangements.get(&name) {
+                let trace = relation.leave()
+                    .map(|t| (t,()))
+                    .arrange_named(&name)
+                    .trace;
+
+                result_map.insert(name, trace);
+            } else {
+                panic!("Attempted to publish undefined name {:?}", name);
+            }
+        }
+
+        // Step 3: Define the executions for each rule.
+        let mut executions = Vec::with_capacity(rules.len());
+        for rule in rules.iter() {
+            info!("neu_planning {:?}", rule.name);
+
+            let plan = Plan::Hector(Hector {
+                bindings: rule.bindings.clone()
+            });
+            
+            executions.push(
+                plan.implement(nested, &local_arrangements, context)
+            );
+        }
+
+        // Step 4: Complete named relations in a specific order (sorted by name).
         for (rule, execution) in rules.iter().zip(executions.drain(..)) {
             local_arrangements
                 .remove(&rule.name)

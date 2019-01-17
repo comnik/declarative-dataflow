@@ -133,6 +133,8 @@ pub struct Server<Token: Hash> {
 
 /// Implementation context.
 pub struct Context {
+    /// Named rules.
+    pub rules: HashMap<String, RuleNeu>,
     /// Named relations.
     pub global_arrangements: HashMap<String, RelationHandle>,
     /// Forward attribute indices eid -> v.
@@ -142,7 +144,14 @@ pub struct Context {
 }
 
 impl ImplContext for Context {
-    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle>
+    fn rule
+        (&self, name: &str) -> Option<&RuleNeu>
+    {
+        self.rules.get(name)
+    }
+    
+    fn global_arrangement
+        (&mut self, name: &str) -> Option<&mut RelationHandle>
     {
         self.global_arrangements.get_mut(name)
     }
@@ -167,6 +176,7 @@ impl<Token: Hash> Server<Token> {
             config: config,
             input_handles: HashMap::new(),
             context: Context {
+                rules: HashMap::new(),
                 global_arrangements: HashMap::new(),
                 forward: HashMap::new(),
                 reverse: HashMap::new(),
@@ -310,14 +320,10 @@ impl<Token: Hash> Server<Token> {
         }
     }
 
-    /// Handle an Interest request.
+    /// Handles an Interest request.
     pub fn interest<S: Scope<Timestamp = u64>>
-        (&mut self, name: &str, scope: &mut S) -> Collection<S, Vec<Value>, isize> {
-
-        // @TODO this should be able to assume that it will be called
-        // at most once per distinct name, no matter how many clients
-        // are interested
-
+        (&mut self, name: &str, scope: &mut S) -> &mut TraceKeyHandle<Vec<Value>, u64, isize>
+    {
         match name {
             "df.timely/operates" => {
 
@@ -368,7 +374,8 @@ impl<Token: Hash> Server<Token> {
     //     }
     
     /// Handle a Register request.
-    pub fn register<S: Scope<Timestamp = u64>>(&mut self, req: Register, scope: &mut S) {
+    pub fn register<S: Scope<Timestamp = u64>>(&mut self, req: Register, scope: &mut S)
+    {
         let Register { rules, publish } = req;
 
         let rel_map = implement(rules, publish, scope, &mut self.context);
@@ -383,7 +390,8 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handle a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = u64>>(&mut self, req: RegisterSource, scope: &mut S) {
+    pub fn register_source<S: Scope<Timestamp = u64>>(&mut self, req: RegisterSource, scope: &mut S)
+    {
         
         let RegisterSource { mut names, source } = req;
 
@@ -499,8 +507,8 @@ impl<Token: Hash> Server<Token> {
     /// Helper for registering, publishing, and indicating interest in
     /// a single, named query. Used for testing.
     pub fn test_single<S: Scope<Timestamp = u64>>
-        (&mut self, scope: &mut S, rule: Rule) -> Collection<S, Vec<Value>, isize> {
-            
+        (&mut self, scope: &mut S, rule: Rule) -> Collection<S, Vec<Value>, isize>
+    {
         let interest_name = rule.name.clone();
         let publish_name = rule.name.clone();
 

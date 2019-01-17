@@ -25,6 +25,7 @@ use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
 
 use timestamp::altneu::AltNeu;
 use plan::{ImplContext, Implementable};
+use {Binding};
 use {VariableMap, SimpleRelation, Value, Var, LiveIndex};
 
 /// A type capable of extending a stream of prefixes. Implementors of
@@ -99,16 +100,6 @@ where
 pub struct Hector {
     /// Bindings to join.
     pub bindings: Vec<Binding>,
-}
-
-/// Describes symbols whose possible values are given by a global
-/// arrangement.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Binding {
-    /// The symbols this binding talks about.
-    pub symbols: (Var,Var),
-    /// The name of a globally registered arrangement.
-    pub source_name: String,
 }
 
 enum Direction { Forward(usize), Reverse(usize), }
