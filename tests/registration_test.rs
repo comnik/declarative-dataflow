@@ -6,7 +6,7 @@ use std::sync::mpsc::channel;
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Join, Project};
-use declarative_dataflow::server::{Register, Server, Transact, TxData};
+use declarative_dataflow::server::{Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
 
 #[test]
@@ -33,20 +33,8 @@ fn match_ea_after_input() {
         worker.step_while(|| server.is_any_outdated());
         
         worker.dataflow::<u64, _, _>(|scope| {
-            let query_name = "match_ea";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "match_ea".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -104,20 +92,8 @@ fn join_after_input() {
                 })),
             });
 
-            let query_name = "join";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "join".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

@@ -5,9 +5,9 @@ use std::sync::mpsc::channel;
 
 use timely::Configuration;
 
-use declarative_dataflow::plan::{Join, Hector, Project, Binding};
-use declarative_dataflow::server::{Register, Server, Transact, TxData};
-use declarative_dataflow::{Plan, Rule, Value};
+use declarative_dataflow::plan::{Join, Hector, Project};
+use declarative_dataflow::server::{Server, Transact, TxData};
+use declarative_dataflow::{Plan, Rule, Binding, Value};
 
 #[test]
 fn match_ea() {
@@ -21,20 +21,8 @@ fn match_ea() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":name", scope);
 
-            let query_name = "match_ea";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "match_ea".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -96,20 +84,8 @@ fn join() {
             server.create_input(":name", scope);
             server.create_input(":age", scope);
 
-            let query_name = "join";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "join".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -157,20 +133,8 @@ fn hector() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_attribute("edge", scope);
 
-            let query_name = "hector";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "hector".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -218,20 +182,8 @@ fn hector_join() {
             server.create_attribute(":name", scope);
             server.create_attribute(":age", scope);
 
-            let query_name = "join";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "join".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

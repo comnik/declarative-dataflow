@@ -9,7 +9,7 @@ use std::sync::mpsc::channel;
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Aggregate, AggregationFn, Join, Project};
-use declarative_dataflow::server::{Register, Server, Transact, TxData};
+use declarative_dataflow::server::{Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
 
 use num_rational::Ratio;
@@ -50,38 +50,14 @@ fn count() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
-            let query_name = "count";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "count".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "count_group";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan_group,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "count_group".to_string(), plan: plan_group, })
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -146,38 +122,14 @@ fn max() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
-            let query_name = "max";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "max".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "max_group";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan_group,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "max_group".to_string(), plan: plan_group, })
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -241,38 +193,14 @@ fn min() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
-            let query_name = "min";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "min".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "min_group";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan_group,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "min_group".to_string(), plan: plan_group, })
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -336,38 +264,14 @@ fn sum() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
-            let query_name = "sum";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "sum".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "sum_group";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan_group,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "sum_group".to_string(), plan: plan_group, })
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -431,38 +335,14 @@ fn avg() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
-            let query_name = "avg";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "avg".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "avg_group";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan_group,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "avg_group".to_string(), plan: plan_group, })
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -617,38 +497,14 @@ fn median() {
         worker.dataflow::<u64, _, _>(|scope| {
             server.create_input(":amount", scope);
 
-            let query_name = "median";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "median".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "median_group";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan_group,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "median_group".to_string(), plan: plan_group, })
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -741,38 +597,14 @@ fn multi() {
             server.create_input(":amount", scope);
             server.create_input(":debt", scope);
 
-            let query_name = "multi";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "multi".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
-            let query_name = "multi_group";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan_group,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "multi_group".to_string(), plan: plan_group, })
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -873,20 +705,8 @@ fn with() {
             server.create_input(":monster", scope);
             server.create_input(":heads", scope);
 
-            let query_name = "with";
-            server.register(
-                Register {
-                    rules: vec![Rule {
-                        name: query_name.to_string(),
-                        plan: plan,
-                    }],
-                    publish: vec![query_name.to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest(query_name, scope)
+                .test_single(scope, Rule { name: "with".to_string(), plan, })
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
