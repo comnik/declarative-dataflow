@@ -210,6 +210,7 @@ impl Implementable for Plan {
                     tuples: named
                         .import_named(&nested.parent, name)
                         .enter(nested)
+                        // @TODO this destroys all the arrangement re-use
                         .as_collection(|tuple, _| tuple.clone()),
                 },
             },
