@@ -20,7 +20,7 @@ use plan::{ImplContext, Plan, Pull, PullLevel};
 
 use {Aid, Eid, Value};
 use {Rule, RuleNeu,};
-use {implement, RelationHandle, CollectionIndex, TraceKeyHandle,};
+use {implement, implement_neu, RelationHandle, CollectionIndex, TraceKeyHandle,};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -31,6 +31,8 @@ pub struct Config {
     pub enable_cli: bool,
     /// Should as-of queries be possible?
     pub enable_history: bool,
+    /// @TODO
+    pub enable_wco: bool,
 }
 
 impl Default for Config {
@@ -39,6 +41,7 @@ impl Default for Config {
             port: 6262,
             enable_cli: false,
             enable_history: false,
+            enable_wco: false,
         }
     }
 }
@@ -346,12 +349,28 @@ impl<Token: Hash> Server<Token> {
                 panic!("not quite there yet")
             },
             _ => {
-                if let Some(relation_trace) = self.context.global_arrangement(name) {
+                if self.context.global_arrangements.contains_key(name) {
                     // Rule is already implemented.
-                    relation_trace
+                    self.context.global_arrangement(name).unwrap()
+                } else if self.config.enable_wco == true {
+                    let rel_map = implement_neu(vec![name.to_string()], scope, &mut self.context);
+
+                    for (name, mut trace) in rel_map.into_iter() {
+                        self.register_global_arrangement(name, trace);
+                    }
+
+                    self.context.global_arrangement(name)
+                        .expect("Relation of interest wasn't actually implemented.")
                 } else {
-                    // @TODO implement here
-                    panic!("aaaargh");
+                    panic!("Not available yet");
+                    // let rel_map = implement(rules, publish, scope, &mut self.context);
+
+                    // for (name, mut trace) in rel_map.into_iter() {
+                    //     self.register_global_arrangement(name, trace);
+                    // }
+
+                    // self.context.global_arrangement(name)
+                    //     .expect("Relation of interest wasn't actually implemented.")
                 }
             }
         }

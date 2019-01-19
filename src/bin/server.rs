@@ -52,6 +52,7 @@ fn main() {
     opts.optopt("", "port", "server port", "PORT");
     opts.optflag("", "enable-cli", "enable the CLI interface");
     opts.optflag("", "enable-history", "enable historical queries");
+    opts.optflag("", "enable-wco", "enable WCO queries");
 
     let args: Vec<String> = std::env::args().collect();
     let timely_args = std::env::args().take_while(|ref arg| arg.to_string() != "--");
@@ -72,6 +73,7 @@ fn main() {
                     port: starting_port + (worker.index() as u16),
                     enable_cli: matches.opt_present("enable-cli"),
                     enable_history: matches.opt_present("enable-history"),
+                    enable_wco: matches.opt_present("enable-wco"),
                 }
             }
         };
