@@ -416,34 +416,39 @@ fn main() {
                                         }
                                     }
 
-                                    let send_results_handle = send_results.clone();
+                                    if !server.context.global_arrangements.contains_key(&req.name) {
 
-                                    worker.dataflow::<u64, _, _>(|scope| {
-                                        let name = req.name.clone();
+                                        let send_results_handle = send_results.clone();
 
-                                        server
-                                            .interest(&req.name, scope)
-                                            .import_named(scope, &req.name)
+                                        worker.dataflow::<u64, _, _>(|scope| {
+                                            let name = req.name.clone();
+
+                                            server
+                                                .interest(&req.name, scope)
+                                                .import_named(scope, &req.name)
                                             // @TODO clone entire batches instead of flattening
-                                            .as_collection(|tuple,_| tuple.clone())
-                                            .inner
-                                            .unary_notify(
-                                                Exchange::new(move |_| owner as u64),
-                                                "ResultsRecv",
-                                                vec![],
-                                                move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
+                                                .as_collection(|tuple,_| tuple.clone())
+                                                .inner
+                                                // .stream
+                                                // .map(|batch| (*batch).clone())
+                                                .unary_notify(
+                                                    Exchange::new(move |_| owner as u64),
+                                                    "ResultsRecv",
+                                                    vec![],
+                                                    move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
 
-                                                    // due to the exchange pact, this closure is only
-                                                    // executed by the owning worker
+                                                        // due to the exchange pact, this closure is only
+                                                        // executed by the owning worker
 
-                                                    input.for_each(|_time, data| {
-                                                        send_results_handle
-                                                            .send((name.clone(), data.to_vec()))
-                                                            .unwrap();
-                                                    });
-                                                })
-                                            .probe_with(&mut server.probe);
-                                    });
+                                                        input.for_each(|_time, data| {
+                                                            send_results_handle
+                                                                .send((name.clone(), data.to_vec()))
+                                                                .unwrap();
+                                                        });
+                                                    })
+                                                .probe_with(&mut server.probe);
+                                        });
+                                    }
                                 }
                                 Request::Register(req) => {
                                     worker.dataflow::<u64, _, _>(|scope| {
