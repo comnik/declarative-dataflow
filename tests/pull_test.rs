@@ -8,6 +8,9 @@ use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, 
 use InputSemantics::Raw;
 use Value::{Aid, Bool, Eid, Number, String};
 
+#[cfg(feature="graphql")]
+use declarative_dataflow::plan::GraphQl;
+
 #[test]
 fn pull_level() {
     timely::execute_directly(|worker| {
@@ -362,4 +365,61 @@ fn pull() {
 
         assert!(results.recv_timeout(Duration::from_millis(400)).is_err());
     });
+}
+
+#[cfg(feature="graphql")]
+#[test]
+fn graph_ql() {
+    timely::execute(Configuration::Thread, |worker| {
+        let mut server = Server::<u64>::new(Default::default());
+        let (send_results, results) = channel();
+
+        let (a,b,c,) = (1,2,3,);
+        let plan = Plan::GraphQl(GraphQl{ query: "{hero {name height mass}}".to_string() });
+
+        worker.dataflow::<u64, _, _>(|scope| {
+            server.create_input("hero", scope);
+            server.create_input("name", scope);
+            server.create_input("height", scope);
+            server.create_input("mass", scope);
+
+            server
+                .test_single(scope, Rule { name: "graphQl".to_string(), plan })
+                .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
+        });
+
+        server.transact(
+            vec![
+                TxData(1, 100, "hero".to_string(), Value::Eid(200)),
+                TxData(1, 200, "name".to_string(), Value::String("Batman".to_string())),
+                TxData(1, 200, "mass".to_string(), Value::String("80kg".to_string())),
+            ],
+            0,
+            0,
+        );
+
+        worker.step_while(|| server.is_any_outdated());
+
+        let mut expected = HashSet::new();
+
+        expected.insert((
+            vec![Value::Eid(100), Value::Attribute("hero".to_string()),
+                 Value::Eid(200), Value::Attribute("mass".to_string()), Value::String("80kg".to_string())],
+            1
+        ));
+
+        expected.insert((
+            vec![Value::Eid(100), Value::Attribute("hero".to_string()),
+                 Value::Eid(200), Value::Attribute("name".to_string()), Value::String("Batman".to_string())],
+            1
+        ));
+
+        
+        for _i in 0..expected.len() {
+            let result = results.recv_timeout(Duration::from_millis(400)).unwrap();
+            if !expected.remove(&result) { panic!("unknown result {:?}", result); }
+        }
+
+        assert!(results.recv_timeout(Duration::from_millis(400)).is_err());
+    }).unwrap();
 }

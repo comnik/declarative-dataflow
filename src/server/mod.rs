@@ -131,6 +131,9 @@ pub enum Request {
     Setup,
     /// Requests orderly shutdown of the system.
     Shutdown,
+    /// Register a query specified as GraphQL.
+    #[cfg(feature="graphql")]
+    GraphQl(String, String),
 }
 
 /// Server context maintaining globally registered arrangements and
@@ -449,6 +452,25 @@ where
         }
 
         false
+    }
+
+    /// Register a GraphQL query
+    #[cfg(feature="graphql")]
+    pub fn register_graph_ql<S: Scope<Timestamp = u64>>(
+        &mut self,
+        query: String,
+        name: &str,
+        scope: &mut S,
+    ) {
+        let req = Register {
+            rules: vec![Rule {
+                name: name.to_string(),
+                plan: Plan::GraphQl(plan::GraphQl { query }),
+            }],
+            publish: vec![name.to_string()],
+        };
+
+        self.register(req, scope);
     }
 
     /// Helper for registering, publishing, and indicating interest in

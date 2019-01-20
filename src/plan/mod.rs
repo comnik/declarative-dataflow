@@ -45,6 +45,8 @@ pub use self::project::Project;
 pub use self::pull::{Pull, PullLevel};
 pub use self::transform::{Function, Transform};
 pub use self::union::Union;
+#[cfg(feature = "graphql")]
+pub use self::graphql::GraphQl;
 
 static ID: AtomicUsize = AtomicUsize::new(0);
 static SYM: AtomicUsize = AtomicUsize::new(0);
@@ -205,6 +207,9 @@ pub enum Plan {
     Pull(Pull<Plan>),
     /// Single-level pull expression
     PullLevel(PullLevel<Plan>),
+    /// GraphQl pull expression
+    #[cfg(feature="graphql")]
+    GraphQl(GraphQl),
 }
 
 impl Plan {
@@ -487,6 +492,8 @@ impl Implementable for Plan {
             }
             Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
             Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
+            #[cfg(feature="graphql")]
+            Plan::GraphQl(ref query) => query.implement(nested, local_arrangements, global_arrangements),
         }
     }
 }
