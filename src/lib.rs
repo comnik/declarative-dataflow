@@ -291,15 +291,6 @@ pub struct Rule {
     pub plan: Plan,
 }
 
-/// A named relation.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct RuleNeu {
-    /// The global name identifying this rule.
-    pub name: String,
-    /// The constraints associated with this rule.
-    pub bindings: Vec<Binding>,
-}
-
 /// Describes symbols whose possible values are given by a global
 /// arrangement.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -506,8 +497,9 @@ where
 {
     scope.iterative::<u64, _, _>(move |nested| {
 
-        let publish = vec![name.to_string()];
-        
+        let publish = vec![name];
+        let mut rules = collect_dependencies(&*context, &publish[..]);
+
         let mut local_arrangements = VariableMap::new();
         let mut result_map = HashMap::new();
 
@@ -529,18 +521,18 @@ where
         
         // Step 1: Create new recursive variables for each rule.
         for name in publish.iter() {
-            local_arrangements.insert(name.clone(), Variable::new(nested, Product::new(0, 1)));
+            local_arrangements.insert(name.to_string(), Variable::new(nested, Product::new(0, 1)));
         }
 
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
-            if let Some(relation) = local_arrangements.get(&name) {
+            if let Some(relation) = local_arrangements.get(name) {
                 let trace = relation.leave()
                     .map(|t| (t,()))
-                    .arrange_named(&name)
+                    .arrange_named(name)
                     .trace;
 
-                result_map.insert(name, trace);
+                result_map.insert(name.to_string(), trace);
             } else {
                 panic!("Attempted to publish undefined name {:?}", name);
             }
@@ -549,11 +541,10 @@ where
         // Step 3: Define the executions for each rule.
         let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
-            unimplemented!();
-            // info!("neu_planning {:?}", rule.name);
+            info!("neu_planning {:?}", rule.name);
 
             let plan = Plan::Hector(Hector {
-                bindings: vec![], // @TODO rule.bindings.clone()
+                bindings: dbg!(rule.plan.into_bindings()),
             });
             
             executions.push(

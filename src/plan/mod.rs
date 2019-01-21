@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use {Aid, Eid, Value, Var};
-use {Rule};
+use {Rule, Binding};
 use {CollectionIndex, RelationHandle, Relation, VariableMap, SimpleRelation};
 
 pub mod project;
@@ -60,6 +60,12 @@ pub trait Implementable {
     /// be available before implementing this one. Attributes are not
     /// mentioned explicitley as dependencies.
     fn dependencies(&self) -> Vec<String>;
+
+    /// Transforms an implementable into an equivalent set of bindings
+    /// that can be unified by Hector.
+    fn into_bindings(&self) -> Vec<Binding> {
+        panic!("This plan can't be implemented via Hector.");
+    }
     
     /// Implements the type as a simple relation.
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
@@ -110,6 +116,7 @@ pub enum Plan {
 impl Implementable for Plan {
 
     fn dependencies(&self) -> Vec<String> {
+        // @TODO provide a general fold for plans
         match self {
             &Plan::Project(ref projection) => projection.dependencies(),
             &Plan::Aggregate(ref aggregate) => aggregate.dependencies(),
@@ -127,6 +134,28 @@ impl Implementable for Plan {
             &Plan::NameExpr(_, ref name) => vec![name.to_string()],
             &Plan::Pull(ref pull) => pull.dependencies(),
             &Plan::PullLevel(ref path) => path.dependencies(),
+        }
+    }
+
+    fn into_bindings(&self) -> Vec<Binding> {
+        // @TODO provide a general fold for plans
+        match self {
+            &Plan::Project(ref projection) => projection.into_bindings(),
+            &Plan::Aggregate(ref aggregate) => aggregate.into_bindings(),
+            &Plan::Union(ref union) => union.into_bindings(),
+            &Plan::Join(ref join) => join.into_bindings(),
+            &Plan::Hector(ref hector) => hector.into_bindings(),
+            &Plan::Antijoin(ref antijoin) => antijoin.into_bindings(),
+            &Plan::Negate(ref plan) => plan.into_bindings(),
+            &Plan::Filter(ref filter) => filter.into_bindings(),
+            &Plan::Transform(ref transform) => transform.into_bindings(),
+            &Plan::MatchA(e, ref a, v) => vec![Binding { symbols: (e, v,), source_name: a.to_string() }],
+            &Plan::MatchEA(_, _, _) => panic!("Only MatchA is supported in Hector."),
+            &Plan::MatchAV(_, _, _) => panic!("Only MatchA is supported in Hector."),
+            &Plan::RuleExpr(_, ref name) => unimplemented!(), // @TODO hmm...
+            &Plan::NameExpr(_, ref name) => unimplemented!(), // @TODO hmm...
+            &Plan::Pull(ref pull) => pull.into_bindings(),
+            &Plan::PullLevel(ref path) => path.into_bindings(),
         }
     }
 
