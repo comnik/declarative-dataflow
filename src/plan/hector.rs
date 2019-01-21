@@ -130,6 +130,8 @@ fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
 impl Implementable for Hector
 {
     fn dependencies(&self) -> Vec<String> { Vec::new() }
+
+    fn into_bindings(&self) -> Vec<Binding> { self.bindings.clone() }
     
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
