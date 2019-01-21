@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use plan::{ImplContext, Implementable};
-use Relation;
+use {Relation, Binding};
 use {VariableMap, SimpleRelation, Var};
 
 /// A plan stage projecting its source to only the specified sequence
@@ -23,6 +23,8 @@ pub struct Project<P: Implementable> {
 impl<P: Implementable> Implementable for Project<P>
 {
     fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
+
+    fn into_bindings(&self) -> Vec<Binding> { self.plan.into_bindings() }
     
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,

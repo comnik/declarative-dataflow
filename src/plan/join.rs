@@ -9,7 +9,7 @@ use timely::dataflow::scopes::child::Iterative;
 use differential_dataflow::operators::Join as JoinMap;
 
 use plan::{ImplContext, Implementable};
-use Relation;
+use {Relation, Binding};
 use {VariableMap, SimpleRelation, Var};
 
 /// A plan stage joining two source relations on the specified
@@ -36,6 +36,17 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2>
         dependencies.append(&mut right_dependencies);
 
         dependencies
+    }
+
+    fn into_bindings(&self) -> Vec<Binding> {
+        let mut left_bindings = self.left_plan.into_bindings();
+        let mut right_bindings = self.right_plan.into_bindings();
+
+        let mut bindings = Vec::with_capacity(left_bindings.len() + right_bindings.len());
+        bindings.append(&mut left_bindings);
+        bindings.append(&mut right_bindings);
+
+        bindings        
     }
     
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
