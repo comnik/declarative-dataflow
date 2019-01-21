@@ -6,7 +6,7 @@ extern crate declarative_dataflow;
 use graph_map::GraphMMap;
 
 use declarative_dataflow::plan::{Hector};
-use declarative_dataflow::server::{Register, Server, Transact, TxData};
+use declarative_dataflow::server::{Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Binding, Value};
 
 fn main() {
@@ -37,18 +37,8 @@ fn main() {
         worker.dataflow::<u64,_,_>(|scope| {
             server.create_attribute("edge", scope);
 
-            server.register(
-                Register {
-                    rules: vec![
-                        Rule { name: "triangles".to_string(), plan }
-                    ],
-                    publish: vec!["triangles".to_string()],
-                },
-                scope,
-            );
-
             server
-                .interest("triangles", scope)
+                .test_single(scope, Rule { name: "triangles".to_string(), plan })
                 .filter(move |_| inspect)
                 .inspect(|x| println!("\tTriangle: {:?}", x));
         });
