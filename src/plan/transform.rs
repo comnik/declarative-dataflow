@@ -38,7 +38,10 @@ pub struct Transform<P: Implementable> {
     pub constants: HashMap<u32, Value>,
 }
 
-impl<P: Implementable> Implementable for Transform<P> {
+impl<P: Implementable> Implementable for Transform<P>
+{
+    fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
+    
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,

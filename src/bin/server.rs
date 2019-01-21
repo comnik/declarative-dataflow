@@ -452,11 +452,7 @@ fn main() {
                                         });
                                     }
                                 }
-                                Request::Register(req) => {
-                                    worker.dataflow::<u64, _, _>(|scope| {
-                                        server.register(req, scope);
-                                    });
-                                }
+                                Request::Register(req) => server.register(req),
                                 Request::RegisterSource(req) => {
                                     worker.dataflow::<u64, _, _>(|scope| {
                                         server.register_source(req, scope);

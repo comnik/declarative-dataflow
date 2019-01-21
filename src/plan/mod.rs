@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use {Aid, Eid, Value, Var};
-use {RuleNeu, Binding};
+use {Rule};
 use {CollectionIndex, RelationHandle, Relation, VariableMap, SimpleRelation};
 
 pub mod project;
@@ -34,7 +34,7 @@ pub use self::pull::{Pull, PullLevel};
 pub trait ImplContext {
     /// Returns the set of constraints associated with a rule.
     fn rule
-        (&self, name: &str) -> Option<&RuleNeu>;
+        (&self, name: &str) -> Option<&Rule>;
     
     /// Returns a mutable reference to a (non-base) relation, if one
     /// is registered under the given name.
@@ -56,6 +56,11 @@ pub trait ImplContext {
 
 /// A type that can be implemented as a simple relation.
 pub trait Implementable {
+    /// Returns names of any other implementable things that need to
+    /// be available before implementing this one. Attributes are not
+    /// mentioned explicitley as dependencies.
+    fn dependencies(&self) -> Vec<String>;
+    
     /// Implements the type as a simple relation.
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
@@ -103,18 +108,35 @@ pub enum Plan {
 }
 
 impl Implementable for Plan {
+
+    fn dependencies(&self) -> Vec<String> {
+        match self {
+            &Plan::Project(ref projection) => projection.dependencies(),
+            &Plan::Aggregate(ref aggregate) => aggregate.dependencies(),
+            &Plan::Union(ref union) => union.dependencies(),
+            &Plan::Join(ref join) => join.dependencies(),
+            &Plan::Hector(ref hector) => hector.dependencies(),
+            &Plan::Antijoin(ref antijoin) => antijoin.dependencies(),
+            &Plan::Negate(ref plan) => plan.dependencies(),
+            &Plan::Filter(ref filter) => filter.dependencies(),
+            &Plan::Transform(ref transform) => transform.dependencies(),
+            &Plan::MatchA(_, _, _) => Vec::new(),
+            &Plan::MatchEA(_, _, _) => Vec::new(),
+            &Plan::MatchAV(_, _, _) => Vec::new(),
+            &Plan::RuleExpr(_, ref name) => vec![name.to_string()],
+            &Plan::NameExpr(_, ref name) => vec![name.to_string()],
+            &Plan::Pull(ref pull) => pull.dependencies(),
+            &Plan::PullLevel(ref path) => path.dependencies(),
+        }
+    }
+
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
-        
-        // use differential_dataflow::AsCollection;
-        // use timely::dataflow::operators::ToStream;
-        // use differential_dataflow::operators::arrange::ArrangeBySelf;
-        // use differential_dataflow::operators::JoinCore;
-
+    ) -> SimpleRelation<'b, S>
+    {
         match self {
             &Plan::Project(ref projection) => {
                 projection.implement(nested, local_arrangements, context)

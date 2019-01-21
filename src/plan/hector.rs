@@ -127,7 +127,10 @@ fn direction(prefix_symbols: (Var,Var), extender_symbols: (Var,Var)) -> Result<D
 fn select_e((e,_v): &(Value,Value)) -> Value { e.clone() }
 fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
 
-impl Implementable for Hector {
+impl Implementable for Hector
+{
+    fn dependencies(&self) -> Vec<String> { Vec::new() }
+    
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
@@ -152,7 +155,7 @@ impl Implementable for Hector {
 
             let changes = self.bindings.iter().enumerate().map(|(idx, delta_binding)| {
                 
-                println!("IDX {:?}", idx);
+                dbg!(idx);
                 
                 let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
 
@@ -178,10 +181,10 @@ impl Implementable for Hector {
                                         });
 
                                     if offset == 0 {
-                                        println!("alt forward select_e");
+                                        dbg!("alt forward select_e");
                                         extenders.push(Box::new(forward.extender_using(select_e)));
                                     } else {
-                                        println!("alt forward select_v");
+                                        dbg!("alt forward select_v");
                                         extenders.push(Box::new(forward.extender_using(select_v)));
                                     }
                                 }
@@ -198,10 +201,10 @@ impl Implementable for Hector {
                                         });
 
                                     if offset == 0 {
-                                        println!("alt reverse select_e");
+                                        dbg!("alt reverse select_e");
                                         extenders.push(Box::new(reverse.extender_using(select_e)));
                                     } else {
-                                        println!("alt reverse select_v");
+                                        dbg!("alt reverse select_v");
                                         extenders.push(Box::new(reverse.extender_using(select_v)));
                                     }
                                 }
@@ -235,10 +238,10 @@ impl Implementable for Hector {
                                         });
 
                                     if offset == 0 {
-                                        println!("neu forward select_e");
+                                        dbg!("neu forward select_e");
                                         extenders.push(Box::new(forward.extender_using(select_e)));
                                     } else {
-                                        println!("neu forward select_v");
+                                        dbg!("neu forward select_v");
                                         extenders.push(Box::new(forward.extender_using(select_v)));
                                     }
                                 }
@@ -258,10 +261,10 @@ impl Implementable for Hector {
                                         });
 
                                     if offset == 0 {
-                                        println!("neu reverse select_e");
+                                        dbg!("neu reverse select_e");
                                         extenders.push(Box::new(reverse.extender_using(select_e)));
                                     } else {
-                                        println!("neu reverse select_v");
+                                        dbg!("neu reverse select_v");
                                         extenders.push(Box::new(reverse.extender_using(select_v)));
                                     }
                                 }

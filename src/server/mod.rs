@@ -19,7 +19,7 @@ use sources::{Source, Sourceable};
 use plan::{ImplContext, Plan, Pull, PullLevel};
 
 use {Aid, Eid, Value};
-use {Rule, RuleNeu,};
+use {Rule};
 use {implement, implement_neu, RelationHandle, CollectionIndex, TraceKeyHandle,};
 
 /// Server configuration.
@@ -136,8 +136,8 @@ pub struct Server<Token: Hash> {
 
 /// Implementation context.
 pub struct Context {
-    /// Named rules.
-    pub rules: HashMap<String, RuleNeu>,
+    /// Representation of named rules.
+    pub rules: HashMap<String, Rule>,
     /// Named relations.
     pub global_arrangements: HashMap<String, RelationHandle>,
     /// Forward attribute indices eid -> v.
@@ -148,7 +148,7 @@ pub struct Context {
 
 impl ImplContext for Context {
     fn rule
-        (&self, name: &str) -> Option<&RuleNeu>
+        (&self, name: &str) -> Option<&Rule>
     {
         self.rules.get(name)
     }
@@ -353,7 +353,7 @@ impl<Token: Hash> Server<Token> {
                     // Rule is already implemented.
                     self.context.global_arrangement(name).unwrap()
                 } else if self.config.enable_wco == true {
-                    let rel_map = implement_neu(vec![name.to_string()], scope, &mut self.context);
+                    let rel_map = implement_neu(name, scope, &mut self.context);
 
                     for (name, mut trace) in rel_map.into_iter() {
                         self.register_global_arrangement(name, trace);
@@ -362,15 +362,14 @@ impl<Token: Hash> Server<Token> {
                     self.context.global_arrangement(name)
                         .expect("Relation of interest wasn't actually implemented.")
                 } else {
-                    panic!("Not available yet");
-                    // let rel_map = implement(rules, publish, scope, &mut self.context);
+                    let rel_map = implement(name, scope, &mut self.context);
 
-                    // for (name, mut trace) in rel_map.into_iter() {
-                    //     self.register_global_arrangement(name, trace);
-                    // }
+                    for (name, mut trace) in rel_map.into_iter() {
+                        self.register_global_arrangement(name, trace);
+                    }
 
-                    // self.context.global_arrangement(name)
-                    //     .expect("Relation of interest wasn't actually implemented.")
+                    self.context.global_arrangement(name)
+                        .expect("Relation of interest wasn't actually implemented.")
                 }
             }
         }
@@ -393,17 +392,15 @@ impl<Token: Hash> Server<Token> {
     //     }
     
     /// Handle a Register request.
-    pub fn register<S: Scope<Timestamp = u64>>(&mut self, req: Register, scope: &mut S)
+    pub fn register(&mut self, req: Register)
     {
-        let Register { rules, publish } = req;
+        let Register { rules, publish: _ } = req;
 
-        let rel_map = implement(rules, publish, scope, &mut self.context);
-
-        for (name, mut trace) in rel_map.into_iter() {
-            if self.context.global_arrangements.contains_key(&name) {
+        for rule in rules.into_iter() {
+            if self.context.rules.contains_key(&rule.name) {
                 panic!("Attempted to re-register a named relation");
             } else {
-                self.register_global_arrangement(name, trace);
+                self.context.rules.insert(rule.name.to_string(), rule);
             }
         }
     }
@@ -531,10 +528,12 @@ impl<Token: Hash> Server<Token> {
         let interest_name = rule.name.clone();
         let publish_name = rule.name.clone();
 
-        self.register(Register {
-            rules: vec![rule],
-            publish: vec![publish_name],
-        }, scope);
+        self.register(
+            Register {
+                rules: vec![rule],
+                publish: vec![publish_name],
+            }
+        );
 
         self.interest(&interest_name, scope)
             .import_named(scope, &interest_name)

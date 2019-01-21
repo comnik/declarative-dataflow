@@ -54,7 +54,10 @@ pub struct Aggregate<P: Implementable> {
     pub with_symbols: Vec<Var>,
 }
 
-impl<P: Implementable> Implementable for Aggregate<P> {
+impl<P: Implementable> Implementable for Aggregate<P>
+{
+    fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
+
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,

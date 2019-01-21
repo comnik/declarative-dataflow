@@ -20,7 +20,10 @@ pub struct Project<P: Implementable> {
     pub plan: Box<P>,
 }
 
-impl<P: Implementable> Implementable for Project<P> {
+impl<P: Implementable> Implementable for Project<P>
+{
+    fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
+    
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,

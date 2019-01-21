@@ -22,7 +22,18 @@ pub struct Union<P: Implementable> {
     pub plans: Vec<P>,
 }
 
-impl<P: Implementable> Implementable for Union<P> {
+impl<P: Implementable> Implementable for Union<P>
+{
+    fn dependencies(&self) -> Vec<String> {
+        let mut dependencies = Vec::new();
+
+        for plan in self.plans.iter() {
+            dependencies.append(&mut plan.dependencies());
+        }
+
+        dependencies
+    }
+
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,

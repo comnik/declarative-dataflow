@@ -25,7 +25,19 @@ pub struct Join<P1: Implementable, P2: Implementable> {
     pub right_plan: Box<P2>,
 }
 
-impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
+impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2>
+{
+    fn dependencies(&self) -> Vec<String> {
+        let mut left_dependencies = self.left_plan.dependencies();
+        let mut right_dependencies = self.right_plan.dependencies();
+
+        let mut dependencies = Vec::with_capacity(left_dependencies.len() + right_dependencies.len());
+        dependencies.append(&mut left_dependencies);
+        dependencies.append(&mut right_dependencies);
+
+        dependencies
+    }
+    
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,

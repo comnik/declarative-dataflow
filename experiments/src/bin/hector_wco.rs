@@ -5,9 +5,9 @@ extern crate declarative_dataflow;
 
 use graph_map::GraphMMap;
 
-use declarative_dataflow::plan::{Hector, Binding};
+use declarative_dataflow::plan::{Hector};
 use declarative_dataflow::server::{Register, Server, Transact, TxData};
-use declarative_dataflow::{Plan, Rule, Value};
+use declarative_dataflow::{Plan, Rule, Binding, Value};
 
 fn main() {
 

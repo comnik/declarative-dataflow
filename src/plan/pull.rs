@@ -67,7 +67,10 @@ fn interleave(values: &Vec<Value>, constants: &Vec<Aid>) -> Vec<Value> {
     }
 }
 
-impl<P: Implementable> Implementable for PullLevel<P> {
+impl<P: Implementable> Implementable for PullLevel<P>
+{
+    fn dependencies(&self) -> Vec<String> { Vec::new() }
+    
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
@@ -145,7 +148,10 @@ impl<P: Implementable> Implementable for PullLevel<P> {
     }
 }
 
-impl<P: Implementable> Implementable for Pull<P> {
+impl<P: Implementable> Implementable for Pull<P>
+{
+    fn dependencies(&self) -> Vec<String> { Vec::new() }
+    
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,

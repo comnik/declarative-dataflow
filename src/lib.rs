@@ -22,7 +22,7 @@ extern crate serde_derive;
 extern crate num_rational;
 
 use std::hash::Hash;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::dataflow::*;
@@ -399,18 +399,53 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> {
     }
 }
 
+/// Returns a deduplicates list of all rules used in the definition of
+/// the specified names. Includes the specified names.
+pub fn collect_dependencies<I: ImplContext>
+    (context: &I, names: &[&str]) -> Vec<Rule>
+{
+    let mut seen = HashSet::new();
+    let mut rules = Vec::new();
+    let mut queue = VecDeque::new();
+
+    for name in names {
+        seen.insert(name.to_string());
+        queue.push_back(context.rule(name).expect("unknown rule").clone());
+    }
+    
+    while let Some(next) = queue.pop_front() {
+        for dep_name in next.plan.dependencies().iter() {
+            if !seen.contains(dep_name) {
+                seen.insert(dep_name.to_string());
+                queue.push_back(context.rule(dep_name).expect("unknown dependency").clone());
+            }
+        }
+
+        rules.push(next);
+    }
+
+    rules
+}
+
 /// Takes a query plan and turns it into a differential dataflow.
 pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
-    mut rules: Vec<Rule>,
-    publish: Vec<String>,
+    name: &str,
     scope: &mut S,
     context: &mut I,
 ) -> HashMap<String, RelationHandle> {
     scope.iterative::<u64, _, _>(|nested| {
+
+        let publish = vec![name];
+        let mut rules = collect_dependencies(&*context, &publish[..]);
+
         let mut local_arrangements = VariableMap::new();
         let mut result_map = HashMap::new();
 
         // Step 0: Canonicalize, check uniqueness of bindings.
+        if rules.is_empty() {
+            panic!("Couldn't find any rules for that name.");
+        }
+        
         rules.sort_by(|x, y| x.name.cmp(&y.name));
         for index in 1..rules.len() - 1 {
             if rules[index].name == rules[index - 1].name {
@@ -425,13 +460,13 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
 
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
-            if let Some(relation) = local_arrangements.get(&name) {
+            if let Some(relation) = local_arrangements.get(name) {
                 let trace = relation.leave()
                     .map(|t| (t,()))
-                    .arrange_named(&name)
+                    .arrange_named(name)
                     .trace;
 
-                result_map.insert(name, trace);
+                result_map.insert(name.to_string(), trace);
             } else {
                 panic!("Attempted to publish undefined name {:?}", name);
             }
@@ -461,7 +496,7 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
 
 /// @TODO
 pub fn implement_neu<S, I>(
-    publish: Vec<String>,
+    name: &str,
     scope: &mut S,
     context: &mut I,
 ) -> HashMap<String, RelationHandle>
@@ -471,11 +506,13 @@ where
 {
     scope.iterative::<u64, _, _>(move |nested| {
 
+        let publish = vec![name.to_string()];
+        
         let mut local_arrangements = VariableMap::new();
         let mut result_map = HashMap::new();
 
         // @TODO recursively grab rules that the requested rules depend on
-        let mut rules: Vec<RuleNeu> = Vec::with_capacity(publish.len());
+        let mut rules: Vec<Rule> = Vec::with_capacity(publish.len());
         for name in publish.iter() {
             rules.push(
                 context.rule(name).expect("Requested publish for unknown rule.").clone()
@@ -512,10 +549,11 @@ where
         // Step 3: Define the executions for each rule.
         let mut executions = Vec::with_capacity(rules.len());
         for rule in rules.iter() {
-            info!("neu_planning {:?}", rule.name);
+            unimplemented!();
+            // info!("neu_planning {:?}", rule.name);
 
             let plan = Plan::Hector(Hector {
-                bindings: rule.bindings.clone()
+                bindings: vec![], // @TODO rule.bindings.clone()
             });
             
             executions.push(
