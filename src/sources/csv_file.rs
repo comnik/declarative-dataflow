@@ -26,7 +26,9 @@ pub struct CsvFile {
 }
 
 impl Sourceable for CsvFile {
-    fn source<G: Scope<Timestamp = u64>>(&self, scope: &G, _names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
+    fn source<G: Scope<Timestamp = u64>>
+        (&self, scope: &G, _names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)>
+    {
         let filename = self.path.clone();
 
         generic::operator::source(scope, &format!("File({})", filename), |capability, info| {
@@ -63,15 +65,17 @@ impl Sourceable for CsvFile {
 
                             let columns: Vec<&str> = line.split(separator).collect();
 
+                            let eid = Value::Eid(columns[0].trim().trim_matches('"').parse::<Eid>().expect("not a eid"));
+                            
                             for (name_idx, (offset, type_hint)) in schema.iter().enumerate() {
-                                let eid = Value::Eid(datum_index as Eid);
                                 let v = match type_hint {
                                     Value::String(_) => Value::String(columns[*offset].trim().trim_matches('"').to_string()),
                                     Value::Number(_) => Value::Number(columns[*offset].trim().trim_matches('"').parse::<i64>().expect("not a number")),
-                                    _ => panic!("Only String and Number are supported at the moment."),
+                                    Value::Eid(_) => Value::Eid(columns[*offset].trim().trim_matches('"').parse::<Eid>().expect("not a eid")),
+                                    _ => panic!("Only String, Number, and Eid are supported at the moment."),
                                 };
 
-                                session.give(((name_idx, vec![eid, v]), 0, 1));
+                                session.give(((name_idx, vec![eid.clone(), v]), 0, 1));
                             }
                             
                             num_datums_read += 1;

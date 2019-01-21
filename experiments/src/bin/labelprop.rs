@@ -2,12 +2,12 @@ extern crate timely;
 extern crate differential_dataflow;
 extern crate declarative_dataflow;
 
-use std::thread;
 use std::time::{Instant};
 use std::sync::mpsc::{channel};
 
 use timely::{Configuration};
 
+use differential_dataflow::operators::Consolidate;
 use differential_dataflow::operators::group::Count;
 
 use declarative_dataflow::{Plan, Rule, Value};
@@ -51,30 +51,43 @@ fn main() {
 
         let edge_source = RegisterSource {
             names: vec![":edge".to_string()],
-            source: Source::CsvFile(CsvFile { path: "../data/labelprop/edges.httpd_df".to_string() })
+            source: Source::CsvFile(CsvFile {
+                separator: ' ',
+                path: "/Users/niko/data/labelprop/edges.httpd_df".to_string(),
+                schema: vec![(1, Value::Eid(0))],
+            })
         };
         let node_source = RegisterSource {
             names: vec![":node".to_string()],
-            source: Source::CsvFile(CsvFile { path: "../data/labelprop/nodes.httpd_df".to_string() })
+            source: Source::CsvFile(CsvFile {
+                separator: ' ',
+                path: "/Users/niko/data/labelprop/nodes.httpd_df".to_string(),
+                schema: vec![(1, Value::Eid(0))],
+            })
         };
 
-        worker.dataflow::<u64, _, _>(|mut scope| {
+        worker.dataflow::<u64, _, _>(|scope| {
             
-            server.register_source(edge_source, &mut scope);
-            server.register_source(node_source, &mut scope);
+            server.register_source(edge_source, scope);
+            server.register_source(node_source, scope);
             
-            server.register(Register { rules, publish: vec!["labelprop".to_string()] }, &mut scope);
+            server.register(Register { rules, publish: vec!["labelprop".to_string()] });
 
-            server.interest("labelprop", &mut scope)
+            server
+                .interest("labelprop", scope)
+                .import(scope)
+                .as_collection(|tuple,_| tuple.clone())
+                .map(|_x| ())
+                .consolidate()
+                .count()
+                .probe_with(&mut server.probe)
                 .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
         });
 
         let timer = Instant::now();
         while !server.probe.done() { worker.step(); }
 
-        thread::spawn(move || {
-            // assert_eq!(results.recv().unwrap(), (vec![Value::Number(9393283)], 1));
-            println!("Finished. {:?}", timer.elapsed());
-        });
+        assert_eq!(dbg!(results.recv().unwrap()), (vec![Value::Number(9393283)], 1));
+        println!("Finished. {:?}", timer.elapsed());
     }).unwrap();
 }
