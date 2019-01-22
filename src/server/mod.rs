@@ -6,7 +6,7 @@ extern crate timely;
 use std::hash::Hash;
 use std::collections::HashMap;
 
-// use timely::dataflow::operators::Inspect;
+use timely::dataflow::operators::{Filter, Map};
 use timely::dataflow::{Scope, ProbeHandle};
 
 use differential_dataflow::collection::Collection;
@@ -410,37 +410,40 @@ impl<Token: Hash> Server<Token> {
     /// Handle a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = u64>>(&mut self, req: RegisterSource, scope: &mut S)
     {
-        
         let RegisterSource { mut names, source } = req;
 
         if names.len() == 1 {
             let name = names.pop().unwrap();
-            let datoms = source.source(scope, names.clone()).as_collection();
+            let datoms = source.source(scope, names.clone());
 
-            if self.context.global_arrangements.contains_key(&name) {
+            if self.context.forward.contains_key(&name) {
                 panic!("Source name clashes with registered relation.");
             } else {
-                let trace = datoms
-                    .map(|(_idx, tuple)| (tuple,()))
-                    .arrange_named(&name)
-                    .trace;
-                
-                self.register_global_arrangement(name, trace);
+                let tuples = datoms.map(|(_idx, tuple)| tuple).as_collection();
+
+                let forward = CollectionIndex::index(&name, &tuples);
+                let reverse = CollectionIndex::index(&name, &tuples.map(|(e,v)| (v,e)));
+
+                self.context.forward.insert(name.clone(), forward);
+                self.context.reverse.insert(name, reverse);
             }
         } else if names.len() > 1 {
-            let datoms = source.source(scope, names.clone()).as_collection();
+            let datoms = source.source(scope, names.clone());
 
             for (name_idx, name) in names.iter().enumerate() {
-                if self.context.global_arrangements.contains_key(name) {
+                if self.context.forward.contains_key(name) {
                     panic!("Source name clashes with registered relation.");
                 } else {
-                    let trace = datoms
+                    let tuples = datoms
                         .filter(move |(idx, _tuple)| *idx == name_idx)
-                        .map(|(_idx, tuple)| (tuple,()))
-                        .arrange_named(&name)
-                        .trace;
+                        .map(|(_idx, tuple)| tuple)
+                        .as_collection();
 
-                    self.register_global_arrangement(name.to_string(), trace);
+                    let forward = CollectionIndex::index(name, &tuples);
+                    let reverse = CollectionIndex::index(name, &tuples.map(|(e,v)| (v,e)));
+
+                    self.context.forward.insert(name.to_string(), forward);
+                    self.context.reverse.insert(name.to_string(), reverse);
                 }
             }
         }

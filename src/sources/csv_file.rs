@@ -27,7 +27,7 @@ pub struct CsvFile {
 
 impl Sourceable for CsvFile {
     fn source<G: Scope<Timestamp = u64>>
-        (&self, scope: &G, _names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)>
+        (&self, scope: &G, _names: Vec<String>) -> Stream<G, (usize, ((Value,Value), u64, isize))>
     {
         let filename = self.path.clone();
 
@@ -75,7 +75,7 @@ impl Sourceable for CsvFile {
                                     _ => panic!("Only String, Number, and Eid are supported at the moment."),
                                 };
 
-                                session.give(((name_idx, vec![eid.clone(), v]), 0, 1));
+                                session.give((name_idx, ((eid.clone(), v), 0, 1)));
                             }
                             
                             num_datums_read += 1;

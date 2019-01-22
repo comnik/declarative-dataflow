@@ -25,7 +25,9 @@ pub struct JsonFile {
 }
 
 impl Sourceable for JsonFile {
-    fn source<G: Scope>(&self, scope: &G, names: Vec<String>) -> Stream<G, ((usize, Vec<Value>), u64, isize)> {
+    fn source<G: Scope>
+        (&self, scope: &G, names: Vec<String>) -> Stream<G, (usize, ((Value,Value), u64, isize))>
+    {
         let filename = self.path.clone();
 
         generic::operator::source(scope, &format!("File({})", filename), move |capability, info| {
@@ -86,7 +88,7 @@ impl Sourceable for JsonFile {
                                             _ => panic!("only strings, booleans, and i64 types supported at the moment"),
                                         };
 
-                                        session.give(((name_idx, vec![Value::Eid(object_index as Eid), v]), 0, 1));
+                                        session.give((name_idx, ((Value::Eid(object_index as Eid), v), 0, 1)));
                                     }
                                 }
                             }

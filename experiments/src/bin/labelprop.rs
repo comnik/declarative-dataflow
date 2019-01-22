@@ -87,7 +87,8 @@ fn main() {
         let timer = Instant::now();
         while !server.probe.done() { worker.step(); }
 
-        assert_eq!(dbg!(results.recv().unwrap()), (vec![Value::Number(9393283)], 1));
+        dbg!(results.recv().unwrap());
+        // assert_eq!(dbg!(results.recv().unwrap()), (vec![Value::Number(9393283)], 1));
         println!("Finished. {:?}", timer.elapsed());
     }).unwrap();
 }

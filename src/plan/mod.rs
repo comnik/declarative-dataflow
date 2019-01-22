@@ -220,7 +220,7 @@ impl Implementable for Plan {
                         .propose_trace
                         .import_named(&nested.parent, a)
                         .enter(nested)
-                        .filter(move |e, v| *e == Value::Eid(match_e))
+                        .filter(move |e, _v| *e == Value::Eid(match_e))
                         .as_collection(|_e, v| vec![v.clone()]),
                 };
 
@@ -238,7 +238,7 @@ impl Implementable for Plan {
                             .propose_trace
                             .import_named(&nested.parent, a)
                             .enter(nested)
-                            .filter(move |v, e| *v == match_v)
+                            .filter(move |v, _e| *v == match_v)
                             .as_collection(|_v, e| vec![e.clone()])
                     }
                 };
