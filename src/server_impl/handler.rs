@@ -104,7 +104,7 @@ impl<S: Scope,
                                 //     },
                                 //     // Request::Register(req) => server_cell.register(req, &mut region),
                                 //     // Request::RegisterSource(req) => server_cell.register_source(req, &mut region),
-                                //     // Request::CreateInput(CreateInput { name }) => server_cell.create_input(&name, &mut region),
+                                //     // Request::CreateInput(CreateInput { name }) => server_cell.create_attribute(&name, &mut region),
                                 //     Request::AdvanceInput(name, tx) => server_cell.advance_input(name, tx),
                                 //     Request::CloseInput(name) => server_cell.close_input(name),
                                 //     _ => panic!("")

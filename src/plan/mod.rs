@@ -199,12 +199,13 @@ impl Implementable for Plan {
                 transform.implement(nested, local_arrangements, context)
             }
             &Plan::MatchA(sym1, ref a, sym2) => {
-                let tuples = match context.global_arrangement(a) {
+                let tuples = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(named) => named
+                    Some(index) => index
+                        .validate_trace
                         .import_named(&nested.parent, a)
                         .enter(nested)
-                        .as_collection(|tuple, _| tuple.clone()),
+                        .as_collection(|(e,v), _| vec![e.clone(), v.clone()]),
                 };
 
                 SimpleRelation {
@@ -212,15 +213,15 @@ impl Implementable for Plan {
                     tuples,
                 }
             }
-            &Plan::MatchEA(e, ref a, sym1) => {
-                let tuples = match context.global_arrangement(a) {
+            &Plan::MatchEA(match_e, ref a, sym1) => {
+                let tuples = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(named) => named
+                    Some(index) => index
+                        .propose_trace
                         .import_named(&nested.parent, a)
                         .enter(nested)
-                        .as_collection(|tuple, _| tuple.clone())
-                        .filter(move |tuple| tuple[0] == Value::Eid(e))
-                        .map(|tuple| vec![tuple[1].clone()]),
+                        .filter(move |e, v| *e == Value::Eid(match_e))
+                        .as_collection(|_e, v| vec![v.clone()]),
                 };
 
                 SimpleRelation {
@@ -228,17 +229,17 @@ impl Implementable for Plan {
                     tuples,
                 }
             }
-            &Plan::MatchAV(sym1, ref a, ref v) => {
-                let tuples = match context.global_arrangement(a) {
+            &Plan::MatchAV(sym1, ref a, ref match_v) => {
+                let tuples = match context.reverse_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(named) => {
-                        let v = v.clone();
-                        named
+                    Some(index) => {
+                        let match_v = match_v.clone();
+                        index
+                            .propose_trace
                             .import_named(&nested.parent, a)
                             .enter(nested)
-                            .as_collection(|tuple, _| tuple.clone())
-                            .filter(move |tuple| tuple[1] == v)
-                            .map(|tuple| vec![tuple[0].clone()])
+                            .filter(move |v, e| *v == match_v)
+                            .as_collection(|_v, e| vec![e.clone()])
                     }
                 };
 

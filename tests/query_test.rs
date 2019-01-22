@@ -19,7 +19,7 @@ fn match_ea() {
         let plan = Plan::MatchEA(1, ":name".to_string(), 1);
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":name", scope);
+            server.create_attribute(":name", scope);
 
             server
                 .test_single(scope, Rule { name: "match_ea".to_string(), plan, })
@@ -81,8 +81,8 @@ fn join() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":name", scope);
-            server.create_input(":age", scope);
+            server.create_attribute(":name", scope);
+            server.create_attribute(":age", scope);
 
             server
                 .test_single(scope, Rule { name: "join".to_string(), plan, })

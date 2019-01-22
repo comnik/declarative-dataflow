@@ -29,7 +29,7 @@ fn truncate() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":timestamp", scope);
+            server.create_attribute(":timestamp", scope);
 
             server
                 .test_single(scope, Rule { name: "truncate".to_string(), plan })

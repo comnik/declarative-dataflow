@@ -110,15 +110,12 @@ impl<P: Implementable> Implementable for PullLevel<P>
                 .arrange();
             
             let streams = self.pull_attributes.iter().map(|a| {
-                let e_v: Arranged<Iterative<S, u64>, Value, Value, isize,
-                                  TraceAgent<Value, Value, Product<u64,u64>, isize,
-                                             OrdValSpine<Value, Value, Product<u64, u64>, isize>>> = match context.global_arrangement(a) {
+                let e_v = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(named) => named
+                    Some(index) => index
+                        .propose_trace
                         .import_named(&nested.parent, a)
-                        .enter(nested)
-                        .as_collection(|tuple, _| (tuple[0].clone(), tuple[1].clone()))
-                        .arrange(),
+                        .enter(nested),
                 };
 
                 let attribute = Value::Aid(a.clone());

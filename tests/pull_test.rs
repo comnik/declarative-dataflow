@@ -28,9 +28,9 @@ fn pull_level() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input("admin?", scope);
-            server.create_input("name", scope);
-            server.create_input("age", scope);
+            server.create_attribute("admin?", scope);
+            server.create_attribute("name", scope);
+            server.create_attribute("age", scope);
 
             server
                 .test_single(scope, Rule { name: "pull_level".to_string(), plan })
@@ -86,9 +86,9 @@ fn pull_children() {
         });
         
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input("parent/child", scope);
-            server.create_input("name", scope);
-            server.create_input("age", scope);
+            server.create_attribute("parent/child", scope);
+            server.create_attribute("name", scope);
+            server.create_attribute("age", scope);
 
             server
                 .test_single(scope, Rule { name: "pull_children".to_string(), plan })
@@ -146,9 +146,9 @@ fn pull_children() {
 //         let view_handle = Rc::downgrade(&view);
         
 //         worker.dataflow::<u64, _, _>(|scope| {
-//             server.create_input("parent/child", scope);
-//             server.create_input("name", scope);
-//             server.create_input("age", scope);
+//             server.create_attribute("parent/child", scope);
+//             server.create_attribute("name", scope);
+//             server.create_attribute("age", scope);
 
 //             server
 //                 .test_single(scope, Rule { name: "pull_children".to_string(), plan })
@@ -217,11 +217,11 @@ fn pull() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input("name", scope);
-            server.create_input("join/binding", scope);
-            server.create_input("pattern/e", scope);
-            server.create_input("pattern/a", scope);
-            server.create_input("pattern/v", scope);
+            server.create_attribute("name", scope);
+            server.create_attribute("join/binding", scope);
+            server.create_attribute("pattern/e", scope);
+            server.create_attribute("pattern/a", scope);
+            server.create_attribute("pattern/v", scope);
 
             server
                 .test_single(scope, Rule { name: "pull".to_string(), plan })

@@ -460,7 +460,7 @@ fn main() {
                                 }
                                 Request::CreateInput(CreateInput { name }) => {
                                     worker.dataflow::<u64, _, _>(|scope| {
-                                        server.create_input(&name, scope);
+                                        server.create_attribute(&name, scope);
                                     });
                                 }
                                 Request::AdvanceInput(name, tx) => server.advance_input(name, tx),

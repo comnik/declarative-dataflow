@@ -89,6 +89,8 @@ pub struct RegisterSource {
     pub source: Source,
 }
 
+// @TODO Rename CreateInput -> CreateAttribute
+
 /// A request with the intent of creating a new named, globally
 /// available input that can be transacted upon.
 #[derive(Serialize, Deserialize, Debug)]
@@ -125,7 +127,7 @@ pub struct Server<Token: Hash> {
     /// Server configuration.
     pub config: Config,
     /// Input handles to global arrangements.
-    pub input_handles: HashMap<String, InputSession<u64, Vec<Value>, isize>>,
+    pub input_handles: HashMap<String, InputSession<u64, (Value,Value), isize>>,
     /// Implementation context.
     pub context: Context,
     /// A probe for the transaction id time domain.
@@ -275,7 +277,7 @@ impl<Token: Hash> Server<Token> {
                 .get_mut(&a)
                 .expect(&format!("Attribute {} does not exist.", a));
 
-            handle.update(vec![Value::Eid(e), v], diff);
+            handle.update((Value::Eid(e), v), diff);
         }
     }
 
@@ -292,7 +294,7 @@ impl<Token: Hash> Server<Token> {
                     .get_mut(&a)
                     .expect(&format!("Attribute {} does not exist.", a));
 
-                handle.update(vec![Value::Eid(e), v], op);
+                handle.update((Value::Eid(e), v), op);
             }
         }
 
@@ -445,28 +447,13 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handle a CreateInput request.
-    pub fn create_input<S: Scope<Timestamp = u64>>(&mut self, name: &str, scope: &mut S) {
-        if self.context.global_arrangements.contains_key(name) {
-            panic!("Input name clashes with existing trace.");
-        } else {
-            let (handle, tuples) = scope.new_collection::<Vec<Value>, isize>();
-            let trace = tuples.map(|t| (t,())).arrange_named(name).trace;
-
-            self.register_global_arrangement(name.to_string(), trace);
-            self.input_handles.insert(name.to_string(), handle);
-        }
-    }
-
-    /// Handle a CreateInput request.
     pub fn create_attribute<S: Scope<Timestamp = u64>>(&mut self, name: &str, scope: &mut S) {
         if self.context.forward.contains_key(name) {
             panic!("Attribute of name {} already exists.", name);
         } else {
-            // @TODO use (Value,Value) inputs here
-            let (handle, tuples) = scope.new_collection::<Vec<Value>, isize>();
-            let collection = tuples.map(|t| (t[0].clone(),t[1].clone()));
-            let forward = CollectionIndex::index(name, &collection);
-            let reverse = CollectionIndex::index(name, &collection.map(|(e,v)| (v,e)));
+            let (handle, tuples) = scope.new_collection::<(Value,Value), isize>();
+            let forward = CollectionIndex::index(name, &tuples);
+            let reverse = CollectionIndex::index(name, &tuples.map(|(e,v)| (v,e)));
 
             self.context.forward.insert(name.to_string(), forward);
             self.context.reverse.insert(name.to_string(), reverse);

@@ -48,7 +48,7 @@ fn count() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":amount", scope);
+            server.create_attribute(":amount", scope);
 
             server
                 .test_single(scope, Rule { name: "count".to_string(), plan, })
@@ -120,7 +120,7 @@ fn max() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":amount", scope);
+            server.create_attribute(":amount", scope);
 
             server
                 .test_single(scope, Rule { name: "max".to_string(), plan, })
@@ -191,7 +191,7 @@ fn min() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":amount", scope);
+            server.create_attribute(":amount", scope);
 
             server
                 .test_single(scope, Rule { name: "min".to_string(), plan, })
@@ -262,7 +262,7 @@ fn sum() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":amount", scope);
+            server.create_attribute(":amount", scope);
 
             server
                 .test_single(scope, Rule { name: "sum".to_string(), plan, })
@@ -333,7 +333,7 @@ fn avg() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":amount", scope);
+            server.create_attribute(":amount", scope);
 
             server
                 .test_single(scope, Rule { name: "avg".to_string(), plan, })
@@ -400,7 +400,7 @@ fn avg() {
 //         });
 
 //         worker.dataflow::<u64, _, _>(|scope| {
-//             server.create_input(":amount", scope);
+//             server.create_attribute(":amount", scope);
 
 //             let query_name = "var";
 //             server.register(
@@ -495,7 +495,7 @@ fn median() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":amount", scope);
+            server.create_attribute(":amount", scope);
 
             server
                 .test_single(scope, Rule { name: "median".to_string(), plan, })
@@ -594,8 +594,8 @@ fn multi() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":amount", scope);
-            server.create_input(":debt", scope);
+            server.create_attribute(":amount", scope);
+            server.create_attribute(":debt", scope);
 
             server
                 .test_single(scope, Rule { name: "multi".to_string(), plan, })
@@ -702,8 +702,8 @@ fn with() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input(":monster", scope);
-            server.create_input(":heads", scope);
+            server.create_attribute(":monster", scope);
+            server.create_attribute(":heads", scope);
 
             server
                 .test_single(scope, Rule { name: "with".to_string(), plan, })
