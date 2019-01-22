@@ -13,7 +13,7 @@ use timely::dataflow::operators::Operator;
 use timely::worker::Worker;
 
 use Result;
-use server::{Server, Request, CreateInput};
+use server::{Server, Request, CreateAttribute};
 
 use super::Command;
 
@@ -104,7 +104,7 @@ impl<S: Scope,
                                 //     },
                                 //     // Request::Register(req) => server_cell.register(req, &mut region),
                                 //     // Request::RegisterSource(req) => server_cell.register_source(req, &mut region),
-                                //     // Request::CreateInput(CreateInput { name }) => server_cell.create_attribute(&name, &mut region),
+                                //     // Request::CreateAttribute(CreateAttribute { name }) => server_cell.create_attribute(&name, &mut region),
                                 //     Request::AdvanceInput(name, tx) => server_cell.advance_input(name, tx),
                                 //     Request::CloseInput(name) => server_cell.close_input(name),
                                 //     _ => panic!("")

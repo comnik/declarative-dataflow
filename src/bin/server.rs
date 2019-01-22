@@ -37,7 +37,7 @@ use slab::Slab;
 
 use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::server::{Config, Request, Server, CreateInput};
+use declarative_dataflow::server::{Config, Request, Server, CreateAttribute};
 use declarative_dataflow::server_impl::Command;
 use declarative_dataflow::Result;
 
@@ -52,7 +52,7 @@ fn main() {
     opts.optopt("", "port", "server port", "PORT");
     opts.optflag("", "enable-cli", "enable the CLI interface");
     opts.optflag("", "enable-history", "enable historical queries");
-    opts.optflag("", "enable-wco", "enable WCO queries");
+    opts.optflag("", "enable-optimizer", "enable WCO queries");
 
     let args: Vec<String> = std::env::args().collect();
     let timely_args = std::env::args().take_while(|ref arg| arg.to_string() != "--");
@@ -73,7 +73,7 @@ fn main() {
                     port: starting_port + (worker.index() as u16),
                     enable_cli: matches.opt_present("enable-cli"),
                     enable_history: matches.opt_present("enable-history"),
-                    enable_wco: matches.opt_present("enable-wco"),
+                    enable_optimizer: matches.opt_present("enable-optimizer"),
                 }
             }
         };
@@ -458,7 +458,7 @@ fn main() {
                                         server.register_source(req, scope);
                                     });
                                 }
-                                Request::CreateInput(CreateInput { name }) => {
+                                Request::CreateAttribute(CreateAttribute { name }) => {
                                     worker.dataflow::<u64, _, _>(|scope| {
                                         server.create_attribute(&name, scope);
                                     });

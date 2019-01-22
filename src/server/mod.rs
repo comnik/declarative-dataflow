@@ -31,8 +31,8 @@ pub struct Config {
     pub enable_cli: bool,
     /// Should as-of queries be possible?
     pub enable_history: bool,
-    /// @TODO
-    pub enable_wco: bool,
+    /// Should queries use the optimizer during implementation?
+    pub enable_optimizer: bool,
 }
 
 impl Default for Config {
@@ -41,7 +41,7 @@ impl Default for Config {
             port: 6262,
             enable_cli: false,
             enable_history: false,
-            enable_wco: false,
+            enable_optimizer: false,
         }
     }
 }
@@ -89,12 +89,10 @@ pub struct RegisterSource {
     pub source: Source,
 }
 
-// @TODO Rename CreateInput -> CreateAttribute
-
 /// A request with the intent of creating a new named, globally
 /// available input that can be transacted upon.
 #[derive(Serialize, Deserialize, Debug)]
-pub struct CreateInput {
+pub struct CreateAttribute {
     /// A globally unique name under which to publish data sent via
     /// this input.
     pub name: String,
@@ -114,7 +112,7 @@ pub enum Request {
     /// Registers an external data source.
     RegisterSource(RegisterSource),
     /// Creates a named input handle that can be `Transact`ed upon.
-    CreateInput(CreateInput),
+    CreateAttribute(CreateAttribute),
     /// Advances and flushes a named input handle.
     AdvanceInput(Option<String>, u64),
     /// Closes a named input handle.
@@ -194,20 +192,20 @@ impl<Token: Hash> Server<Token> {
     /// Returns commands to install built-in plans.
     pub fn builtins() -> Vec<Request> {
         vec![
-            Request::CreateInput(CreateInput { name: "df.pattern/e".to_string() }), 
-            Request::CreateInput(CreateInput { name: "df.pattern/a".to_string() }), 
-            Request::CreateInput(CreateInput { name: "df.pattern/v".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.pattern/e".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.pattern/a".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.pattern/v".to_string() }), 
 
-            Request::CreateInput(CreateInput { name: "df.join/binding".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.join/binding".to_string() }), 
 
-            Request::CreateInput(CreateInput { name: "df.union/binding".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.union/binding".to_string() }), 
 
-            Request::CreateInput(CreateInput { name: "df.project/binding".to_string() }), 
-            Request::CreateInput(CreateInput { name: "df.project/symbols".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.project/binding".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.project/symbols".to_string() }), 
 
-            Request::CreateInput(CreateInput { name: "df/name".to_string() }), 
-            Request::CreateInput(CreateInput { name: "df.name/symbols".to_string() }), 
-            Request::CreateInput(CreateInput { name: "df.name/plan".to_string() }),
+            Request::CreateAttribute(CreateAttribute { name: "df/name".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.name/symbols".to_string() }), 
+            Request::CreateAttribute(CreateAttribute { name: "df.name/plan".to_string() }),
 
             Request::Register(Register {
                 publish: vec!["df.rules".to_string()],
@@ -354,7 +352,7 @@ impl<Token: Hash> Server<Token> {
                 if self.context.global_arrangements.contains_key(name) {
                     // Rule is already implemented.
                     self.context.global_arrangement(name).unwrap()
-                } else if self.config.enable_wco == true {
+                } else if self.config.enable_optimizer == true {
                     let rel_map = implement_neu(name, scope, &mut self.context);
 
                     for (name, mut trace) in rel_map.into_iter() {
@@ -379,19 +377,15 @@ impl<Token: Hash> Server<Token> {
 
     // /// Handle an AttributeInterest request.
     // pub fn attribute_interest<S: Scope<Timestamp = u64>>
-    //     (&mut self, name: &str, scope: &mut S) -> Collection<S, Vec<Value>, isize> {
-
-    //         // @TODO this should be able to assume that it will be called
-    //         // at most once per distinct name, no matter how many clients
-    //         // are interested
-
-    //         self.attributes
-    //             .get_mut(name)
-    //             .expect(&format!("Could not find attribute {:?}", name))
-    //             .import_named(scope, name)
-    //             .as_collection(|e, v| vec![e.clone(), v.clone()])
-    //             .probe_with(&mut self.probe)
-    //     }
+    //     (&mut self, name: &str, scope: &mut S) -> Collection<S, Vec<Value>, isize>
+    // {
+    //     self.attributes
+    //         .get_mut(name)
+    //         .expect(&format!("Could not find attribute {:?}", name))
+    //         .import_named(scope, name)
+    //         .as_collection(|e, v| vec![e.clone(), v.clone()])
+    //         .probe_with(&mut self.probe)
+    // }
     
     /// Handle a Register request.
     pub fn register(&mut self, req: Register)
@@ -449,7 +443,9 @@ impl<Token: Hash> Server<Token> {
         }
     }
 
-    /// Handle a CreateInput request.
+    /// Creates a new collection of (e,v) tuples and indexes it in
+    /// various ways. Stores forward, and reverse indices, as well as
+    /// the input handle in the server state.
     pub fn create_attribute<S: Scope<Timestamp = u64>>(&mut self, name: &str, scope: &mut S) {
         if self.context.forward.contains_key(name) {
             panic!("Attribute of name {} already exists.", name);
