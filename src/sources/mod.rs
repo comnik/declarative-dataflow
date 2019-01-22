@@ -45,8 +45,8 @@ impl Sourceable for Source {
 //         nested: &mut Child<'b, Child<'a, Worker<A>, u64>, u64>,
 //         local_arrangements: &VariableMap<'b, Child<'a, Worker<A>, u64>>,
 //         global_arrangements: &mut HashMap<String, RelationHandle>
-//     ) -> SimpleRelation<'b, Child<'a, Worker<A>, u64>> {
-//         SimpleRelation {
+//     ) -> CollectionRelation<'b, Child<'a, Worker<A>, u64>> {
+//         CollectionRelation {
 //             symbols: vec![], // @TODO
 //             tuples: self.source(&nested.parent).as_collection(),
 //         }

@@ -26,7 +26,7 @@ use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
 use timestamp::altneu::AltNeu;
 use plan::{ImplContext, Implementable};
 use {Binding};
-use {VariableMap, SimpleRelation, Value, Var, LiveIndex};
+use {VariableMap, CollectionRelation, Value, Var, LiveIndex};
 
 /// A type capable of extending a stream of prefixes. Implementors of
 /// `PrefixExtension` provide types and methods for extending a
@@ -138,7 +138,7 @@ impl Implementable for Hector
         nested: &mut Iterative<'b, S, u64>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
 
         let joined = nested.scoped::<AltNeu<Product<u64,u64>>, _, _>("AltNeu", |inner| {
 
@@ -294,7 +294,7 @@ impl Implementable for Hector
             inner.concatenate(changes).as_collection().leave()
         });
 
-        SimpleRelation {
+        CollectionRelation {
             symbols: vec![],
             tuples: joined.distinct(),
         }

@@ -301,54 +301,64 @@ pub struct Binding {
     pub source_name: String,
 }
 
-/// A relation with identified attributes
+/// A relation between a set of symbols.
 ///
-/// A relation is internally a collection of records of type `Vec<Value>` each of a
-/// common length, and a mapping from variable identifiers to positions in each of
-/// these vectors.
-trait Relation<'a, G: Scope> {
+/// Relations can be backed by a collection of records of type
+/// `Vec<Value>`, each of a common length (with offsets corresponding
+/// to the symbol offsets), or by an existing arrangement.
+trait Relation<'a, G: Scope>
+where
+    G::Timestamp: Lattice+Data,
+{
     /// List the variable identifiers.
     fn symbols(&self) -> &[Var];
+
     /// A collection containing all tuples.
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
+
     /// Returns the offset at which values for this symbol occur.
-    fn offset(&self, sym: &Var) -> usize;
+    fn offset(&self, sym: &Var) -> usize {
+        self.symbols().iter().position(|&x| *sym == x).unwrap()
+    }
+    
     /// A collection with tuples partitioned by `syms`.
     ///
     /// Variables present in `syms` are collected in order and populate a first "key"
     /// `Vec<Value>`, followed by those variables not present in `syms`.
-    fn tuples_by_symbols(
-        self,
-        syms: &[Var],
-    ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
+    fn tuples_by_symbols
+        (self, syms: &[Var]) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
+
+    /// @TODO
+    fn arrange_by_symbols
+        (self, syms: &[Var]) -> Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
+                                         TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>;
 }
 
 /// A collection and variable bindings.
-pub struct SimpleRelation<'a, G: Scope> {
+pub struct CollectionRelation<'a, G: Scope> {
     symbols: Vec<Var>,
     tuples: Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
 }
 
-impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> {
-    fn symbols(&self) -> &[Var] {
-        &self.symbols
-    }
+impl<'a, G: Scope> Relation<'a, G> for CollectionRelation<'a, G>
+where
+    G::Timestamp: Lattice+Data,
+{
+    fn symbols(&self) -> &[Var] { &self.symbols }
+
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
         self.tuples
-    }
-    fn offset(&self, sym: &Var) -> usize {
-        self.symbols().iter().position(|&x| *sym == x).unwrap()
     }
 
     /// Separates tuple fields by those in `syms` and those not.
     ///
-    /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)` containing first exactly
-    /// those symbols in `syms` in that order, followed by the remaining values in their
-    /// original order.
-    fn tuples_by_symbols(
-        self,
-        syms: &[Var],
-    ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize> {
+    /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)`
+    /// containing first exactly those symbols in `syms` in that
+    /// order, followed by the remaining values in their original
+    /// order.
+    fn tuples_by_symbols
+        (self, syms: &[Var]) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>
+    {
         if syms == &self.symbols()[..] {
             self.tuples().map(|x| (x, Vec::new()))
         } else if syms.is_empty() {
@@ -387,6 +397,13 @@ impl<'a, G: Scope> Relation<'a, G> for SimpleRelation<'a, G> {
                 (key, values)
             })
         }
+    }
+
+    fn arrange_by_symbols
+        (self, syms: &[Var]) -> Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
+                                         TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>
+    {
+        self.tuples_by_symbols(syms).arrange()
     }
 }
 

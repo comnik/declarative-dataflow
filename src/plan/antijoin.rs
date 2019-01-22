@@ -10,7 +10,7 @@ use differential_dataflow::operators::Threshold;
 
 use plan::{ImplContext, Implementable};
 use Relation;
-use {VariableMap, SimpleRelation, Var};
+use {VariableMap, CollectionRelation, Var};
 
 /// A plan stage anti-joining both its sources on the specified
 /// symbols. Throws if the sources are not union-compatible, i.e. bind
@@ -43,7 +43,7 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2>
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
         let left = self.left_plan
             .implement(nested, local_arrangements, context);
         let right = self.right_plan
@@ -68,6 +68,6 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2>
                 .distinct())
             .map(|(key, tuple)| key.iter().cloned().chain(tuple.iter().cloned()).collect());
 
-        SimpleRelation { symbols, tuples }
+        CollectionRelation { symbols, tuples }
     }
 }

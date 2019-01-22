@@ -10,7 +10,7 @@ use differential_dataflow::AsCollection;
 
 use plan::{ImplContext, Implementable};
 use Relation;
-use {VariableMap, SimpleRelation, Var, Aid, Value};
+use {VariableMap, CollectionRelation, Var, Aid, Value};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
@@ -76,7 +76,7 @@ impl<P: Implementable> Implementable for PullLevel<P>
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
 
         use timely::order::Product;
         
@@ -97,7 +97,7 @@ impl<P: Implementable> Implementable for PullLevel<P>
                 let path_attributes = self.path_attributes.clone();
                 let tuples = input.tuples().map(move |tuple| interleave(&tuple, &path_attributes));
 
-                SimpleRelation { symbols: vec![], tuples, }
+                CollectionRelation { symbols: vec![], tuples, }
             }
         } else {
             
@@ -137,7 +137,7 @@ impl<P: Implementable> Implementable for PullLevel<P>
 
             let tuples = nested.concatenate(streams).as_collection(); 
             
-            SimpleRelation {
+            CollectionRelation {
                 symbols: vec![], // @TODO
                 tuples
             }
@@ -154,7 +154,7 @@ impl<P: Implementable> Implementable for Pull<P>
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
 
         let mut scope = nested.clone();
         let streams = self.paths.iter().map(|path| {
@@ -166,7 +166,7 @@ impl<P: Implementable> Implementable for Pull<P>
 
         let tuples = nested.concatenate(streams).as_collection();
 
-        SimpleRelation {
+        CollectionRelation {
             symbols: vec![], // @TODO
             tuples,
         }

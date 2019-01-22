@@ -7,7 +7,7 @@ use timely::dataflow::scopes::child::Iterative;
 
 use plan::{ImplContext, Implementable};
 use Relation;
-use {VariableMap, SimpleRelation, Value, Var};
+use {VariableMap, CollectionRelation, Value, Var};
 
 /// Permitted functions.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -47,7 +47,7 @@ impl<P: Implementable> Implementable for Transform<P>
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
         
         let rel = self
             .plan
@@ -69,7 +69,7 @@ impl<P: Implementable> Implementable for Transform<P>
         let constants_local = self.constants.clone();
 
         match self.function {
-            Function::TRUNCATE => SimpleRelation {
+            Function::TRUNCATE => CollectionRelation {
                 symbols: symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     let mut t = match tuple[key_offsets[0]] {
@@ -97,7 +97,7 @@ impl<P: Implementable> Implementable for Transform<P>
                     v
                 }),
             },
-            Function::ADD => SimpleRelation {
+            Function::ADD => CollectionRelation {
                 symbols: symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     let mut result = 0;
@@ -127,7 +127,7 @@ impl<P: Implementable> Implementable for Transform<P>
                     v
                 }),
             },
-            Function::SUBTRACT => SimpleRelation {
+            Function::SUBTRACT => CollectionRelation {
                 symbols: symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     // minuend is either symbol or variable, depending on

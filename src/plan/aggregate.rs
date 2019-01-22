@@ -10,7 +10,7 @@ use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
 use differential_dataflow::operators::Join as JoinMap;
 
 use plan::{ImplContext, Implementable};
-use { Relation, VariableMap, SimpleRelation, Value, Var};
+use { Relation, VariableMap, CollectionRelation, Value, Var};
 
 use num_rational::{Ratio, Rational32};
 
@@ -63,7 +63,7 @@ impl<P: Implementable> Implementable for Aggregate<P>
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
         
         let relation = self.plan.implement(nested, local_arrangements, context);
 
@@ -233,7 +233,7 @@ impl<P: Implementable> Implementable for Aggregate<P>
 
         if collections.len() == 1 {
             let output_index = output_offsets[0];
-            SimpleRelation{
+            CollectionRelation{
                 symbols: self.variables.to_vec(),
                 tuples: collections[0]
                     .map(move |(key, val)| {
@@ -254,7 +254,7 @@ impl<P: Implementable> Implementable for Aggregate<P>
                     (key.clone(), val)
                 }));
             
-            SimpleRelation {
+            CollectionRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples.map(move |(key, vals)|{
                     let mut v = key.clone();

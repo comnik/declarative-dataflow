@@ -7,7 +7,7 @@ use timely::dataflow::scopes::child::Iterative;
 
 use plan::{ImplContext, Implementable};
 use Relation;
-use {VariableMap, SimpleRelation, Value, Var};
+use {VariableMap, CollectionRelation, Value, Var};
 
 /// Permitted comparison predicates.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -69,7 +69,7 @@ impl<P: Implementable> Implementable for Filter<P>
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
         
         let rel = self.plan
             .implement(nested, local_arrangements, context);
@@ -95,20 +95,20 @@ impl<P: Implementable> Implementable for Filter<P>
 
         if self.constants.contains_key(&0) {
             let constant = self.constants.get(&0).unwrap().clone();
-            SimpleRelation {
+            CollectionRelation {
                 symbols: rel.symbols().to_vec(),
                 tuples: rel.tuples()
                     .filter(move |tuple| binary_predicate(&constant, &tuple[key_offsets[0]])),
             }
         } else if self.constants.contains_key(&1) {
             let constant = self.constants.get(&1).unwrap().clone();
-            SimpleRelation {
+            CollectionRelation {
                 symbols: rel.symbols().to_vec(),
                 tuples: rel.tuples()
                     .filter(move |tuple| binary_predicate(&tuple[key_offsets[0]], &constant)),
             }
         } else {
-            SimpleRelation {
+            CollectionRelation {
                 symbols: rel.symbols().to_vec(),
                 tuples: rel.tuples().filter(move |tuple| {
                     binary_predicate(&tuple[key_offsets[0]], &tuple[key_offsets[1]])

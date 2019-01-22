@@ -9,7 +9,7 @@ use differential_dataflow::operators::Threshold;
 
 use plan::{ImplContext, Implementable};
 use Relation;
-use {VariableMap, SimpleRelation, Var};
+use {VariableMap, CollectionRelation, Var};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -39,7 +39,7 @@ impl<P: Implementable> Implementable for Union<P>
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
         
         use differential_dataflow::AsCollection;
         use timely::dataflow::operators::Concatenate;
@@ -54,7 +54,7 @@ impl<P: Implementable> Implementable for Union<P>
 
         let concat = nested.concatenate(streams).as_collection();
 
-        SimpleRelation {
+        CollectionRelation {
             symbols: self.variables.to_vec(),
             tuples: concat.distinct(),
         }

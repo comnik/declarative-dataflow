@@ -7,7 +7,7 @@ use timely::dataflow::scopes::child::Iterative;
 
 use {Aid, Eid, Value, Var};
 use {Rule, Binding};
-use {CollectionIndex, RelationHandle, Relation, VariableMap, SimpleRelation};
+use {CollectionIndex, RelationHandle, Relation, VariableMap, CollectionRelation};
 
 pub mod project;
 pub mod aggregate;
@@ -73,7 +73,7 @@ pub trait Implementable {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S>;
+    ) -> CollectionRelation<'b, S>;
 }
 
 /// Possible query plan types.
@@ -164,7 +164,7 @@ impl Implementable for Plan {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S>
+    ) -> CollectionRelation<'b, S>
     {
         match self {
             &Plan::Project(ref projection) => {
@@ -187,7 +187,7 @@ impl Implementable for Plan {
             }
             &Plan::Negate(ref plan) => {
                 let mut rel = plan.implement(nested, local_arrangements, context);
-                SimpleRelation {
+                CollectionRelation {
                     symbols: rel.symbols().to_vec(),
                     tuples: rel.tuples().negate(),
                 }
@@ -208,7 +208,7 @@ impl Implementable for Plan {
                         .as_collection(|(e,v), _| vec![e.clone(), v.clone()]),
                 };
 
-                SimpleRelation {
+                CollectionRelation {
                     symbols: vec![sym1, sym2],
                     tuples,
                 }
@@ -224,7 +224,7 @@ impl Implementable for Plan {
                         .as_collection(|_e, v| vec![v.clone()]),
                 };
 
-                SimpleRelation {
+                CollectionRelation {
                     symbols: vec![sym1],
                     tuples,
                 }
@@ -243,21 +243,21 @@ impl Implementable for Plan {
                     }
                 };
 
-                SimpleRelation {
+                CollectionRelation {
                     symbols: vec![sym1],
                     tuples,
                 }
             }
             &Plan::RuleExpr(ref syms, ref name) => match local_arrangements.get(name) {
                 None => panic!("{:?} not in relation map", name),
-                Some(named) => SimpleRelation {
+                Some(named) => CollectionRelation {
                     symbols: syms.clone(),
                     tuples: named.map(|tuple| tuple.clone()),
                 },
             },
             &Plan::NameExpr(ref syms, ref name) => match context.global_arrangement(name) {
                 None => panic!("{:?} not in query map", name),
-                Some(named) => SimpleRelation {
+                Some(named) => CollectionRelation {
                     symbols: syms.clone(),
                     tuples: named
                         .import_named(&nested.parent, name)

@@ -7,7 +7,7 @@ use timely::dataflow::scopes::child::Iterative;
 
 use plan::{ImplContext, Implementable};
 use {Relation, Binding};
-use {VariableMap, SimpleRelation, Var};
+use {VariableMap, CollectionRelation, Var};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible
@@ -31,7 +31,7 @@ impl<P: Implementable> Implementable for Project<P>
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> SimpleRelation<'b, S> {
+    ) -> CollectionRelation<'b, S> {
         
         let relation = self.plan
             .implement(nested, local_arrangements, context);
@@ -39,7 +39,7 @@ impl<P: Implementable> Implementable for Project<P>
             .tuples_by_symbols(&self.variables)
             .map(|(key, _tuple)| key);
 
-        SimpleRelation {
+        CollectionRelation {
             symbols: self.variables.to_vec(),
             tuples,
         }

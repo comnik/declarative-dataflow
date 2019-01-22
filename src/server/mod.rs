@@ -11,7 +11,6 @@ use timely::dataflow::{Scope, ProbeHandle};
 
 use differential_dataflow::collection::Collection;
 use differential_dataflow::input::{Input, InputSession};
-use differential_dataflow::operators::arrange::Arrange;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
