@@ -5,9 +5,10 @@ use std::collections::HashMap;
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
-use plan::{ImplContext, Implementable};
+use plan::{ImplContext, Implementable, next_id};
+use {Aid, Eid, Value, Var};
 use {Relation, Binding};
-use {VariableMap, CollectionRelation, Var};
+use {VariableMap, CollectionRelation};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible
@@ -25,6 +26,21 @@ impl<P: Implementable> Implementable for Project<P>
     fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
 
     fn into_bindings(&self) -> Vec<Binding> { self.plan.into_bindings() }
+
+    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
+        let eid = next_id();
+        let mut data = self.plan.datafy();
+
+        if data.is_empty() {
+            Vec::new()
+        } else {
+            let child_eid = data[0].0.clone();
+
+            data.push((eid, "df.project/binding".to_string(), Value::Eid(child_eid)));
+
+            data
+        }
+    }
     
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,

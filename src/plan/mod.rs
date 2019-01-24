@@ -1,6 +1,7 @@
 //! Types and traits for implementing query plans.
 
 use std::collections::HashMap;
+use std::sync::atomic::{self, AtomicUsize};
 
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
@@ -28,6 +29,13 @@ pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
 pub use self::transform::{Function, Transform};
 pub use self::pull::{Pull, PullLevel};
+
+static ID: AtomicUsize = atomic::ATOMIC_USIZE_INIT;
+
+/// @FIXME
+pub fn next_id() -> Eid {
+    ID.fetch_add(1, atomic::Ordering::SeqCst) as Eid
+}
 
 /// A thing that can provide global state required during the
 /// implementation of plans.
@@ -66,6 +74,9 @@ pub trait Implementable {
     fn into_bindings(&self) -> Vec<Binding> {
         panic!("This plan can't be implemented via Hector.");
     }
+
+    /// @TODO
+    fn datafy(&self) -> Vec<(Eid, Aid, Value)> { Vec::new() }
     
     /// Implements the type as a simple relation.
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
@@ -156,6 +167,34 @@ impl Implementable for Plan {
             &Plan::NameExpr(_, ref name) => unimplemented!(), // @TODO hmm...
             &Plan::Pull(ref pull) => pull.into_bindings(),
             &Plan::PullLevel(ref path) => path.into_bindings(),
+        }
+    }
+
+    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
+        // @TODO provide a general fold for plans
+        match self {
+            &Plan::Project(ref projection) => projection.datafy(),
+            &Plan::Aggregate(ref aggregate) => aggregate.datafy(),
+            &Plan::Union(ref union) => union.datafy(),
+            &Plan::Join(ref join) => join.datafy(),
+            &Plan::Hector(ref hector) => hector.datafy(),
+            &Plan::Antijoin(ref antijoin) => antijoin.datafy(),
+            &Plan::Negate(ref plan) => plan.datafy(),
+            &Plan::Filter(ref filter) => filter.datafy(),
+            &Plan::Transform(ref transform) => transform.datafy(),
+            &Plan::MatchA(e, ref a, v) => vec![(next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string()))],
+            &Plan::MatchEA(e, ref a, _) => vec![
+                (next_id(), "df.pattern/e".to_string(), Value::Eid(e.clone())),
+                (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string())),
+            ],
+            &Plan::MatchAV(_, ref a, ref v) => vec![
+                (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string())),
+                (next_id(), "df.pattern/v".to_string(), v.clone()),
+            ],
+            &Plan::RuleExpr(_, ref name) => Vec::new(),
+            &Plan::NameExpr(_, ref name) => Vec::new(),
+            &Plan::Pull(ref pull) => pull.datafy(),
+            &Plan::PullLevel(ref path) => path.datafy(),
         }
     }
 

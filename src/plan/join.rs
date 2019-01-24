@@ -7,9 +7,10 @@ use timely::dataflow::scopes::child::Iterative;
 
 use differential_dataflow::operators::JoinCore;
 
-use plan::{ImplContext, Implementable};
+use plan::{ImplContext, Implementable, next_id};
+use {Aid, Eid, Value, Var};
 use {Relation, Binding};
-use {VariableMap, CollectionRelation, Var};
+use {VariableMap, CollectionRelation};
 
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
@@ -46,6 +47,29 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2>
         bindings.append(&mut right_bindings);
 
         bindings        
+    }
+
+    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
+        let eid = next_id();
+        
+        let mut left_data = self.left_plan.datafy();
+        let mut right_data = self.right_plan.datafy();
+
+        let mut left_eids: Vec<(Eid, Aid, Value)> = left_data.iter()
+            .map(|(e,_,_)| (eid.clone(), "df.join/binding".to_string(), Value::Eid(e.clone())))
+            .collect();
+
+        let mut right_eids: Vec<(Eid, Aid, Value)> = right_data.iter()
+            .map(|(e,_,_)| (eid.clone(), "df.join/binding".to_string(), Value::Eid(e.clone())))
+            .collect();
+
+        let mut data = Vec::with_capacity(left_data.len() + right_data.len() + left_eids.len() + right_eids.len());
+        data.append(&mut left_data);
+        data.append(&mut right_data);
+        data.append(&mut left_eids);
+        data.append(&mut right_eids);
+
+        data        
     }
     
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(

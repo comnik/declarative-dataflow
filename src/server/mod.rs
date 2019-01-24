@@ -15,7 +15,7 @@ use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
 use sources::{Source, Sourceable};
-use plan::{ImplContext, Plan, Pull, PullLevel};
+use plan::{ImplContext, Implementable, Plan, Pull, PullLevel};
 
 use {Aid, Eid, Value};
 use {Rule};
