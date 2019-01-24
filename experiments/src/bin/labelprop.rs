@@ -1,3 +1,6 @@
+#[global_allocator]
+static ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 extern crate timely;
 extern crate differential_dataflow;
 extern crate declarative_dataflow;
