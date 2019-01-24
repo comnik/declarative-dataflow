@@ -52,6 +52,7 @@ fn main() {
     opts.optflag("", "enable-cli", "enable the CLI interface");
     opts.optflag("", "enable-history", "enable historical queries");
     opts.optflag("", "enable-optimizer", "enable WCO queries");
+    opts.optflag("", "enable-meta", "enable queries on the query graph");
 
     let args: Vec<String> = std::env::args().collect();
     let timely_args = std::env::args().take_while(|ref arg| arg.to_string() != "--");
@@ -73,6 +74,7 @@ fn main() {
                     enable_cli: matches.opt_present("enable-cli"),
                     enable_history: matches.opt_present("enable-history"),
                     enable_optimizer: matches.opt_present("enable-optimizer"),
+                    enable_meta: matches.opt_present("enable-meta"),
                 }
             }
         };

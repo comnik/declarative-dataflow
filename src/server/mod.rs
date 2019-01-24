@@ -32,6 +32,8 @@ pub struct Config {
     pub enable_history: bool,
     /// Should queries use the optimizer during implementation?
     pub enable_optimizer: bool,
+    /// Should queries on the query graph be available?
+    pub enable_meta: bool,
 }
 
 impl Default for Config {
@@ -40,7 +42,9 @@ impl Default for Config {
             port: 6262,
             enable_cli: false,
             enable_history: false,
+            // enable_optimizer: false,
             enable_optimizer: false,
+            enable_meta: false,
         }
     }
 }
@@ -397,16 +401,16 @@ impl<Token: Hash> Server<Token> {
                 // panic!("Attempted to re-register a named relation");
                 continue
             } else {
-                // @FIXME
-                let mut data = rule.plan.datafy();
-                let tx_data: Vec<TxData> = data.drain(..)
-                    .map(|(e,a,v)| TxData(1, e, a, v))
-                    .collect();
+                if self.config.enable_meta == true {
+                    let mut data = rule.plan.datafy();
+                    let tx_data: Vec<TxData> = data.drain(..)
+                        .map(|(e,a,v)| TxData(1, e, a, v))
+                        .collect();
+
+                    self.transact(Transact { tx: None, tx_data }, 0, 0);
+                }
 
                 self.context.rules.insert(rule.name.to_string(), rule);
-
-                // @FIXME
-                self.transact(Transact { tx: None, tx_data }, 0, 0);
             }
         }
     }
