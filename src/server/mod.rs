@@ -393,9 +393,20 @@ impl<Token: Hash> Server<Token> {
 
         for rule in rules.into_iter() {
             if self.context.rules.contains_key(&rule.name) {
-                panic!("Attempted to re-register a named relation");
+                // @TODO panic if hashes don't match
+                // panic!("Attempted to re-register a named relation");
+                continue
             } else {
+                // @FIXME
+                let mut data = rule.plan.datafy();
+                let tx_data: Vec<TxData> = data.drain(..)
+                    .map(|(e,a,v)| TxData(1, e, a, v))
+                    .collect();
+
                 self.context.rules.insert(rule.name.to_string(), rule);
+
+                // @FIXME
+                self.transact(Transact { tx: None, tx_data }, 0, 0);
             }
         }
     }
