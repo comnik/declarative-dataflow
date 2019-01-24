@@ -15,7 +15,7 @@ use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
 use sources::{Source, Sourceable};
-use plan::{ImplContext, Implementable, Plan, Pull, PullLevel};
+use plan::{ImplContext, Implementable,};
 
 use {Aid, Eid, Value};
 use {Rule};
@@ -206,33 +206,33 @@ impl<Token: Hash> Server<Token> {
             Request::CreateAttribute(CreateAttribute { name: "df.name/symbols".to_string() }), 
             Request::CreateAttribute(CreateAttribute { name: "df.name/plan".to_string() }),
 
-            Request::Register(Register {
-                publish: vec!["df.rules".to_string()],
-                rules: vec![
-                    // [:name {:join/binding [:pattern/e :pattern/a :pattern/v]}]
-                    Rule {
-                        name: "df.rules".to_string(),
-                        plan: Plan::Pull(Pull {
-                            paths: vec![
-                                PullLevel {
-                                    variables: vec![],
-                                    plan: Box::new(Plan::MatchA(0, "df.join/binding".to_string(), 1)),
-                                    pull_attributes: vec!["df.pattern/e".to_string(),
-                                                          "df.pattern/a".to_string(),
-                                                          "df.pattern/v".to_string()],
-                                    path_attributes: vec!["df.join/binding".to_string()],
-                                },
-                                PullLevel {
-                                    variables: vec![],
-                                    plan: Box::new(Plan::MatchA(0, "df/name".to_string(), 2)),
-                                    pull_attributes: vec![],
-                                    path_attributes: vec![],
-                                }
-                            ]
-                        })
-                    }
-                ],
-            }),
+            // Request::Register(Register {
+            //     publish: vec!["df.rules".to_string()],
+            //     rules: vec![
+            //         // [:name {:join/binding [:pattern/e :pattern/a :pattern/v]}]
+            //         Rule {
+            //             name: "df.rules".to_string(),
+            //             plan: Plan::Pull(Pull {
+            //                 paths: vec![
+            //                     PullLevel {
+            //                         variables: vec![],
+            //                         plan: Box::new(Plan::MatchA(0, "df.join/binding".to_string(), 1)),
+            //                         pull_attributes: vec!["df.pattern/e".to_string(),
+            //                                               "df.pattern/a".to_string(),
+            //                                               "df.pattern/v".to_string()],
+            //                         path_attributes: vec!["df.join/binding".to_string()],
+            //                     },
+            //                     PullLevel {
+            //                         variables: vec![],
+            //                         plan: Box::new(Plan::MatchA(0, "df/name".to_string(), 2)),
+            //                         pull_attributes: vec![],
+            //                         path_attributes: vec![],
+            //                     }
+            //                 ]
+            //             })
+            //         }
+            //     ],
+            // }),
         ]
     }
 

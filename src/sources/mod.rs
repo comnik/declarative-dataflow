@@ -36,19 +36,3 @@ impl Sourceable for Source {
         }
     }
 }
-
-// @TODO would this be useful?
-//
-// impl Implementable for Source {
-//     fn implement<'a, 'b, A: Allocate>(
-//         &self,
-//         nested: &mut Child<'b, Child<'a, Worker<A>, u64>, u64>,
-//         local_arrangements: &VariableMap<'b, Child<'a, Worker<A>, u64>>,
-//         global_arrangements: &mut HashMap<String, RelationHandle>
-//     ) -> CollectionRelation<'b, Child<'a, Worker<A>, u64>> {
-//         CollectionRelation {
-//             symbols: vec![], // @TODO
-//             tuples: self.source(&nested.parent).as_collection(),
-//         }
-//     }
-// }

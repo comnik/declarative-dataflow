@@ -95,12 +95,7 @@ fn join() {
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(
-                        1,
-                        1,
-                        ":name".to_string(),
-                        Value::String("Dipper".to_string()),
-                    ),
+                    TxData(1, 1, ":name".to_string(), Value::String("Dipper".to_string())),
                     TxData(1, 1, ":age".to_string(), Value::Number(12)),
                 ],
             },

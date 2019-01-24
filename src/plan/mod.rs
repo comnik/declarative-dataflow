@@ -1,6 +1,6 @@
 //! Types and traits for implementing query plans.
 
-use std::collections::HashMap;
+use std::ops::Deref;
 use std::sync::atomic::{self, AtomicUsize};
 
 use timely::dataflow::Scope;
@@ -163,8 +163,8 @@ impl Implementable for Plan {
             &Plan::MatchA(e, ref a, v) => vec![Binding { symbols: (e, v,), source_name: a.to_string() }],
             &Plan::MatchEA(_, _, _) => panic!("Only MatchA is supported in Hector."),
             &Plan::MatchAV(_, _, _) => panic!("Only MatchA is supported in Hector."),
-            &Plan::RuleExpr(_, ref name) => unimplemented!(), // @TODO hmm...
-            &Plan::NameExpr(_, ref name) => unimplemented!(), // @TODO hmm...
+            &Plan::RuleExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
+            &Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
             &Plan::Pull(ref pull) => pull.into_bindings(),
             &Plan::PullLevel(ref path) => path.into_bindings(),
         }
@@ -182,7 +182,9 @@ impl Implementable for Plan {
             &Plan::Negate(ref plan) => plan.datafy(),
             &Plan::Filter(ref filter) => filter.datafy(),
             &Plan::Transform(ref transform) => transform.datafy(),
-            &Plan::MatchA(e, ref a, v) => vec![(next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string()))],
+            &Plan::MatchA(_e, ref a, _v) => vec![
+                (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string()))
+            ],
             &Plan::MatchEA(e, ref a, _) => vec![
                 (next_id(), "df.pattern/e".to_string(), Value::Eid(e.clone())),
                 (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string())),
@@ -191,8 +193,8 @@ impl Implementable for Plan {
                 (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string())),
                 (next_id(), "df.pattern/v".to_string(), v.clone()),
             ],
-            &Plan::RuleExpr(_, ref name) => Vec::new(),
-            &Plan::NameExpr(_, ref name) => Vec::new(),
+            &Plan::RuleExpr(_, ref _name) => Vec::new(),
+            &Plan::NameExpr(_, ref _name) => Vec::new(),
             &Plan::Pull(ref pull) => pull.datafy(),
             &Plan::PullLevel(ref path) => path.datafy(),
         }
@@ -291,7 +293,7 @@ impl Implementable for Plan {
                 None => panic!("{:?} not in relation map", name),
                 Some(named) => CollectionRelation {
                     symbols: syms.clone(),
-                    tuples: named.map(|tuple| tuple.clone()),
+                    tuples: named.deref().clone(), // @TODO re-use variable directly?
                 },
             },
             &Plan::NameExpr(ref syms, ref name) => match context.global_arrangement(name) {

@@ -1,7 +1,5 @@
 //! Union expression plan.
 
-use std::collections::HashMap;
-
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 

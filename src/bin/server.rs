@@ -6,8 +6,6 @@ extern crate differential_dataflow;
 extern crate getopts;
 extern crate mio;
 extern crate serde_json;
-#[macro_use]
-extern crate serde_derive;
 extern crate slab;
 extern crate timely;
 extern crate ws;
@@ -16,8 +14,6 @@ extern crate ws;
 extern crate log;
 extern crate env_logger;
 
-#[macro_use]
-extern crate abomonation_derive;
 extern crate abomonation;
 
 use std::collections::VecDeque;

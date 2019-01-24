@@ -1,7 +1,5 @@
 //! Pull expression plan, but without nesting.
 
-use std::collections::HashMap;
-
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::operators::Concatenate;
@@ -84,8 +82,6 @@ impl<P: Implementable> Implementable for PullLevel<P>
         use differential_dataflow::operators::arrange::{Arrange, Arranged, TraceAgent};
         use differential_dataflow::trace::implementations::ord::OrdValSpine;
 
-        // @TODO use CollectionIndex
-        
         let input = self.plan
             .implement(nested, local_arrangements, context);
 
