@@ -337,6 +337,60 @@ impl<'a, S: Scope+ScopeParent, P: Data+Ord> ProposeExtensionMethod<'a, S, P>
     }
 }
 
+struct ConstantExtender<P, V>
+where
+    V: Data+Hash
+{
+    phantom: std::marker::PhantomData<P>,
+    value: V,
+}
+
+impl<'a, S, V, P> PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>>
+    for ConstantExtender<P, V>
+where
+    S: Scope+ScopeParent,
+    S::Timestamp: Lattice+Data,
+    V: Data+Hash,
+    P: Data,
+{
+    type Prefix = P;
+    type Extension = V;
+
+    fn count(
+        &mut self,
+        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
+        index: usize
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>
+    {
+        prefixes.map(move |(prefix, old_count, old_index)| {
+            if 1 < old_count {
+                (prefix.clone(), 1, index)
+            } else {
+                (prefix.clone(), old_count, old_index)
+            }
+        })
+    }
+
+    fn propose(
+        &mut self,
+        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>
+    {
+        let value = self.value.clone();
+        prefixes.map(move |prefix| (prefix.clone(), value.clone()))
+    }
+
+    fn validate(
+        &mut self,
+        extensions: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>
+    {
+        let target = self.value.clone();
+        extensions
+            .filter(move |(_prefix, extension)| *extension == target)
+    }
+}
+
 struct CollectionExtender<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate>
 where
     S: Scope+ScopeParent,
@@ -374,12 +428,16 @@ where
         &mut self,
         prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
         index: usize
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)> {
-
-        // This method takes a stream of `(prefix, time, diff)` changes, and we want to produce the corresponding
-        // stream of `((prefix, count), time, diff)` changes, just by looking up `count` in `count_trace`. We are
-        // just doing a stream of changes and a stream of look-ups, no consolidation or any funny business like
-        // that. We *could* organize the input differences by key and save some time, or we could skip that.
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>
+    {
+        // This method takes a stream of `(prefix, time, diff)`
+        // changes, and we want to produce the corresponding stream of
+        // `((prefix, count), time, diff)` changes, just by looking up
+        // `count` in `count_trace`. We are just doing a stream of
+        // changes and a stream of look-ups, no consolidation or any
+        // funny business like that. We *could* organize the input
+        // differences by key and save some time, or we could skip
+        // that.
 
         let counts = &self.indices.count_trace;
         let mut counts_trace = Some(counts.trace.clone());
@@ -472,13 +530,8 @@ where
     fn propose(
         &mut self,
         prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
-
-        // This method takes a stream of `(prefix, time, diff)` changes, and we want to produce the corresponding
-        // stream of `((prefix, count), time, diff)` changes, just by looking up `count` in `count_trace`. We are
-        // just doing a stream of changes and a stream of look-ups, no consolidation or any funny business like
-        // that. We *could* organize the input differences by key and save some time, or we could skip that.
-
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>
+    {
         let propose = &self.indices.propose_trace;
         let mut propose_trace = Some(propose.trace.clone());
 
