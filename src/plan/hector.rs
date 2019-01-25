@@ -161,7 +161,6 @@ impl Implementable for Hector
             let changes = self.bindings.iter().enumerate()
                 .flat_map(|(idx, delta_binding)| match delta_binding {
                     Binding::Attribute(delta_binding) => {
-                        dbg!(idx);
                         
                         let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
 
@@ -182,7 +181,12 @@ impl Implementable for Hector
                             };
 
                             match other {
-                                Binding::Constant(_other) => {}
+                                Binding::Constant(other) => {
+                                    extenders.push(Box::new(ConstantExtender {
+                                        phantom: std::marker::PhantomData,
+                                        value: other.value.clone(),
+                                    }));
+                                }
                                 Binding::Attribute(other) => {
                                     match direction(other.symbols, delta_binding.symbols) {
                                         Err(msg) => panic!(msg),

@@ -6,7 +6,7 @@ use std::sync::atomic::{self, AtomicUsize};
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
-use binding::{Binding, AttributeBinding};
+use binding::{Binding, AttributeBinding, ConstantBinding};
 use {Aid, Eid, Value, Var};
 use {Rule};
 use {CollectionIndex, RelationHandle, Relation, VariableMap, CollectionRelation};
@@ -32,10 +32,16 @@ pub use self::transform::{Function, Transform};
 pub use self::pull::{Pull, PullLevel};
 
 static ID: AtomicUsize = atomic::ATOMIC_USIZE_INIT;
+static SYM: AtomicUsize = atomic::ATOMIC_USIZE_INIT;
 
 /// @FIXME
 pub fn next_id() -> Eid {
     ID.fetch_add(1, atomic::Ordering::SeqCst) as Eid
+}
+
+/// @FIXME
+pub fn gensym() -> Var {
+    SYM.fetch_sub(1, atomic::Ordering::SeqCst) as Var
 }
 
 /// A thing that can provide global state required during the
@@ -168,8 +174,20 @@ impl Implementable for Plan {
             &Plan::MatchA(e, ref a, v) => vec![
                 Binding::Attribute(AttributeBinding { symbols: (e, v,), source_attribute: a.to_string() }),
             ],
-            &Plan::MatchEA(_, _, _) => panic!("Only MatchA is supported in Hector."),
-            &Plan::MatchAV(_, _, _) => panic!("Only MatchA is supported in Hector."),
+            &Plan::MatchEA(match_e, ref a, v) => {
+                let e = gensym(); 
+                vec![
+                    Binding::Attribute(AttributeBinding { symbols: (e, v,), source_attribute: a.to_string() }),
+                    Binding::Constant(ConstantBinding { symbol: e, value: Value::Eid(match_e) }),
+                ]
+            },
+            &Plan::MatchAV(e, ref a, ref match_v) => {
+                let v = gensym();
+                vec![
+                    Binding::Attribute(AttributeBinding { symbols: (e, v,), source_attribute: a.to_string() }),
+                    Binding::Constant(ConstantBinding { symbol: v, value: match_v.clone() }),
+                ]
+            },
             &Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
             &Plan::Pull(ref pull) => pull.into_bindings(),
             &Plan::PullLevel(ref path) => path.into_bindings(),
