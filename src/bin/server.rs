@@ -37,12 +37,24 @@ use slab::Slab;
 use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, Request, Server, CreateAttribute};
-use declarative_dataflow::server_impl::Command;
 use declarative_dataflow::Result;
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
 const CLI: Token = Token(usize::MAX - 3);
+
+/// A mutation of server state.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug)]
+pub struct Command {
+    /// The worker that received this command from a client originally
+    /// and is therefore the one that should receive all outputs.
+    pub owner: usize,
+    /// The client token that issued the command. Only relevant to the
+    /// owning worker, as no one else has the connection.
+    pub client: Option<usize>,
+    /// Unparsed representation of the command.
+    pub cmd: String,
+}
 
 fn main() {
     env_logger::init();

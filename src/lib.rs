@@ -48,7 +48,6 @@ pub mod plan;
 pub use plan::{ImplContext, Implementable, Plan, Hector};
 
 pub mod server;
-pub mod server_impl;
 pub mod sources;
 
 /// A unique entity identifier.
