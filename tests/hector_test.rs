@@ -179,11 +179,27 @@ fn run_hector_cases() {
                     HashSet::from_iter(case.expectations[tx_id].iter().cloned());
 
                 for _i in 0..expected.len() {
-                    let result = results.recv_timeout(Duration::from_millis(400)).expect("no result");
-                    if !expected.remove(&result) { panic!("unknown result {:?}", result); }
+                    match results.recv_timeout(Duration::from_millis(400)) {
+                        Err(_err) => {
+                            eprint!("No result."); 
+                            dbg!(&case.plan.bindings);
+                        }
+                        Ok(result) => {
+                            if !expected.remove(&result) {
+                                eprint!("Unknown result {:?}.", result);
+                                dbg!(&case.plan.bindings);
+                            }
+                        }
+                    }
                 }
-                
-                assert!(results.recv_timeout(Duration::from_millis(400)).is_err());
+
+                match results.recv_timeout(Duration::from_millis(400)) {
+                    Err(_err) => {}
+                    Ok(result) => {
+                        eprint!("Extraneous result {:?}", result);
+                        dbg!(&case.plan.bindings);
+                    }
+                }
             }
         }).unwrap();
     }

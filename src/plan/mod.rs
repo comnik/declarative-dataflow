@@ -136,6 +136,29 @@ pub enum Plan {
     PullLevel(PullLevel<Plan>),
 }
 
+impl Plan {
+    /// Returns the symbols bound by this plan.
+    pub fn variables(&self) -> Vec<Var> {
+        match self {
+            &Plan::Project(ref projection) => projection.variables.clone(),
+            &Plan::Aggregate(ref aggregate) => aggregate.variables.clone(),
+            &Plan::Union(ref union) => union.variables.clone(),
+            &Plan::Join(ref join) => join.variables.clone(),
+            &Plan::Hector(ref hector) => hector.variables.clone(),
+            &Plan::Antijoin(ref antijoin) => antijoin.variables.clone(),
+            &Plan::Negate(ref plan) => plan.variables(),
+            &Plan::Filter(ref filter) => filter.variables.clone(),
+            &Plan::Transform(ref transform) => transform.variables.clone(),
+            &Plan::MatchA(e, _, v) => vec![e, v],
+            &Plan::MatchEA(_, _, v) => vec![v],
+            &Plan::MatchAV(e, _, _) => vec![e],
+            &Plan::NameExpr(ref variables, ref name) => variables.clone(),
+            &Plan::Pull(ref pull) => pull.variables.clone(),
+            &Plan::PullLevel(ref path) => path.variables.clone(),
+        }
+    }
+}
+
 impl Implementable for Plan {
 
     fn dependencies(&self) -> Vec<String> {

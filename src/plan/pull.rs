@@ -33,6 +33,8 @@ pub struct PullLevel<P: Implementable> {
 /// (?parent :parent/child ?child) <- [:child/name]  | [?parent :parent/child ?child]
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Pull<P: Implementable> {
+    /// TODO
+    pub variables: Vec<Var>,
     /// Individual paths to pull.
     pub paths: Vec<PullLevel<P>>,
 }

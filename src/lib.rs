@@ -552,8 +552,8 @@ where
             // Hector plans (one for each symbol)
             
             let plan = Plan::Hector(Hector {
-                variables: vec![], // @TODO
-                bindings: dbg!(rule.plan.into_bindings()),
+                variables: rule.plan.variables(),
+                bindings: rule.plan.into_bindings(),
             });
             
             executions.push(

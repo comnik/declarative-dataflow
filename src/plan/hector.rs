@@ -25,7 +25,7 @@ use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
 
 use timestamp::altneu::AltNeu;
 use plan::{ImplContext, Implementable};
-use binding::Binding;
+use binding::{AsBinding, Binding};
 use {VariableMap, CollectionRelation, Value, Var, LiveIndex};
 
 /// A type capable of extending a stream of prefixes. Implementors of
@@ -98,7 +98,7 @@ where
 /// sources.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Hector {
-    /// @TODO
+    /// Symbols to bind.
     pub variables: Vec<Var>,
     /// Bindings to join.
     pub bindings: Vec<Binding>,
@@ -126,8 +126,8 @@ fn direction(prefix_symbols: (Var,Var), extender_symbols: (Var,Var)) -> Result<D
     }
 }
 
-fn select_e((e,_v): &(Value,Value)) -> Value { e.clone() }
-fn select_v((_e,v): &(Value,Value)) -> Value { v.clone() }
+fn select_e(tuple: &Vec<Value>) -> Value { tuple[0].clone() }
+fn select_v(tuple: &Vec<Value>) -> Value { tuple[1].clone() }
 
 impl Implementable for Hector
 {
