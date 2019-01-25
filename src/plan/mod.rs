@@ -120,9 +120,7 @@ pub enum Plan {
     MatchEA(Eid, Aid, Var),
     /// Data pattern of the form [?e a v]
     MatchAV(Var, Aid, Value),
-    /// Sources data from a query-local relation
-    RuleExpr(Vec<Var>, String),
-    /// Sources data from a published relation
+    /// Sources data from another relation.
     NameExpr(Vec<Var>, String),
     /// Pull expression
     Pull(Pull<Plan>),
@@ -147,7 +145,6 @@ impl Implementable for Plan {
             &Plan::MatchA(_, _, _) => Vec::new(),
             &Plan::MatchEA(_, _, _) => Vec::new(),
             &Plan::MatchAV(_, _, _) => Vec::new(),
-            &Plan::RuleExpr(_, ref name) => vec![name.to_string()],
             &Plan::NameExpr(_, ref name) => vec![name.to_string()],
             &Plan::Pull(ref pull) => pull.dependencies(),
             &Plan::PullLevel(ref path) => path.dependencies(),
@@ -169,7 +166,6 @@ impl Implementable for Plan {
             &Plan::MatchA(e, ref a, v) => vec![Binding { symbols: (e, v,), source_name: a.to_string() }],
             &Plan::MatchEA(_, _, _) => panic!("Only MatchA is supported in Hector."),
             &Plan::MatchAV(_, _, _) => panic!("Only MatchA is supported in Hector."),
-            &Plan::RuleExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
             &Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
             &Plan::Pull(ref pull) => pull.into_bindings(),
             &Plan::PullLevel(ref path) => path.into_bindings(),
@@ -199,7 +195,6 @@ impl Implementable for Plan {
                 (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string())),
                 (next_id(), "df.pattern/v".to_string(), v.clone()),
             ],
-            &Plan::RuleExpr(_, ref _name) => Vec::new(),
             &Plan::NameExpr(_, ref _name) => Vec::new(),
             &Plan::Pull(ref pull) => pull.datafy(),
             &Plan::PullLevel(ref path) => path.datafy(),
@@ -295,30 +290,37 @@ impl Implementable for Plan {
                     tuples,
                 }
             }
-            &Plan::RuleExpr(ref syms, ref name) => match local_arrangements.get(name) {
-                None => panic!("{:?} not in relation map", name),
-                Some(named) => CollectionRelation {
-                    symbols: syms.clone(),
-                    tuples: named.deref().clone(), // @TODO re-use variable directly?
-                },
+            &Plan::NameExpr(ref syms, ref name) => {
+                if context.is_underconstrained(name) {
+                    match local_arrangements.get(name) {
+                        None => panic!("{:?} not in relation map", name),
+                        Some(named) => CollectionRelation {
+                            symbols: syms.clone(),
+                            tuples: named.deref().clone(), // @TODO re-use variable directly?
+                        },
+                    }
+                } else {
+                    // If a rule is not underconstrained, we can
+                    // safely re-use it. @TODO it's debatable whether
+                    // we should then immediately assume that it is
+                    // available as a global arrangement, but we'll do
+                    // so for now.
+                    
+                    match context.global_arrangement(name) {
+                        None => panic!("{:?} not in query map", name),
+                        Some(named) => CollectionRelation {
+                            symbols: syms.clone(),
+                            tuples: named
+                                .import_named(&nested.parent, name)
+                                .enter(nested)
+                            // @TODO this destroys all the arrangement re-use
+                                .as_collection(|tuple, _| tuple.clone()),
+                        },
+                    }
+                }
             },
-            &Plan::NameExpr(ref syms, ref name) => match context.global_arrangement(name) {
-                None => panic!("{:?} not in query map", name),
-                Some(named) => CollectionRelation {
-                    symbols: syms.clone(),
-                    tuples: named
-                        .import_named(&nested.parent, name)
-                        .enter(nested)
-                        // @TODO this destroys all the arrangement re-use
-                        .as_collection(|tuple, _| tuple.clone()),
-                },
-            },
-            &Plan::Pull(ref pull) => {
-                pull.implement(nested, local_arrangements, context)
-            },
-            &Plan::PullLevel(ref path) => {
-                path.implement(nested, local_arrangements, context)
-            },
+            &Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
+            &Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
         }
     }
 }
