@@ -4,7 +4,7 @@ extern crate differential_dataflow;
 extern crate timely;
 
 use std::hash::Hash;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use timely::dataflow::operators::{Filter, Map};
 use timely::dataflow::{Scope, ProbeHandle};
@@ -140,13 +140,15 @@ pub struct Server<Token: Hash> {
 /// Implementation context.
 pub struct Context {
     /// Representation of named rules.
-    pub rules: HashMap<String, Rule>,
+    pub rules: HashMap<Aid, Rule>,
     /// Named relations.
-    pub global_arrangements: HashMap<String, RelationHandle>,
+    pub global_arrangements: HashMap<Aid, RelationHandle>,
     /// Forward attribute indices eid -> v.
-    pub forward: HashMap<String, CollectionIndex<Value, Value, u64>>,
+    pub forward: HashMap<Aid, CollectionIndex<Value, Value, u64>>,
     /// Reverse attribute indices v -> eid.
-    pub reverse: HashMap<String, CollectionIndex<Value, Value, u64>>,
+    pub reverse: HashMap<Aid, CollectionIndex<Value, Value, u64>>,
+    /// Set of rules known to be underconstrained.
+    pub underconstrained: HashSet<Aid>,
 }
 
 impl ImplContext for Context {
@@ -173,6 +175,12 @@ impl ImplContext for Context {
     {
         self.reverse.get_mut(name)
     }
+
+    fn is_underconstrained
+        (&self, name: &str) -> bool
+    {
+        self.underconstrained.contains(name)
+    }
 }
 
 impl<Token: Hash> Server<Token> {
@@ -186,6 +194,7 @@ impl<Token: Hash> Server<Token> {
                 global_arrangements: HashMap::new(),
                 forward: HashMap::new(),
                 reverse: HashMap::new(),
+                underconstrained: HashSet::new(),
             },
             probe: ProbeHandle::new(),
             interests: HashMap::new(),

@@ -60,6 +60,12 @@ pub trait ImplContext {
     /// given name.
     fn reverse_index
         (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
+
+    /// Returns the current decision as to whether this rule can be
+    /// safely materialized and re-used on its own (i.e. without more
+    /// specific constraints).
+    fn is_underconstrained
+        (&self, name: &str) -> bool;
 }
 
 /// A type that can be implemented as a simple relation.
