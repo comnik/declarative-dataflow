@@ -504,21 +504,25 @@ where
         let mut local_arrangements = VariableMap::new();
         let mut result_map = HashMap::new();
 
-        // @TODO recursively grab rules that the requested rules depend on
-        let mut rules: Vec<Rule> = Vec::with_capacity(publish.len());
-        for name in publish.iter() {
-            rules.push(
-                context.rule(name).expect("Requested publish for unknown rule.").clone()
-            );
-        };
-
         // Step 0: Canonicalize, check uniqueness of bindings.
+        if rules.is_empty() {
+            panic!("Couldn't find any rules for that name.");
+        }
+
         rules.sort_by(|x, y| x.name.cmp(&y.name));
         for index in 1..rules.len() - 1 {
             if rules[index].name == rules[index - 1].name {
                 panic!("Duplicate rule definitions for rule {}", rules[index].name);
             }
         }
+
+        // @TODO at this point we need to know about...
+        // @TODO ... which rules require recursion (and thus need wrapping in a Variable)
+        // @TODO ... which rules are supposed to be re-used
+        // @TODO ... which rules are supposed to be re-synthesized
+        //
+        // but based entirely on control data written to the server by something external
+        // (for the old implement it could just be a decision based on whether the rule has a namespace)
         
         // Step 1: Create new recursive variables for each rule.
         for name in publish.iter() {
