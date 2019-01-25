@@ -35,18 +35,18 @@ fn main() {
                         Plan::Join(Join {
                             variables: vec![z],
                             left_plan: Box::new(Plan::MatchA(z, ":edge".to_string(), y)),
-                            right_plan: Box::new(Plan::RuleExpr(vec![x, z], "label".to_string()))
+                            right_plan: Box::new(Plan::NameExpr(vec![x, z], "label".to_string()))
                         })
                     ]
                 })
             },
             Rule {
                 name: "labelprop".to_string(),
-                plan: Plan::RuleExpr(vec![x, y], "label".to_string()),
+                plan: Plan::NameExpr(vec![x, y], "label".to_string()),
                 // plan: Plan::Aggregate(Aggregate {
                 //     variables: vec![x, y],
                 //     key_symbols: vec![],
-                //     plan: Box::new(Plan::RuleExpr(vec![x, y], "label".to_string())),
+                //     plan: Box::new(Plan::NameExpr(vec![x, y], "label".to_string())),
                 //     aggregation_fn: AggregationFn::COUNT
                 // })
             }

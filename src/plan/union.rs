@@ -6,8 +6,8 @@ use timely::dataflow::scopes::child::Iterative;
 use differential_dataflow::operators::Threshold;
 
 use plan::{ImplContext, Implementable};
-use Relation;
-use {VariableMap, CollectionRelation, Var};
+use binding::Binding;
+use {VariableMap, Relation, CollectionRelation, Var};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -30,6 +30,16 @@ impl<P: Implementable> Implementable for Union<P>
         }
 
         dependencies
+    }
+
+    fn into_bindings(&self) -> Vec<Binding> {
+        let mut bindings = Vec::new();
+
+        for plan in self.plans.iter() {
+            bindings.append(&mut plan.into_bindings());
+        }
+
+        bindings
     }
 
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(

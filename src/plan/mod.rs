@@ -6,8 +6,9 @@ use std::sync::atomic::{self, AtomicUsize};
 use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
+use binding::{Binding, AttributeBinding};
 use {Aid, Eid, Value, Var};
-use {Rule, Binding};
+use {Rule};
 use {CollectionIndex, RelationHandle, Relation, VariableMap, CollectionRelation};
 
 pub mod project;
@@ -61,8 +62,9 @@ pub trait ImplContext {
     fn reverse_index
         (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
 
-    /// Returns the current decision as to whether this rule can be
-    /// safely materialized and re-used on its own (i.e. without more
+    /// Returns the current opinion as to whether this rule is
+    /// underconstrained. Underconstrained rules cannot be safely
+    /// materialized and re-used on their own (i.e. without more
     /// specific constraints).
     fn is_underconstrained
         (&self, name: &str) -> bool;
@@ -163,7 +165,9 @@ impl Implementable for Plan {
             &Plan::Negate(ref plan) => plan.into_bindings(),
             &Plan::Filter(ref filter) => filter.into_bindings(),
             &Plan::Transform(ref transform) => transform.into_bindings(),
-            &Plan::MatchA(e, ref a, v) => vec![Binding { symbols: (e, v,), source_name: a.to_string() }],
+            &Plan::MatchA(e, ref a, v) => vec![
+                Binding::Attribute(AttributeBinding { symbols: (e, v,), source_attribute: a.to_string() }),
+            ],
             &Plan::MatchEA(_, _, _) => panic!("Only MatchA is supported in Hector."),
             &Plan::MatchAV(_, _, _) => panic!("Only MatchA is supported in Hector."),
             &Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...

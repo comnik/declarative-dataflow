@@ -6,8 +6,9 @@ extern crate declarative_dataflow;
 use graph_map::GraphMMap;
 
 use declarative_dataflow::plan::{Hector};
+use declarative_dataflow::binding::{Binding, AttributeBinding};
 use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Plan, Rule, Binding, Value};
+use declarative_dataflow::{Plan, Rule, Value};
 
 fn main() {
 
@@ -24,10 +25,11 @@ fn main() {
         // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
         let (a,b,c) = (1,2,3);
         let plan = Plan::Hector(Hector {
+            variables: vec![a, b, c],
             bindings: vec![
-                Binding { symbols: (a,b), source_name: "edge".to_string() },
-                Binding { symbols: (b,c), source_name: "edge".to_string() },
-                Binding { symbols: (a,c), source_name: "edge".to_string() },
+                Binding::Attribute(AttributeBinding { symbols: (a,b), source_attribute: "edge".to_string() }),
+                Binding::Attribute(AttributeBinding { symbols: (b,c), source_attribute: "edge".to_string() }),
+                Binding::Attribute(AttributeBinding { symbols: (a,c), source_attribute: "edge".to_string() }),
             ]
         });
 

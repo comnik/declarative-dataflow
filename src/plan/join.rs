@@ -6,9 +6,9 @@ use timely::dataflow::scopes::child::Iterative;
 use differential_dataflow::operators::JoinCore;
 
 use plan::{ImplContext, Implementable, next_id};
+use binding::{Binding};
 use {Aid, Eid, Value, Var};
-use {Relation, Binding};
-use {VariableMap, CollectionRelation};
+use {VariableMap, Relation, CollectionRelation};
 
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
@@ -44,7 +44,7 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2>
         bindings.append(&mut left_bindings);
         bindings.append(&mut right_bindings);
 
-        bindings        
+        bindings
     }
 
     fn datafy(&self) -> Vec<(Eid, Aid, Value)> {

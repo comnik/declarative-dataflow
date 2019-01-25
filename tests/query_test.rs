@@ -6,8 +6,9 @@ use std::sync::mpsc::channel;
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Join, Hector, Project};
+use declarative_dataflow::binding::{Binding, AttributeBinding};
 use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Plan, Rule, Binding, Value};
+use declarative_dataflow::{Plan, Rule, Value};
 
 #[test]
 fn match_ea() {
@@ -118,10 +119,11 @@ fn hector() {
         // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
         let (a,b,c) = (1,2,3);
         let plan = Plan::Hector(Hector {
+            variables: vec![a, b, c],
             bindings: vec![
-                Binding { symbols: (a,b), source_name: "edge".to_string() },
-                Binding { symbols: (b,c), source_name: "edge".to_string() },
-                Binding { symbols: (a,c), source_name: "edge".to_string() },
+                Binding::Attribute(AttributeBinding { symbols: (a,b), source_attribute: "edge".to_string() }),
+                Binding::Attribute(AttributeBinding { symbols: (b,c), source_attribute: "edge".to_string() }),
+                Binding::Attribute(AttributeBinding { symbols: (a,c), source_attribute: "edge".to_string() }),
             ]
         });
 
@@ -167,9 +169,10 @@ fn hector_join() {
         // [?e :age ?a] [?e :name ?n]
         let (e, a, n) = (1, 2, 3);
         let plan = Plan::Hector(Hector {
+            variables: vec![e, a, n],
             bindings: vec![
-                Binding { symbols: (e,n), source_name: ":name".to_string() },
-                Binding { symbols: (e,a), source_name: ":age".to_string() },
+                Binding::Attribute(AttributeBinding { symbols: (e,n), source_attribute: ":name".to_string() }),
+                Binding::Attribute(AttributeBinding { symbols: (e,a), source_attribute: ":age".to_string() }),
             ]
         });
 

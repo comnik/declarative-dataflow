@@ -11,15 +11,16 @@ extern crate timely;
 extern crate timely_sort;
 #[macro_use]
 extern crate log;
-
-#[macro_use]
-extern crate abomonation_derive;
 extern crate abomonation;
-
 #[macro_use]
 extern crate serde_derive;
-
 extern crate num_rational;
+
+pub mod timestamp;
+pub mod plan;
+pub mod binding;
+pub mod server;
+pub mod sources;
 
 use std::hash::Hash;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -42,13 +43,7 @@ use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt
 
 pub use num_rational::Rational32;
 
-pub mod timestamp;
-
-pub mod plan;
 pub use plan::{ImplContext, Implementable, Plan, Hector};
-
-pub mod server;
-pub mod sources;
 
 /// A unique entity identifier.
 #[cfg(not(feature = "uuids"))]
@@ -288,16 +283,6 @@ pub struct Rule {
     pub name: String,
     /// The plan describing contents of the relation.
     pub plan: Plan,
-}
-
-/// Describes symbols whose possible values are given by a global
-/// arrangement.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct Binding {
-    /// The symbols this binding talks about.
-    pub symbols: (Var,Var),
-    /// The name of a globally registered arrangement.
-    pub source_name: String,
 }
 
 /// A relation between a set of symbols.
@@ -559,7 +544,11 @@ where
         for rule in rules.iter() {
             info!("neu_planning {:?}", rule.name);
 
+            // @TODO here we need to split up the plan into multiple
+            // Hector plans (one for each symbol)
+            
             let plan = Plan::Hector(Hector {
+                variables: vec![], // @TODO
                 bindings: dbg!(rule.plan.into_bindings()),
             });
             

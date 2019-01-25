@@ -4,9 +4,9 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use plan::{ImplContext, Implementable, next_id};
+use binding::{Binding};
 use {Aid, Eid, Value, Var};
-use {Relation, Binding};
-use {VariableMap, CollectionRelation};
+use {VariableMap, Relation, CollectionRelation};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible

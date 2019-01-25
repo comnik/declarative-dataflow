@@ -25,7 +25,7 @@ use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
 
 use timestamp::altneu::AltNeu;
 use plan::{ImplContext, Implementable};
-use {Binding};
+use binding::Binding;
 use {VariableMap, CollectionRelation, Value, Var, LiveIndex};
 
 /// A type capable of extending a stream of prefixes. Implementors of
@@ -98,6 +98,8 @@ where
 /// sources.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Hector {
+    /// @TODO
+    pub variables: Vec<Var>,
     /// Bindings to join.
     pub bindings: Vec<Binding>,
 }
@@ -151,145 +153,125 @@ impl Implementable for Hector
             let mut reverse_import = HashMap::new();
             let mut reverse_alt = HashMap::new();
             let mut reverse_neu = HashMap::new();
-            
-            // For each binding, we construct a delta query driven by
-            // changes to that binding.
 
-            let changes = self.bindings.iter().enumerate().map(|(idx, delta_binding)| {
-                
-                dbg!(idx);
-                
-                let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
+            // For each AttributeBinding (only AttributeBindings
+            // actually experience change), we construct a delta query
+            // driven by changes to that binding.
 
-                if idx > 0 {
-                    // Conflicting relations that appear before the
-                    // current one in the sequence (< idx)
+            let changes = self.bindings.iter().enumerate()
+                .flat_map(|(idx, delta_binding)| match delta_binding {
+                    Binding::Attribute(delta_binding) => {
+                        dbg!(idx);
+                        
+                        let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
 
-                    for preceeding in self.bindings.iter().take(idx) {
+                        for (other_idx, other) in self.bindings.iter().enumerate() {
 
-                        match direction(preceeding.symbols, delta_binding.symbols) {
-                            Err(msg) => panic!(msg),
-                            Ok(direction) => match direction {
-                                Direction::Forward(offset) => {
-                                    let forward = forward_alt.entry(&preceeding.source_name)
-                                        .or_insert_with(|| {
-                                            forward_import.entry(&preceeding.source_name)
-                                                .or_insert_with(|| {
-                                                    context.forward_index(&preceeding.source_name).unwrap()
-                                                        .import(&scope.parent.parent)
-                                                        .enter(&scope.parent)
-                                                })
-                                                .enter(&scope)
-                                        });
+                            // We need to distinguish between conflicting relations
+                            // that appear before the current one in the sequence (< idx),
+                            // and those that appear afterwards.
 
-                                    if offset == 0 {
-                                        dbg!("alt forward select_e");
-                                        extenders.push(Box::new(forward.extender_using(select_e)));
-                                    } else {
-                                        dbg!("alt forward select_v");
-                                        extenders.push(Box::new(forward.extender_using(select_v)));
-                                    }
-                                }
-                                Direction::Reverse(offset) => {
-                                    let reverse = reverse_alt.entry(&preceeding.source_name)
-                                        .or_insert_with(|| {
-                                            reverse_import.entry(&preceeding.source_name)
-                                                .or_insert_with(|| {
-                                                    context.reverse_index(&preceeding.source_name).unwrap()
-                                                        .import(&scope.parent.parent)
-                                                        .enter(&scope.parent)
-                                                })
-                                                .enter(&scope)
-                                        });
-
-                                    if offset == 0 {
-                                        dbg!("alt reverse select_e");
-                                        extenders.push(Box::new(reverse.extender_using(select_e)));
-                                    } else {
-                                        dbg!("alt reverse select_v");
-                                        extenders.push(Box::new(reverse.extender_using(select_v)));
-                                    }
-                                }
+                            if other_idx == idx {
+                                continue
                             }
-                        }                        
-                    }
-                }
 
-                if idx < self.bindings.len() {
-                    // Conflicting relations that appear after the
-                    // current one in the sequence (> idx)
+                            let (is_neu, forward_cache, reverse_cache) = if other_idx < idx {
+                                (false, &mut forward_alt, &mut reverse_alt)
+                            } else {
+                                (true, &mut forward_neu, &mut reverse_neu)
+                            };
 
-                    for succeeding in self.bindings.iter().skip(idx + 1) {
+                            match other {
+                                Binding::Constant(_other) => {}
+                                Binding::Attribute(other) => {
+                                    match direction(other.symbols, delta_binding.symbols) {
+                                        Err(msg) => panic!(msg),
+                                        Ok(direction) => match direction {
+                                            Direction::Forward(offset) => {
+                                                let forward = forward_cache.entry(&other.source_attribute)
+                                                    .or_insert_with(|| {
+                                                        let imported = forward_import.entry(&other.source_attribute)
+                                                            .or_insert_with(|| {
+                                                                context.forward_index(&other.source_attribute).unwrap()
+                                                                    .import(&scope.parent.parent)
+                                                                    .enter(&scope.parent)
+                                                            });
 
-                        match direction(succeeding.symbols, delta_binding.symbols) {
-                            Err(msg) => panic!(msg),
-                            Ok(direction) => match direction {
-                                Direction::Forward(offset) => {
-                                    let forward = forward_neu.entry(&succeeding.source_name)
-                                        .or_insert_with(|| {
-                                            forward_import.entry(&succeeding.source_name)
-                                                .or_insert_with(|| {
-                                                    context.forward_index(&succeeding.source_name).unwrap()
-                                                        .import(&scope.parent.parent)
-                                                        .enter(&scope.parent)
-                                                })
-                                                .enter_at(&scope,
-                                                          |_,_,t| AltNeu::neu(t.clone()),
-                                                          |_,_,t| AltNeu::neu(t.clone()),
-                                                          |_,_,t| AltNeu::neu(t.clone()),)
-                                        });
+                                                        let neu1 = is_neu.clone();
+                                                        let neu2 = is_neu.clone();
+                                                        let neu3 = is_neu.clone();
+                                                        
+                                                        imported.enter_at(
+                                                            &scope,
+                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
+                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
+                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
+                                                        )
+                                                    });
 
-                                    if offset == 0 {
-                                        dbg!("neu forward select_e");
-                                        extenders.push(Box::new(forward.extender_using(select_e)));
-                                    } else {
-                                        dbg!("neu forward select_v");
-                                        extenders.push(Box::new(forward.extender_using(select_v)));
+                                                if offset == 0 {
+                                                    extenders.push(Box::new(forward.extender_using(select_e)));
+                                                } else {
+                                                    extenders.push(Box::new(forward.extender_using(select_v)));
+                                                }
+                                            }
+                                            Direction::Reverse(offset) => {
+                                                let reverse = reverse_cache.entry(&other.source_attribute)
+                                                    .or_insert_with(|| {
+                                                        let imported = reverse_import.entry(&other.source_attribute)
+                                                            .or_insert_with(|| {
+                                                                context.reverse_index(&other.source_attribute).unwrap()
+                                                                    .import(&scope.parent.parent)
+                                                                    .enter(&scope.parent)
+                                                            });
+
+                                                        let neu1 = is_neu.clone();
+                                                        let neu2 = is_neu.clone();
+                                                        let neu3 = is_neu.clone();
+                                                        
+                                                        imported.enter_at(
+                                                            &scope,
+                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
+                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
+                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
+                                                        )
+                                                    });
+
+                                                if offset == 0 {
+                                                    extenders.push(Box::new(reverse.extender_using(select_e)));
+                                                } else {
+                                                    extenders.push(Box::new(reverse.extender_using(select_v)));
+                                                }
+                                            }
+                                        }
                                     }
                                 }
-                                Direction::Reverse(offset) => {
-                                    let reverse = reverse_neu.entry(&succeeding.source_name)
-                                        .or_insert_with(|| {
-                                            reverse_import.entry(&succeeding.source_name)
-                                                .or_insert_with(|| {
-                                                    context.reverse_index(&succeeding.source_name).unwrap()
-                                                        .import(&scope.parent.parent)
-                                                        .enter(&scope.parent)
-                                                })
-                                                .enter_at(&scope,
-                                                          |_,_,t| AltNeu::neu(t.clone()),
-                                                          |_,_,t| AltNeu::neu(t.clone()),
-                                                          |_,_,t| AltNeu::neu(t.clone()),)
-                                        });
-
-                                    if offset == 0 {
-                                        dbg!("neu reverse select_e");
-                                        extenders.push(Box::new(reverse.extender_using(select_e)));
-                                    } else {
-                                        dbg!("neu reverse select_v");
-                                        extenders.push(Box::new(reverse.extender_using(select_v)));
-                                    }
-                                }
-                            }
+                            }                
                         }
+                        
+                        // @TODO impl ProposeExtensionMethod for Arranged
+                        let output = forward_import.entry(&delta_binding.source_attribute)
+                            .or_insert_with(|| {
+                                context.forward_index(&delta_binding.source_attribute).unwrap()
+                                    .import(&scope.parent.parent)
+                                    .enter(&scope.parent)
+                            })
+                            .validate_trace
+                            .enter(&scope)
+                            .as_collection(|tuple,()| tuple.clone())
+                            .extend(&mut extenders[..])
+                            .map(|((e,v1),v2)| {
+                                // @TODO project correctly
+
+                                //
+                                
+                                vec![e,v1,v2]
+                            });
+
+                        Some(output.inner)
                     }
-                }
-                
-                // @TODO project correctly
-                // @TODO impl ProposeExtensionMethod for Arranged
-                forward_import.entry(&delta_binding.source_name)
-                    .or_insert_with(|| {
-                        context.forward_index(&delta_binding.source_name).unwrap()
-                            .import(&scope.parent.parent)
-                            .enter(&scope.parent)
-                    })
-                    .validate_trace
-                    .enter(&scope)
-                    .as_collection(|tuple,()| tuple.clone())
-                    .extend(&mut extenders[..])
-                    .map(|((e,v1),v2)| vec![e,v1,v2])
-                    .inner
-            });
+                    _ => None
+                });
 
             inner.concatenate(changes).as_collection().leave()
         });
