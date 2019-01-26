@@ -194,6 +194,31 @@ fn run_hector_cases() {
                 ],
             ],
         },
+        Case {
+            description: "[?a :num ?b] [?a :num ?c] (< ?const0 ?c) (constant ?const0 18) (constant ?b 10)",
+            plan: Hector {
+                variables: vec![0, 1, 3, 2],
+                bindings: vec![
+                    Attribute(AttributeBinding { symbols: (0,1), source_attribute: ":num".to_string() }),
+                    Attribute(AttributeBinding { symbols: (0,2), source_attribute: ":num".to_string() }),
+                    Constant(ConstantBinding { symbol: 3, value: Number(18), }),
+                    Constant(ConstantBinding { symbol: 1, value: Number(10), }),
+                    BinaryPredicate(BinaryPredicateBinding { symbols: (2,3), predicate: LT, }),
+                ]
+            },
+            transactions: vec![
+                vec![
+                    TxData(1, 100, ":num".to_string(), Number(1)),
+                    TxData(1, 100, ":num".to_string(), Number(10)),
+                    TxData(1, 100, ":num".to_string(), Number(20)),
+                ],
+            ],
+            expectations: vec![
+                vec![
+                    (vec![Eid(100), Number(10), Number(18), Number(20)], 0, 1),
+                ],
+            ],
+        },
     ];
 
     for case in cases.drain(..) {

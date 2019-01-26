@@ -251,7 +251,7 @@ impl Implementable for Hector
                                                 }
                                                 Binding::BinaryPredicate(other) => {
                                                     match direction(&prefix_symbols, &other.symbols) {
-                                                        Err(msg) => panic!(msg),
+                                                        Err(msg) => { /*panic!(msg) */ },
                                                         Ok(direction) => {
                                                             extenders.push(Box::new(BinaryPredicateExtender {
                                                                 phantom: std::marker::PhantomData,

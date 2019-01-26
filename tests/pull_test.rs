@@ -198,6 +198,7 @@ fn pull() {
 
         let (a,b,c,) = (1,2,3,);
         let plan = Plan::Pull(Pull {
+            variables: vec![],
             paths: vec![
                 PullLevel {
                     variables: vec![],
