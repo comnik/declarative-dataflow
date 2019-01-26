@@ -11,9 +11,11 @@ use timely::dataflow::operators::Operator;
 use timely::dataflow::channels::pact::Pipeline;
 
 use declarative_dataflow::plan::Hector;
-use declarative_dataflow::binding::{Binding, AttributeBinding, ConstantBinding};
+use declarative_dataflow::binding::{Binding, AttributeBinding, ConstantBinding, BinaryPredicateBinding};
+use declarative_dataflow::binding::BinaryPredicate::{GT, LT};
 use declarative_dataflow::server::{Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value, Aid};
+use Binding::{Attribute, Constant, BinaryPredicate};
 use Value::{Eid, Number, String};
 
 struct Case {
@@ -28,7 +30,7 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
 
     for binding in case.plan.bindings.iter() {
         match binding {
-            Binding::Attribute(binding) => { deps.insert(binding.source_attribute.clone()); }
+            Attribute(binding) => { deps.insert(binding.source_attribute.clone()); }
             _ => {}
         }
     }
@@ -45,7 +47,7 @@ fn run_hector_cases() {
             plan: Hector {
                 variables: vec![0, 1],
                 bindings: vec![
-                    Binding::Attribute(AttributeBinding { symbols: (0,1), source_attribute: ":name".to_string() })
+                    Attribute(AttributeBinding { symbols: (0,1), source_attribute: ":name".to_string() })
                 ],
             },
             transactions: vec![
@@ -68,8 +70,8 @@ fn run_hector_cases() {
         //     plan: Hector {
         //         variables: vec![0, 1],
         //         bindings: vec![
-        //             Binding::Attribute(AttributeBinding { symbols: (0,1), source_attribute: ":name".to_string() }),
-        //             Binding::Constant(ConstantBinding { symbol: 1, value: String("Dipper".to_string()) }),
+        //             Attribute(AttributeBinding { symbols: (0,1), source_attribute: ":name".to_string() }),
+        //             Constant(ConstantBinding { symbol: 1, value: String("Dipper".to_string()) }),
         //         ],
         //     },
         //     transactions: vec![
@@ -90,8 +92,8 @@ fn run_hector_cases() {
                 plan: Hector {
                     variables: vec![e, a, n],
                     bindings: vec![
-                        Binding::Attribute(AttributeBinding { symbols: (e,n), source_attribute: ":name".to_string() }),
-                        Binding::Attribute(AttributeBinding { symbols: (e,a), source_attribute: ":age".to_string() }),
+                        Attribute(AttributeBinding { symbols: (e,n), source_attribute: ":name".to_string() }),
+                        Attribute(AttributeBinding { symbols: (e,a), source_attribute: ":age".to_string() }),
                     ]
                 },
                 transactions: vec![
@@ -118,9 +120,9 @@ fn run_hector_cases() {
                 plan: Hector {
                     variables: vec![a, b, c],
                     bindings: vec![
-                        Binding::Attribute(AttributeBinding { symbols: (a,b), source_attribute: "edge".to_string() }),
-                        Binding::Attribute(AttributeBinding { symbols: (b,c), source_attribute: "edge".to_string() }),
-                        Binding::Attribute(AttributeBinding { symbols: (a,c), source_attribute: "edge".to_string() }),
+                        Attribute(AttributeBinding { symbols: (a,b), source_attribute: "edge".to_string() }),
+                        Attribute(AttributeBinding { symbols: (b,c), source_attribute: "edge".to_string() }),
+                        Attribute(AttributeBinding { symbols: (a,c), source_attribute: "edge".to_string() }),
                     ]
                 },
                 transactions: vec![
@@ -145,10 +147,10 @@ fn run_hector_cases() {
                 plan: Hector {
                     variables: vec![e, a, b, c, d],
                     bindings: vec![
-                        Binding::Attribute(AttributeBinding { symbols: (e,a), source_attribute: ":age".to_string() }),
-                        Binding::Attribute(AttributeBinding { symbols: (e,b), source_attribute: ":name".to_string() }),
-                        Binding::Attribute(AttributeBinding { symbols: (e,c), source_attribute: ":likes".to_string() }),
-                        Binding::Attribute(AttributeBinding { symbols: (e,d), source_attribute: ":fears".to_string() }),
+                        Attribute(AttributeBinding { symbols: (e,a), source_attribute: ":age".to_string() }),
+                        Attribute(AttributeBinding { symbols: (e,b), source_attribute: ":name".to_string() }),
+                        Attribute(AttributeBinding { symbols: (e,c), source_attribute: ":likes".to_string() }),
+                        Attribute(AttributeBinding { symbols: (e,d), source_attribute: ":fears".to_string() }),
                     ]
                 },
                 transactions: vec![
@@ -166,6 +168,31 @@ fn run_hector_cases() {
                     vec![(vec![Eid(100), Number(12), String("Dipper".to_string()), Eid(200), Eid(300)], 0, 1)],
                 ],
             }
+        },
+        Case {
+            description: "[?a :num ?b] [?a :num ?c] (< ?b ?c)",
+            plan: Hector {
+                variables: vec![0, 1, 2],
+                bindings: vec![
+                    Attribute(AttributeBinding { symbols: (0,1), source_attribute: ":num".to_string() }),
+                    Attribute(AttributeBinding { symbols: (0,2), source_attribute: ":num".to_string() }),
+                    BinaryPredicate(BinaryPredicateBinding { symbols: (1,2), predicate: LT, }),
+                ]
+            },
+            transactions: vec![
+                vec![
+                    TxData(1, 100, ":num".to_string(), Number(1)),
+                    TxData(1, 100, ":num".to_string(), Number(2)),
+                    TxData(1, 100, ":num".to_string(), Number(3)),
+                ],
+            ],
+            expectations: vec![
+                vec![
+                    (vec![Eid(100), Number(1), Number(2)], 0, 1),
+                    (vec![Eid(100), Number(1), Number(3)], 0, 1),
+                    (vec![Eid(100), Number(2), Number(3)], 0, 1)
+                ],
+            ],
         },
     ];
 

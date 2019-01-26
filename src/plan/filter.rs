@@ -6,25 +6,9 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use plan::{ImplContext, Implementable};
+pub use binding::BinaryPredicate as Predicate;
 use Relation;
 use {VariableMap, CollectionRelation, Value, Var};
-
-/// Permitted comparison predicates.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub enum Predicate {
-    /// Less than
-    LT,
-    /// Greater than
-    GT,
-    /// Less than or equal to
-    LTE,
-    /// Greater than or equal to
-    GTE,
-    /// Equal
-    EQ,
-    /// Not equal
-    NEQ,
-}
 
 fn lt(a: &Value, b: &Value) -> bool {
     a < b

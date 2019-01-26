@@ -9,13 +9,21 @@ pub trait AsBinding {
     fn binds(&self, sym: &Var) -> Option<usize>;
 }
 
+impl AsBinding for Vec<Var> {
+    fn binds(&self, sym: &Var) -> Option<usize> {
+        self.iter().position(|&x| *sym == x)
+    }
+}
+
 /// Binding types supported by Hector.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub enum Binding {
-    /// A symbol bound by (e,v) pairs from an attribute.
+    /// Two symbols bound by (e,v) pairs from an attribute.
     Attribute(AttributeBinding),
     /// A symbol bound by a constant value.
     Constant(ConstantBinding),
+    /// Two symbols bound by a binary predicate.
+    BinaryPredicate(BinaryPredicateBinding),
 }
 
 impl AsBinding for Binding {
@@ -23,6 +31,7 @@ impl AsBinding for Binding {
         match self {
             &Binding::Attribute(ref binding) => binding.binds(sym),
             &Binding::Constant(ref binding) => binding.binds(sym),
+            &Binding::BinaryPredicate(ref binding) => binding.binds(sym),
         }
     }
 }
@@ -56,6 +65,40 @@ pub struct ConstantBinding {
 impl AsBinding for ConstantBinding {
     fn binds(&self, sym: &Var) -> Option<usize> {
         if self.symbol == *sym { Some(0) }
+        else { None }
+    }
+}
+
+/// Built-in binary predicates.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub enum BinaryPredicate {
+    /// Less than
+    LT,
+    /// Greater than
+    GT,
+    /// Less than or equal to
+    LTE,
+    /// Greater than or equal to
+    GTE,
+    /// Equal
+    EQ,
+    /// Not equal
+    NEQ,
+}
+
+/// Describe a binary predicate constraint.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct BinaryPredicateBinding {
+    /// The symbols this binding talks about.
+    pub symbols: (Var,Var),
+    /// Logical predicate to apply.
+    pub predicate: BinaryPredicate,
+}
+
+impl AsBinding for BinaryPredicateBinding {
+    fn binds(&self, sym: &Var) -> Option<usize> {
+        if self.symbols.0 == *sym { Some(0) }
+        else if self.symbols.1 == *sym { Some(1) }
         else { None }
     }
 }

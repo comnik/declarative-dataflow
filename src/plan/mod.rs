@@ -152,7 +152,7 @@ impl Plan {
             &Plan::MatchA(e, _, v) => vec![e, v],
             &Plan::MatchEA(_, _, v) => vec![v],
             &Plan::MatchAV(e, _, _) => vec![e],
-            &Plan::NameExpr(ref variables, ref name) => variables.clone(),
+            &Plan::NameExpr(ref variables, ref _name) => variables.clone(),
             &Plan::Pull(ref pull) => pull.variables.clone(),
             &Plan::PullLevel(ref path) => path.variables.clone(),
         }

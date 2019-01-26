@@ -25,7 +25,7 @@ use differential_dataflow::trace::{Cursor, TraceReader, BatchReader};
 
 use timestamp::altneu::AltNeu;
 use plan::{ImplContext, Implementable};
-use binding::{AsBinding, Binding};
+use binding::{AsBinding, Binding, BinaryPredicate};
 use {VariableMap, CollectionRelation, Value, Var, LiveIndex};
 
 /// A type capable of extending a stream of prefixes. Implementors of
@@ -106,31 +106,40 @@ pub struct Hector {
 
 enum Direction { Forward(usize), Reverse(usize), }
 
-fn direction(prefix_symbols: (Var,Var), extender_symbols: (Var,Var)) -> Result<Direction, &'static str> {
-    if prefix_symbols == extender_symbols {
-        Err("Attempt to intersect attribute with itself")
-    } else if prefix_symbols.0 == extender_symbols.0 {
-        // forward select_e
-        Ok(Direction::Forward(0))
-    } else if prefix_symbols.0 == extender_symbols.1 {
-        // forward select_v
-        Ok(Direction::Forward(1))
-    } else if prefix_symbols.1 == extender_symbols.0 {
-        // reverse select_e
-        Ok(Direction::Reverse(0))
-    } else if prefix_symbols.1 == extender_symbols.1 {
-        // reverse select_v
-        Ok(Direction::Reverse(1))
-    } else {
-        Err("Requested variable not bound by Attribute")
+fn direction<P>(prefix_symbols: &P, extender_symbols: &(Var,Var)) -> Result<Direction, &'static str>
+where
+    P: AsBinding+std::fmt::Debug
+{
+    match AsBinding::binds(prefix_symbols, &extender_symbols.0) {
+        None => {
+            match AsBinding::binds(prefix_symbols, &extender_symbols.1) {
+                None => {
+                    println!("Neither extender symbol {:?} bound by prefix {:?}.", extender_symbols, prefix_symbols);
+                    Err("Neither extender symbol bound by prefix.")
+                }
+                Some(offset) => {
+                    Ok(Direction::Reverse(offset))
+                }
+            }
+        }
+        Some(offset) => {
+            match AsBinding::binds(prefix_symbols, &extender_symbols.1) {
+                Some(_) => Err("Both extender symbols already bound by prefix."),
+                None => {
+                    // Prefix binds the first extender symbol, but not
+                    // the second. Can use forward index.
+                    Ok(Direction::Forward(offset))
+                }
+            }
+        }
     }
 }
 
-trait IndexNode {
-    fn index(&self, index: usize) -> Value;
+trait IndexNode<V> {
+    fn index(&self, index: usize) -> V;
 }
 
-impl IndexNode for Vec<Value> {
+impl IndexNode<Value> for Vec<Value> {
     #[inline(always)] fn index(&self, index: usize) -> Value { self[index].clone() }
 }
 
@@ -201,6 +210,10 @@ impl Implementable for Hector
                     .flat_map(|(idx, delta_binding)| match delta_binding {
                         Binding::Attribute(delta_binding) => {
 
+                            let mut prefix_symbols = Vec::with_capacity(self.variables.len());
+                            prefix_symbols.push(delta_binding.symbols.0.clone());
+                            prefix_symbols.push(delta_binding.symbols.1.clone());
+                            
                             let mut source = forward_import.entry(&delta_binding.source_attribute)
                                 .or_insert_with(|| {
                                     context.forward_index(&delta_binding.source_attribute).unwrap()
@@ -212,13 +225,9 @@ impl Implementable for Hector
                                 .as_collection(|(e,v),()| vec![e.clone(), v.clone()]);
                             
                             for target in self.variables.iter() {
-                                match delta_binding.binds(target) {
+                                match AsBinding::binds(&prefix_symbols, target) {
                                     Some(_) => { /* already bound */ continue },
                                     None => {
-
-                                        dbg!(&delta_binding.source_attribute);
-                                        dbg!(target);
-
                                         let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=Vec<Value>, Extension=_>>> = vec![];
 
                                         for (other_idx, other) in self.bindings.iter().enumerate() {
@@ -228,16 +237,10 @@ impl Implementable for Hector
                                             // and those that appear afterwards.
 
                                             // Ignore the current delta source itself.
-                                            if other_idx == idx { continue }
+                                            if other_idx == idx { continue; }
 
                                             // Ignore any binding not talking about the target symbol.
-                                            if other.binds(target).is_none() { continue }
-
-                                            let (is_neu, forward_cache, reverse_cache) = if other_idx < idx {
-                                                (false, &mut forward_alt, &mut reverse_alt)
-                                            } else {
-                                                (true, &mut forward_neu, &mut reverse_neu)
-                                            };
+                                            if other.binds(target).is_none() { continue; }
 
                                             match other {
                                                 Binding::Constant(other) => {
@@ -246,8 +249,27 @@ impl Implementable for Hector
                                                         value: other.value.clone(),
                                                     }));
                                                 }
+                                                Binding::BinaryPredicate(other) => {
+                                                    match direction(&prefix_symbols, &other.symbols) {
+                                                        Err(msg) => panic!(msg),
+                                                        Ok(direction) => {
+                                                            extenders.push(Box::new(BinaryPredicateExtender {
+                                                                phantom: std::marker::PhantomData,
+                                                                predicate: other.predicate.clone(),
+                                                                direction: direction,
+                                                            }));
+                                                        }
+                                                    }
+                                                }
                                                 Binding::Attribute(other) => {
-                                                    match direction(other.symbols, delta_binding.symbols) {
+
+                                                    let (is_neu, forward_cache, reverse_cache) = if other_idx < idx {
+                                                        (false, &mut forward_alt, &mut reverse_alt)
+                                                    } else {
+                                                        (true, &mut forward_neu, &mut reverse_neu)
+                                                    };
+
+                                                    match direction(&prefix_symbols, &other.symbols) {
                                                         Err(msg) => panic!(msg),
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
@@ -303,6 +325,8 @@ impl Implementable for Hector
                                                 }
                                             }
                                         }
+
+                                        prefix_symbols.push(*target);
 
                                         // @TODO impl ProposeExtensionMethod for Arranged
                                         source = source
@@ -442,6 +466,70 @@ where
         let target = self.value.clone();
         extensions
             .filter(move |(_prefix, extension)| *extension == target)
+    }
+}
+
+struct BinaryPredicateExtender<P, V>
+where
+    V: Data+Hash
+{
+    phantom: std::marker::PhantomData<(P,V)>,
+    predicate: BinaryPredicate,
+    direction: Direction,
+}
+
+impl<'a, S, V, P> PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>>
+    for BinaryPredicateExtender<P, V>
+where
+    S: Scope+ScopeParent,
+    S::Timestamp: Lattice+Data,
+    V: Data+Hash,
+    P: Data+IndexNode<V>,
+{
+    type Prefix = P;
+    type Extension = V;
+
+    fn count(
+        &mut self,
+        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
+        index: usize
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>
+    {
+        prefixes.map(|prefix| prefix)
+    }
+
+    fn propose(
+        &mut self,
+        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>
+    {
+        prefixes.map(|prefix| panic!("BinaryPredicateExtender should never propose."))
+    }
+
+    fn validate(
+        &mut self,
+        extensions: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>
+    {
+        use self::BinaryPredicate::{LT, LTE, GT, GTE, EQ, NEQ};
+        match self.direction {
+            Direction::Reverse(offset) => match self.predicate {
+                LT => extensions.filter(move |(prefix, extension)| *extension > prefix.index(offset)),
+                LTE => extensions.filter(move |(prefix, extension)| *extension >= prefix.index(offset)),
+                GT => extensions.filter(move |(prefix, extension)| *extension < prefix.index(offset)),
+                GTE => extensions.filter(move |(prefix, extension)| *extension <= prefix.index(offset)),
+                EQ => extensions.filter(move |(prefix, extension)| *extension == prefix.index(offset)),
+                NEQ => extensions.filter(move |(prefix, extension)| *extension != prefix.index(offset)),
+            }
+            Direction::Forward(offset) => match self.predicate {
+                LT => extensions.filter(move |(prefix, extension)| *extension < prefix.index(offset)),
+                LTE => extensions.filter(move |(prefix, extension)| *extension <= prefix.index(offset)),
+                GT => extensions.filter(move |(prefix, extension)| *extension > prefix.index(offset)),
+                GTE => extensions.filter(move |(prefix, extension)| *extension >= prefix.index(offset)),
+                EQ => extensions.filter(move |(prefix, extension)| *extension == prefix.index(offset)),
+                NEQ => extensions.filter(move |(prefix, extension)| *extension != prefix.index(offset)),
+            }
+        }
     }
 }
 
