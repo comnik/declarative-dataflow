@@ -188,9 +188,9 @@ fn run_hector_cases() {
             ],
             expectations: vec![
                 vec![
-                    (vec![Eid(100), Number(1), Number(2)], 0, 1),
-                    (vec![Eid(100), Number(1), Number(3)], 0, 1),
-                    (vec![Eid(100), Number(2), Number(3)], 0, 1)
+                    (vec![Eid(100), Number(2), Number(1)], 0, 1),
+                    (vec![Eid(100), Number(3), Number(1)], 0, 1),
+                    (vec![Eid(100), Number(3), Number(2)], 0, 1)
                 ],
             ],
         },

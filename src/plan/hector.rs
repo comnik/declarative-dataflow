@@ -331,10 +331,7 @@ impl Implementable for Hector
                                         // @TODO impl ProposeExtensionMethod for Arranged
                                         source = source
                                             .extend(&mut extenders[..])
-                                            // @TODO only project on the final stage
                                             .map(|(tuple,v)| {
-                                                // @TODO project correctly
-                                                
                                                 let mut out = Vec::with_capacity(tuple.len() + 1);
                                                 out.append(&mut tuple.clone());
                                                 out.push(v);
@@ -345,7 +342,18 @@ impl Implementable for Hector
                                 }    
                             }
 
-                            Some(source.inner)
+                            if self.variables == prefix_symbols {
+                                Some(source.inner)
+                            } else {
+                                let target_variables = self.variables.clone();
+                                Some(source
+                                     .map(move |tuple| {
+                                         target_variables.iter()
+                                             .map(|x| tuple.index(AsBinding::binds(&prefix_symbols, x).unwrap()))
+                                             .collect()
+                                     })
+                                     .inner)
+                            }
                         }
                         _ => None
                     });
@@ -492,9 +500,10 @@ where
     fn count(
         &mut self,
         prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
-        index: usize
+        _index: usize
     ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>
     {
+        // @TODO return an option here to avoid cloning the collection?
         prefixes.map(|prefix| prefix)
     }
 
