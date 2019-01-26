@@ -126,8 +126,13 @@ fn direction(prefix_symbols: (Var,Var), extender_symbols: (Var,Var)) -> Result<D
     }
 }
 
-fn select_e(tuple: &Vec<Value>) -> Value { tuple[0].clone() }
-fn select_v(tuple: &Vec<Value>) -> Value { tuple[1].clone() }
+trait IndexNode {
+    fn index(&self, index: usize) -> Value;
+}
+
+impl IndexNode for Vec<Value> {
+    #[inline(always)] fn index(&self, index: usize) -> Value { self[index].clone() }
+}
 
 impl Implementable for Hector
 {
@@ -142,147 +147,192 @@ impl Implementable for Hector
         context: &mut I,
     ) -> CollectionRelation<'b, S> {
 
-        let joined = nested.scoped::<AltNeu<Product<u64,u64>>, _, _>("AltNeu", |inner| {
+        if self.bindings.is_empty() {
+            panic!("No bindings passed.");
+        } else if self.variables.is_empty() {
+            panic!("No symbols requested.");
+        } else if self.bindings.len() == 1 {
 
-            let scope = inner.clone();
+            // With only a single binding given, we don't want to do
+            // anything fancy (provided the binding is sourceable).
+            
+            match self.bindings.first().unwrap() {
+                Binding::Attribute(binding) => {
+                    let tuples = context.forward_index(&binding.source_attribute).unwrap()
+                        .validate_trace
+                        .import(&nested.parent)
+                        .enter(&nested)
+                        .as_collection(|(e,v),()| vec![e.clone(), v.clone()]);
+                    
+                    CollectionRelation { symbols: vec![], tuples, }
+                }
+                _ => { panic!("Passed a single, non-sourceable binding."); }
+            }
+        } else {
 
-            // Avoid importing things more than once.
-            let mut forward_import = HashMap::new();
-            let mut forward_alt = HashMap::new();
-            let mut forward_neu = HashMap::new();
-            let mut reverse_import = HashMap::new();
-            let mut reverse_alt = HashMap::new();
-            let mut reverse_neu = HashMap::new();
+            // In order to avoid delta pipelines looking at each
+            // other's data in naughty ways, we need to run them all
+            // inside a scope with lexicographic times.
+            
+            let joined = nested.scoped::<AltNeu<Product<u64,u64>>, _, _>("AltNeu", |inner| {
 
-            // For each AttributeBinding (only AttributeBindings
-            // actually experience change), we construct a delta query
-            // driven by changes to that binding.
+                let scope = inner.clone();
 
-            let changes = self.bindings.iter().enumerate()
-                .flat_map(|(idx, delta_binding)| match delta_binding {
-                    Binding::Attribute(delta_binding) => {
-                        
-                        let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=(Value, Value), Extension=_>>> = vec![];
+                // @TODO
+                // We need to determine an order on the attributes
+                // that ensures that each is bound by preceeding
+                // attributes. For now, we will take the requested order.
 
-                        for (other_idx, other) in self.bindings.iter().enumerate() {
+                // We cache aggressively, to avoid importing and
+                // wrapping things more than once.
+                
+                let mut forward_import = HashMap::new();
+                let mut forward_alt = HashMap::new();
+                let mut forward_neu = HashMap::new();
+                let mut reverse_import = HashMap::new();
+                let mut reverse_alt = HashMap::new();
+                let mut reverse_neu = HashMap::new();
 
-                            // We need to distinguish between conflicting relations
-                            // that appear before the current one in the sequence (< idx),
-                            // and those that appear afterwards.
+                // For each AttributeBinding (only AttributeBindings
+                // actually experience change), we construct a delta query
+                // driven by changes to that binding.
 
-                            if other_idx == idx {
-                                continue
-                            }
+                let changes = self.bindings.iter().enumerate()
+                    .flat_map(|(idx, delta_binding)| match delta_binding {
+                        Binding::Attribute(delta_binding) => {
 
-                            let (is_neu, forward_cache, reverse_cache) = if other_idx < idx {
-                                (false, &mut forward_alt, &mut reverse_alt)
-                            } else {
-                                (true, &mut forward_neu, &mut reverse_neu)
-                            };
+                            let mut source = forward_import.entry(&delta_binding.source_attribute)
+                                .or_insert_with(|| {
+                                    context.forward_index(&delta_binding.source_attribute).unwrap()
+                                        .import(&scope.parent.parent)
+                                        .enter(&scope.parent)
+                                })
+                                .validate_trace
+                                .enter(&scope)
+                                .as_collection(|(e,v),()| vec![e.clone(), v.clone()]);
+                            
+                            for target in self.variables.iter() {
+                                match delta_binding.binds(target) {
+                                    Some(_) => { /* already bound */ continue },
+                                    None => {
 
-                            match other {
-                                Binding::Constant(other) => {
-                                    extenders.push(Box::new(ConstantExtender {
-                                        phantom: std::marker::PhantomData,
-                                        value: other.value.clone(),
-                                    }));
-                                }
-                                Binding::Attribute(other) => {
-                                    match direction(other.symbols, delta_binding.symbols) {
-                                        Err(msg) => panic!(msg),
-                                        Ok(direction) => match direction {
-                                            Direction::Forward(offset) => {
-                                                let forward = forward_cache.entry(&other.source_attribute)
-                                                    .or_insert_with(|| {
-                                                        let imported = forward_import.entry(&other.source_attribute)
-                                                            .or_insert_with(|| {
-                                                                context.forward_index(&other.source_attribute).unwrap()
-                                                                    .import(&scope.parent.parent)
-                                                                    .enter(&scope.parent)
-                                                            });
+                                        dbg!(&delta_binding.source_attribute);
+                                        dbg!(target);
 
-                                                        let neu1 = is_neu.clone();
-                                                        let neu2 = is_neu.clone();
-                                                        let neu3 = is_neu.clone();
-                                                        
-                                                        imported.enter_at(
-                                                            &scope,
-                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
-                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
-                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
-                                                        )
-                                                    });
+                                        let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=Vec<Value>, Extension=_>>> = vec![];
 
-                                                if offset == 0 {
-                                                    extenders.push(Box::new(forward.extender_using(select_e)));
-                                                } else {
-                                                    extenders.push(Box::new(forward.extender_using(select_v)));
+                                        for (other_idx, other) in self.bindings.iter().enumerate() {
+
+                                            // We need to distinguish between conflicting relations
+                                            // that appear before the current one in the sequence (< idx),
+                                            // and those that appear afterwards.
+
+                                            // Ignore the current delta source itself.
+                                            if other_idx == idx { continue }
+
+                                            // Ignore any binding not talking about the target symbol.
+                                            if other.binds(target).is_none() { continue }
+
+                                            let (is_neu, forward_cache, reverse_cache) = if other_idx < idx {
+                                                (false, &mut forward_alt, &mut reverse_alt)
+                                            } else {
+                                                (true, &mut forward_neu, &mut reverse_neu)
+                                            };
+
+                                            match other {
+                                                Binding::Constant(other) => {
+                                                    extenders.push(Box::new(ConstantExtender {
+                                                        phantom: std::marker::PhantomData,
+                                                        value: other.value.clone(),
+                                                    }));
                                                 }
-                                            }
-                                            Direction::Reverse(offset) => {
-                                                let reverse = reverse_cache.entry(&other.source_attribute)
-                                                    .or_insert_with(|| {
-                                                        let imported = reverse_import.entry(&other.source_attribute)
-                                                            .or_insert_with(|| {
-                                                                context.reverse_index(&other.source_attribute).unwrap()
-                                                                    .import(&scope.parent.parent)
-                                                                    .enter(&scope.parent)
-                                                            });
+                                                Binding::Attribute(other) => {
+                                                    match direction(other.symbols, delta_binding.symbols) {
+                                                        Err(msg) => panic!(msg),
+                                                        Ok(direction) => match direction {
+                                                            Direction::Forward(offset) => {
+                                                                let forward = forward_cache.entry(&other.source_attribute)
+                                                                    .or_insert_with(|| {
+                                                                        let imported = forward_import.entry(&other.source_attribute)
+                                                                            .or_insert_with(|| {
+                                                                                context.forward_index(&other.source_attribute).unwrap()
+                                                                                    .import(&scope.parent.parent)
+                                                                                    .enter(&scope.parent)
+                                                                            });
 
-                                                        let neu1 = is_neu.clone();
-                                                        let neu2 = is_neu.clone();
-                                                        let neu3 = is_neu.clone();
-                                                        
-                                                        imported.enter_at(
-                                                            &scope,
-                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
-                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
-                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
-                                                        )
-                                                    });
+                                                                        let neu1 = is_neu.clone();
+                                                                        let neu2 = is_neu.clone();
+                                                                        let neu3 = is_neu.clone();
+                                                                        
+                                                                        imported.enter_at(
+                                                                            &scope,
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
+                                                                        )
+                                                                    });
 
-                                                if offset == 0 {
-                                                    extenders.push(Box::new(reverse.extender_using(select_e)));
-                                                } else {
-                                                    extenders.push(Box::new(reverse.extender_using(select_v)));
+                                                                extenders.push(Box::new(forward.extender_using(move |tuple: &Vec<Value>| tuple.index(offset))));
+                                                            }
+                                                            Direction::Reverse(offset) => {
+                                                                let reverse = reverse_cache.entry(&other.source_attribute)
+                                                                    .or_insert_with(|| {
+                                                                        let imported = reverse_import.entry(&other.source_attribute)
+                                                                            .or_insert_with(|| {
+                                                                                context.reverse_index(&other.source_attribute).unwrap()
+                                                                                    .import(&scope.parent.parent)
+                                                                                    .enter(&scope.parent)
+                                                                            });
+
+                                                                        let neu1 = is_neu.clone();
+                                                                        let neu2 = is_neu.clone();
+                                                                        let neu3 = is_neu.clone();
+                                                                        
+                                                                        imported.enter_at(
+                                                                            &scope,
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
+                                                                        )
+                                                                    });
+
+                                                                extenders.push(Box::new(reverse.extender_using(move |tuple: &Vec<Value>| tuple.index(offset))));
+                                                            }
+                                                        }
+                                                    }
                                                 }
                                             }
                                         }
+
+                                        // @TODO impl ProposeExtensionMethod for Arranged
+                                        source = source
+                                            .extend(&mut extenders[..])
+                                            // @TODO only project on the final stage
+                                            .map(|(tuple,v)| {
+                                                // @TODO project correctly
+                                                
+                                                let mut out = Vec::with_capacity(tuple.len() + 1);
+                                                out.append(&mut tuple.clone());
+                                                out.push(v);
+
+                                                out
+                                            })
                                     }
-                                }
-                            }                
+                                }    
+                            }
+
+                            Some(source.inner)
                         }
-                        
-                        // @TODO impl ProposeExtensionMethod for Arranged
-                        let output = forward_import.entry(&delta_binding.source_attribute)
-                            .or_insert_with(|| {
-                                context.forward_index(&delta_binding.source_attribute).unwrap()
-                                    .import(&scope.parent.parent)
-                                    .enter(&scope.parent)
-                            })
-                            .validate_trace
-                            .enter(&scope)
-                            .as_collection(|tuple,()| tuple.clone())
-                            .extend(&mut extenders[..])
-                            .map(|((e,v1),v2)| {
-                                // @TODO project correctly
+                        _ => None
+                    });
 
-                                //
-                                
-                                vec![e,v1,v2]
-                            });
+                inner.concatenate(changes).as_collection().leave()
+            });
 
-                        Some(output.inner)
-                    }
-                    _ => None
-                });
-
-            inner.concatenate(changes).as_collection().leave()
-        });
-
-        CollectionRelation {
-            symbols: vec![],
-            tuples: joined.distinct(),
+            CollectionRelation {
+                symbols: vec![],
+                tuples: joined.distinct(),
+            }
         }
     }
 }
