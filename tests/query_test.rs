@@ -41,13 +41,31 @@ fn run_query_cases() {
 
     let mut cases = vec![
         Case {
-            description: "[:find ?n :where [1 :name ?n]]",
-            plan: Plan::MatchEA(1, ":name".to_string(), 1),
+            description: "[:find ?e ?n :where [?e :name ?n]]",
+            plan: Plan::MatchA(0, ":name".to_string(), 1),
             transactions: vec![
                 vec![
-                    TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
-                    TxData(1, 1, ":name".to_string(), String("Alias".to_string())),
-                    TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
+                    TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),
+                    TxData(1, 100, ":name".to_string(), String("Alias".to_string())),
+                    TxData(1, 200, ":name".to_string(), String("Mabel".to_string())),
+                ],
+            ],
+            expectations: vec![
+                vec![
+                    (vec![Eid(100), String("Dipper".to_string())], 0, 1),
+                    (vec![Eid(100), String("Alias".to_string())], 0, 1),
+                    (vec![Eid(200), String("Mabel".to_string())], 0, 1),
+                ],
+            ],
+        },        
+        Case {
+            description: "[:find ?n :where [1 :name ?n]]",
+            plan: Plan::MatchEA(100, ":name".to_string(), 0),
+            transactions: vec![
+                vec![
+                    TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),
+                    TxData(1, 100, ":name".to_string(), String("Alias".to_string())),
+                    TxData(1, 200, ":name".to_string(), String("Mabel".to_string())),
                 ],
             ],
             expectations: vec![
@@ -55,6 +73,20 @@ fn run_query_cases() {
                     (vec![String("Alias".to_string())], 0, 1),
                     (vec![String("Dipper".to_string())], 0, 1),
                 ],
+            ],
+        },
+        Case {
+            description: "[:find ?e :where [?e :name 'Mabel']]",
+            plan: Plan::MatchAV(0, ":name".to_string(), String("Mabel".to_string())),
+            transactions: vec![
+                vec![
+                    TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),
+                    TxData(1, 100, ":name".to_string(), String("Alias".to_string())),
+                    TxData(1, 200, ":name".to_string(), String("Mabel".to_string())),
+                ],
+            ],
+            expectations: vec![
+                vec![(vec![Eid(200)], 0, 1)],
             ],
         },
         {
