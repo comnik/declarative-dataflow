@@ -1,110 +1,141 @@
 extern crate declarative_dataflow;
 extern crate timely;
 
+use std::collections::HashSet;
+use std::iter::FromIterator;
+use std::time::Duration;
 use std::sync::mpsc::channel;
 
 use timely::Configuration;
+use timely::dataflow::operators::Operator;
+use timely::dataflow::channels::pact::Pipeline;
 
-use declarative_dataflow::plan::{Join, Project};
+use declarative_dataflow::plan::{Join, Project, Implementable};
+use declarative_dataflow::binding::Binding;
 use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Plan, Rule, Value};
+use declarative_dataflow::{Plan, Rule, Value, Aid};
+use Value::{Eid, Number, String};
 
-#[test]
-fn match_ea() {
-    timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::<u64>::new(Default::default());
-        let (send_results, results) = channel();
+struct Case {
+    description: &'static str,
+    plan: Plan,
+    transactions: Vec<Vec<TxData>>,
+    expectations: Vec<Vec<(Vec<Value>, u64, isize)>>
+}
 
-        // [:find ?v :where [1 :name ?n]]
-        let plan = Plan::MatchEA(1, ":name".to_string(), 1);
+fn dependencies(case: &Case) -> HashSet<Aid> {
+    let mut deps = HashSet::new();
 
-        worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":name", scope);
-
-            server
-                .test_single(scope, Rule { name: "match_ea".to_string(), plan, })
-                .inspect(move |x| {
-                    send_results.send((x.0.clone(), x.2)).unwrap();
-                });
-        });
-
-        server.transact(
-            Transact {
-                tx: Some(0),
-                tx_data: vec![
-                    TxData(
-                        1,
-                        1,
-                        ":name".to_string(),
-                        Value::String("Dipper".to_string()),
-                    ),
-                    TxData(
-                        1,
-                        1,
-                        ":name".to_string(),
-                        Value::String("Alias".to_string()),
-                    ),
-                    TxData(
-                        1,
-                        2,
-                        ":name".to_string(),
-                        Value::String("Mabel".to_string()),
-                    ),
-                ],
-            },
-            0,
-            0,
-        );
-
-        worker.step_while(|| server.is_any_outdated());
-
-        assert_eq!(results.recv().unwrap(), (vec![Value::String("Alias".to_string())], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::String("Dipper".to_string())], 1));
-    }).unwrap();
+    for binding in case.plan.into_bindings().iter() {
+        match binding {
+            Binding::Attribute(binding) => { deps.insert(binding.source_attribute.clone()); }
+            _ => {}
+        }
+    }
+    
+    deps
 }
 
 #[test]
-fn join() {
-    timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::<u64>::new(Default::default());
-        let (send_results, results) = channel();
+fn run_query_cases() {
 
-        // [:find ?e ?n ?a :where [?e :age ?a] [?e :name ?n]]
-        let (e, a, n) = (1, 2, 3);
-        let plan = Plan::Project(Project {
-            variables: vec![e, n, a],
-            plan: Box::new(Plan::Join(Join {
-                variables: vec![e],
-                left_plan: Box::new(Plan::MatchA(e, ":name".to_string(), n)),
-                right_plan: Box::new(Plan::MatchA(e, ":age".to_string(), a)),
-            })),
-        });
-
-        worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":name", scope);
-            server.create_attribute(":age", scope);
-
-            server
-                .test_single(scope, Rule { name: "join".to_string(), plan, })
-                .inspect(move |x| {
-                    send_results.send((x.0.clone(), x.2)).unwrap();
-                });
-        });
-
-        server.transact(
-            Transact {
-                tx: Some(0),
-                tx_data: vec![
-                    TxData(1, 1, ":name".to_string(), Value::String("Dipper".to_string())),
-                    TxData(1, 1, ":age".to_string(), Value::Number(12)),
+    let mut cases = vec![
+        Case {
+            description: "[:find ?n :where [1 :name ?n]]",
+            plan: Plan::MatchEA(1, ":name".to_string(), 1),
+            transactions: vec![
+                vec![
+                    TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
+                    TxData(1, 1, ":name".to_string(), String("Alias".to_string())),
+                    TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
                 ],
-            },
-            0,
-            0,
-        );
+            ],
+            expectations: vec![
+                vec![
+                    (vec![String("Alias".to_string())], 0, 1),
+                    (vec![String("Dipper".to_string())], 0, 1),
+                ],
+            ],
+        },
+        {
+            let (e, a, n) = (1, 2, 3);
+            Case {
+                description: "[:find ?e ?n ?a :where [?e :age ?a] [?e :name ?n]]",
+                plan: Plan::Project(Project {
+                    variables: vec![e, n, a],
+                    plan: Box::new(Plan::Join(Join {
+                        variables: vec![e],
+                        left_plan: Box::new(Plan::MatchA(e, ":name".to_string(), n)),
+                        right_plan: Box::new(Plan::MatchA(e, ":age".to_string(), a)),
+                    })),
+                }),
+                transactions: vec![
+                    vec![
+                        TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
+                        TxData(1, 1, ":age".to_string(), Number(12)),
+                    ],
+                ],
+                expectations: vec![
+                    vec![(vec![Eid(1), String("Dipper".to_string()), Number(12)], 0, 1)],
+                ],
+            }
+        },
+    ];
+    
+    for case in cases.drain(..) {
+        timely::execute(Configuration::Thread, move |worker| {
+            let mut server = Server::<u64>::new(Default::default());
+            let (send_results, results) = channel();
 
-        worker.step_while(|| server.is_any_outdated());
+            dbg!(case.description);
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::String("Dipper".to_string()), Value::Number(12)], 1));
-    }).unwrap();
+            let deps = dependencies(&case);
+            let plan = case.plan.clone();
+
+            worker.dataflow::<u64, _, _>(|scope| {
+                for dep in deps.iter() {
+                    server.create_attribute(dep, scope);
+                }
+                
+                server
+                    .test_single(scope, Rule { name: "hector".to_string(), plan, })
+                    .inner
+                    .sink(Pipeline, "Results", move |input| {
+                        input.for_each(|_time, data| {
+                            for datum in data.iter() {
+                                send_results.send(datum.clone()).unwrap()
+                            }
+                        });
+                    });
+            });
+
+            let mut transactions = case.transactions.clone();
+            
+            for (tx_id, tx_data) in transactions.drain(..).enumerate() {
+                let tx = Some(tx_id as u64);
+                server.transact(Transact { tx, tx_data, }, 0, 0);
+
+                worker.step_while(|| server.is_any_outdated());
+
+                let mut expected: HashSet<(Vec<Value>, u64, isize)> =
+                    HashSet::from_iter(case.expectations[tx_id].iter().cloned());
+
+                for _i in 0..expected.len() {
+                    match results.recv_timeout(Duration::from_millis(400)) {
+                        Err(_err) => { panic!("No result."); }
+                        Ok(result) => {
+                            if !expected.remove(&result) {
+                                panic!("Unknown result {:?}.", result);
+                            }
+                        }
+                    }
+                }
+
+                match results.recv_timeout(Duration::from_millis(400)) {
+                    Err(_err) => {}
+                    Ok(result) => { panic!("Extraneous result {:?}", result); }
+                }
+            }
+        }).unwrap();
+    }
 }

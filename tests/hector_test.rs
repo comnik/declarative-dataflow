@@ -40,7 +40,6 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
 
 #[test]
 fn run_hector_cases() {
-
     let mut cases: Vec<Case> = vec![
         Case {
             description: "[?e :name ?n]",
