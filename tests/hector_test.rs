@@ -64,26 +64,26 @@ fn run_hector_cases() {
                 ],
             ],
         },
-        // Case {
-        //     description: "[?e :name ?n] (constant ?n 'Dipper')",
-        //     plan: Hector {
-        //         variables: vec![0, 1],
-        //         bindings: vec![
-        //             Attribute(AttributeBinding { symbols: (0,1), source_attribute: ":name".to_string() }),
-        //             Constant(ConstantBinding { symbol: 1, value: String("Dipper".to_string()) }),
-        //         ],
-        //     },
-        //     transactions: vec![
-        //         vec![
-        //             TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
-        //             TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
-        //             TxData(1, 3, ":name".to_string(), String("Soos".to_string())),
-        //         ],
-        //     ],
-        //     expectations: vec![
-        //         vec![(vec![Eid(1), String("Dipper".to_string())], 0, 1)],
-        //     ],
-        // },
+        Case {
+            description: "[?e :name ?n] (constant ?n 'Dipper')",
+            plan: Hector {
+                variables: vec![0, 1],
+                bindings: vec![
+                    Attribute(AttributeBinding { symbols: (0,1), source_attribute: ":name".to_string() }),
+                    Constant(ConstantBinding { symbol: 1, value: String("Dipper".to_string()) }),
+                ],
+            },
+            transactions: vec![
+                vec![
+                    TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
+                    TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
+                    TxData(1, 3, ":name".to_string(), String("Soos".to_string())),
+                ],
+            ],
+            expectations: vec![
+                vec![(vec![Eid(1), String("Dipper".to_string())], 0, 1)],
+            ],
+        },
         {
             let (e, a, n) = (1, 2, 3);
             Case {
@@ -135,7 +135,7 @@ fn run_hector_cases() {
                     ],
                 ],
                 expectations: vec![
-                    vec![(vec![Eid(100), Eid(300), Eid(200)], 0, 1)],
+                    vec![(vec![Eid(100), Eid(200), Eid(300)], 0, 1)],
                 ],
             }
         },

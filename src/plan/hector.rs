@@ -13,7 +13,6 @@ use timely::progress::Timestamp;
 use timely::order::Product;
 use timely::dataflow::operators::Partition;
 use timely::dataflow::operators::Concatenate;
-// use timely::dataflow::operators::Inspect;
 use timely::dataflow::scopes::child::{Child, Iterative};
 
 use timely_sort::Unsigned;
@@ -211,18 +210,72 @@ impl Implementable for Hector
                         Binding::Attribute(delta_binding) => {
 
                             let mut prefix_symbols = Vec::with_capacity(self.variables.len());
-                            prefix_symbols.push(delta_binding.symbols.0.clone());
-                            prefix_symbols.push(delta_binding.symbols.1.clone());
-                            
-                            let mut source = forward_import.entry(&delta_binding.source_attribute)
-                                .or_insert_with(|| {
-                                    context.forward_index(&delta_binding.source_attribute).unwrap()
-                                        .import(&scope.parent.parent)
-                                        .enter(&scope.parent)
-                                })
-                                .validate_trace
-                                .enter(&scope)
-                                .as_collection(|(e,v),()| vec![e.clone(), v.clone()]);
+
+                            let mut source = if let Some(conflict) = self.bindings.iter()
+                                .find(|x| if let Binding::Constant(ref x) = **x {
+                                    x.binds(&delta_binding.symbols.0).is_some()
+                                        || x.binds(&delta_binding.symbols.1).is_some()
+                                } else { false })
+                            {
+                                // We check explicitly for constant bindings
+                                // in conflict with the source binding here, in order to avoid
+                                // starting with single-symbol prefixes in the general case.
+
+                                if let Binding::Constant(constant_binding) = conflict {
+
+                                    prefix_symbols.push(constant_binding.symbol.clone());
+
+                                    let match_v = constant_binding.value.clone();
+                                        
+                                    // Guaranteed to intersect with offset zero at this point.
+                                    match direction(&prefix_symbols, &delta_binding.symbols).unwrap() {
+                                        Direction::Forward(_) => {
+                                            prefix_symbols.push(delta_binding.symbols.1.clone());
+
+                                            // @TODO use wrapper cache here as well
+                                            forward_import.entry(&delta_binding.source_attribute)
+                                                .or_insert_with(|| {
+                                                    context.forward_index(&delta_binding.source_attribute).unwrap()
+                                                        .import(&scope.parent.parent)
+                                                        .enter(&scope.parent)
+                                                })
+                                                .propose_trace
+                                                .filter(move |e,_v| *e == match_v)
+                                                .enter(&scope)
+                                                .as_collection(|e,v| vec![e.clone(), v.clone()])
+                                        }
+                                        Direction::Reverse(_) => {
+                                            prefix_symbols.push(delta_binding.symbols.0.clone());
+
+                                            // @TODO use wrapper cache here as well
+                                            reverse_import.entry(&delta_binding.source_attribute)
+                                                .or_insert_with(|| {
+                                                    context.reverse_index(&delta_binding.source_attribute).unwrap()
+                                                        .import(&scope.parent.parent)
+                                                        .enter(&scope.parent)
+                                                })
+                                                .propose_trace
+                                                .filter(move |v,_e| *v == match_v)
+                                                .enter(&scope)
+                                                .as_collection(|v,e| vec![v.clone(), e.clone()])
+                                        }
+                                    }
+                                } else { panic!("Can't happen."); }
+                            } else {
+                                prefix_symbols.push(delta_binding.symbols.0.clone());
+                                prefix_symbols.push(delta_binding.symbols.1.clone());
+
+                                // @TODO use wrapper cache here as well
+                                forward_import.entry(&delta_binding.source_attribute)
+                                    .or_insert_with(|| {
+                                        context.forward_index(&delta_binding.source_attribute).unwrap()
+                                            .import(&scope.parent.parent)
+                                            .enter(&scope.parent)
+                                    })
+                                    .validate_trace
+                                    .enter(&scope)
+                                    .as_collection(|(e,v),()| vec![e.clone(), v.clone()])
+                            };
                             
                             for target in self.variables.iter() {
                                 match AsBinding::binds(&prefix_symbols, target) {
@@ -251,7 +304,12 @@ impl Implementable for Hector
                                                 }
                                                 Binding::BinaryPredicate(other) => {
                                                     match direction(&prefix_symbols, &other.symbols) {
-                                                        Err(msg) => { /*panic!(msg) */ },
+                                                        Err(_msg) => {
+                                                            // We won't panic here, this just means the predicate's symbols
+                                                            // aren't sufficiently bound by the prefixes yet.
+                                                            //
+                                                            // panic!(msg)
+                                                        },
                                                         Ok(direction) => {
                                                             extenders.push(Box::new(BinaryPredicateExtender {
                                                                 phantom: std::marker::PhantomData,
@@ -512,7 +570,7 @@ where
         prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>
     ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>
     {
-        prefixes.map(|prefix| panic!("BinaryPredicateExtender should never propose."))
+        prefixes.map(|_prefix| panic!("BinaryPredicateExtender should never propose."))
     }
 
     fn validate(
