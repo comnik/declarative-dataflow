@@ -56,7 +56,7 @@ fn selection_set_to_paths(
 ///     Operation(SelectionSet(SelectionSet {
 ///       items: [
 ///         Field(Field {
-///           name: ..., 
+///           name: ...,
 ///           selection_set: SelectionSet(...}
 ///         }),
 ///         ...
@@ -65,7 +65,7 @@ fn selection_set_to_paths(
 ///   ]
 /// }
 /// ```
-fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
+fn ast_to_paths (ast: Document) -> Vec<PullLevel<Plan>> {
     let mut result = vec![];
     for definition in &ast.definitions {
         match definition {
