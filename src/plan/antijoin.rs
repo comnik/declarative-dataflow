@@ -1,14 +1,14 @@
 //! Antijoin expression plan.
 
-use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::Scope;
 
 use differential_dataflow::operators::Join;
 use differential_dataflow::operators::Threshold;
 
 use plan::{ImplContext, Implementable};
 use Relation;
-use {VariableMap, CollectionRelation, Var};
+use {CollectionRelation, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
 /// symbols. Throws if the sources are not union-compatible, i.e. bind
@@ -23,13 +23,13 @@ pub struct Antijoin<P1: Implementable, P2: Implementable> {
     pub right_plan: Box<P2>,
 }
 
-impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2>
-{
+impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
     fn dependencies(&self) -> Vec<String> {
         let mut left_dependencies = self.left_plan.dependencies();
         let mut right_dependencies = self.right_plan.dependencies();
 
-        let mut dependencies = Vec::with_capacity(left_dependencies.len() + right_dependencies.len());
+        let mut dependencies =
+            Vec::with_capacity(left_dependencies.len() + right_dependencies.len());
         dependencies.append(&mut left_dependencies);
         dependencies.append(&mut right_dependencies);
 
@@ -42,12 +42,15 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2>
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
     ) -> CollectionRelation<'b, S> {
-        let left = self.left_plan
+        let left = self
+            .left_plan
             .implement(nested, local_arrangements, context);
-        let right = self.right_plan
+        let right = self
+            .right_plan
             .implement(nested, local_arrangements, context);
 
-        let symbols = self.variables
+        let symbols = self
+            .variables
             .iter()
             .cloned()
             .chain(
@@ -58,12 +61,15 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2>
             )
             .collect();
 
-        let tuples = left.tuples_by_symbols(&self.variables)
+        let tuples = left
+            .tuples_by_symbols(&self.variables)
             .distinct()
-            .antijoin(&right
-                .tuples_by_symbols(&self.variables)
-                .map(|(key, _)| key)
-                .distinct())
+            .antijoin(
+                &right
+                    .tuples_by_symbols(&self.variables)
+                    .map(|(key, _)| key)
+                    .distinct(),
+            )
             .map(|(key, tuple)| key.iter().cloned().chain(tuple.iter().cloned()).collect());
 
         CollectionRelation { symbols, tuples }

@@ -2,9 +2,9 @@ extern crate declarative_dataflow;
 extern crate num_rational;
 extern crate timely;
 
-use std::time::Duration;
 use std::collections::HashSet;
 use std::sync::mpsc::channel;
+use std::time::Duration;
 
 use timely::Configuration;
 
@@ -38,7 +38,7 @@ fn count() {
 
         // [:find ?e (count ?amount) :where [?e :amount ?amount]]
         let (e, amount) = (1, 2);
-        let plan_group= Plan::Aggregate(Aggregate {
+        let plan_group = Plan::Aggregate(Aggregate {
             variables: vec![e, amount],
             plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
             aggregation_fns: vec![AggregationFn::COUNT],
@@ -51,17 +51,28 @@ fn count() {
             server.create_attribute(":amount", scope);
 
             server
-                .test_single(scope, Rule { name: "count".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "count".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
             server
-                .test_single(scope, Rule { name: "count_group".to_string(), plan: plan_group, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "count_group".to_string(),
+                        plan: plan_group,
+                    },
+                )
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
-
         });
 
         server.transact(
@@ -82,10 +93,17 @@ fn count() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(4)], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(1)], 1));
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(1), Value::Number(4)], 1)
+        );
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(2), Value::Number(1)], 1)
+        );
         assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 #[test]
@@ -123,13 +141,25 @@ fn max() {
             server.create_attribute(":amount", scope);
 
             server
-                .test_single(scope, Rule { name: "max".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "max".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
             server
-                .test_single(scope, Rule { name: "max_group".to_string(), plan: plan_group, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "max_group".to_string(),
+                        plan: plan_group,
+                    },
+                )
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -153,10 +183,17 @@ fn max() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(6)], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(1), Value::Number(6)], 1)
+        );
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(2), Value::Number(10)], 1)
+        );
         assert_eq!(results.recv().unwrap(), (vec![Value::Number(10)], 1));
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 #[test]
@@ -194,13 +231,25 @@ fn min() {
             server.create_attribute(":amount", scope);
 
             server
-                .test_single(scope, Rule { name: "min".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "min".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
             server
-                .test_single(scope, Rule { name: "min_group".to_string(), plan: plan_group, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "min_group".to_string(),
+                        plan: plan_group,
+                    },
+                )
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -224,10 +273,17 @@ fn min() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(2)], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(1), Value::Number(2)], 1)
+        );
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(2), Value::Number(10)], 1)
+        );
         assert_eq!(results.recv().unwrap(), (vec![Value::Number(2)], 1));
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 #[test]
@@ -265,13 +321,25 @@ fn sum() {
             server.create_attribute(":amount", scope);
 
             server
-                .test_single(scope, Rule { name: "sum".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "sum".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
             server
-                .test_single(scope, Rule { name: "sum_group".to_string(), plan: plan_group, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "sum_group".to_string(),
+                        plan: plan_group,
+                    },
+                )
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -295,10 +363,17 @@ fn sum() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(17)], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(1), Value::Number(17)], 1)
+        );
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(2), Value::Number(10)], 1)
+        );
         assert_eq!(results.recv().unwrap(), (vec![Value::Number(27)], 1));
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 #[test]
@@ -336,13 +411,25 @@ fn avg() {
             server.create_attribute(":amount", scope);
 
             server
-                .test_single(scope, Rule { name: "avg".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "avg".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
             server
-                .test_single(scope, Rule { name: "avg_group".to_string(), plan: plan_group, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "avg_group".to_string(),
+                        plan: plan_group,
+                    },
+                )
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -366,10 +453,20 @@ fn avg() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Rational32(Ratio::new(17, 4))], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Rational32(Ratio::new(10, 1))], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(27, 5))], 1));
-    }).unwrap();
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(1), Value::Rational32(Ratio::new(17, 4))], 1)
+        );
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(2), Value::Rational32(Ratio::new(10, 1))], 1)
+        );
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Rational32(Ratio::new(27, 5))], 1)
+        );
+    })
+    .unwrap();
 }
 
 // #[test]
@@ -457,9 +554,9 @@ fn avg() {
 
 //         worker.step_while(|| server.is_any_outdated());
 
-            // assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Rational32(Ratio::new(35, 16))], 1));
-            // assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Rational32(Ratio::new(0, 1))], 1));
-            // assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(176, 25))], 1));
+// assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Rational32(Ratio::new(35, 16))], 1));
+// assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Rational32(Ratio::new(0, 1))], 1));
+// assert_eq!(results.recv().unwrap(), (vec![Value::Rational32(Ratio::new(176, 25))], 1));
 //     }).unwrap();
 // }
 
@@ -498,13 +595,25 @@ fn median() {
             server.create_attribute(":amount", scope);
 
             server
-                .test_single(scope, Rule { name: "median".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "median".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
             server
-                .test_single(scope, Rule { name: "median_group".to_string(), plan: plan_group, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "median_group".to_string(),
+                        plan: plan_group,
+                    },
+                )
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -528,10 +637,17 @@ fn median() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(1), Value::Number(5)], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(2), Value::Number(10)], 1));
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(1), Value::Number(5)], 1)
+        );
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(2), Value::Number(10)], 1)
+        );
         assert_eq!(results.recv().unwrap(), (vec![Value::Number(5)], 1));
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 // Multiple Aggregations
@@ -545,7 +661,7 @@ fn multi() {
 
         // [:find (max ?amount) (min ?debt) (sum ?amount) (avg ?debt) :where [?e :amount ?amount][?e :debt ?debt]]
         let (e, amount, debt) = (1, 2, 3);
-        let plan = Plan::Aggregate(Aggregate{
+        let plan = Plan::Aggregate(Aggregate {
             variables: vec![amount, debt, amount, debt],
             plan: Box::new(Plan::Project(Project {
                 variables: vec![amount, debt],
@@ -568,9 +684,9 @@ fn multi() {
 
         // [:find ?e (min ?amount) (max ?amount) (median ?amount) (count ?amount) (min ?debt)
         // (max ?debt) (median ?debt) (count ?debt) :where [?e :amount ?amount][?e :debt ?debt]]
-        let plan_group = Plan::Aggregate(Aggregate{
+        let plan_group = Plan::Aggregate(Aggregate {
             variables: vec![e, amount, amount, amount, amount, debt, debt, debt, debt],
-            plan: Box::new(Plan::Project(Project{
+            plan: Box::new(Plan::Project(Project {
                 variables: vec![e, amount, debt],
                 plan: Box::new(Plan::Join(Join {
                     variables: vec![e],
@@ -598,13 +714,25 @@ fn multi() {
             server.create_attribute(":debt", scope);
 
             server
-                .test_single(scope, Rule { name: "multi".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "multi".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
 
             server
-                .test_single(scope, Rule { name: "multi_group".to_string(), plan: plan_group, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "multi_group".to_string(),
+                        plan: plan_group,
+                    },
+                )
                 .inspect(move |x| {
                     send_results_copy.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -637,42 +765,54 @@ fn multi() {
         worker.step_while(|| server.is_any_outdated());
 
         let mut expected = HashSet::new();
-        expected.insert((vec![
-            Value::Number(10),
-            Value::Number(4),
-            Value::Number(36),
-            Value::Rational32(Ratio::new(14, 1))
-        ], 1));
-        expected.insert((vec![
-            Value::Eid(1),
-            Value::Number(2),
-            Value::Number(10),
-            Value::Number(6),
-            Value::Number(5),
-            Value::Number(4),
-            Value::Number(15),
-            Value::Number(10),
-            Value::Number(5),
-        ], 1));
-        expected.insert((vec![
-            Value::Eid(2),
-            Value::Number(2),
-            Value::Number(4),
-            Value::Number(4),
-            Value::Number(2),
-            Value::Number(5),
-            Value::Number(42),
-            Value::Number(42),
-            Value::Number(2),
-        ], 1));
+        expected.insert((
+            vec![
+                Value::Number(10),
+                Value::Number(4),
+                Value::Number(36),
+                Value::Rational32(Ratio::new(14, 1)),
+            ],
+            1,
+        ));
+        expected.insert((
+            vec![
+                Value::Eid(1),
+                Value::Number(2),
+                Value::Number(10),
+                Value::Number(6),
+                Value::Number(5),
+                Value::Number(4),
+                Value::Number(15),
+                Value::Number(10),
+                Value::Number(5),
+            ],
+            1,
+        ));
+        expected.insert((
+            vec![
+                Value::Eid(2),
+                Value::Number(2),
+                Value::Number(4),
+                Value::Number(4),
+                Value::Number(2),
+                Value::Number(5),
+                Value::Number(42),
+                Value::Number(42),
+                Value::Number(2),
+            ],
+            1,
+        ));
 
         for _i in 0..expected.len() {
             let result = results.recv().unwrap();
-            if !expected.remove(&result) { panic!("unknown result {:?}", result); }
+            if !expected.remove(&result) {
+                panic!("unknown result {:?}", result);
+            }
         }
 
         assert!(results.recv_timeout(Duration::from_millis(400)).is_err());
-    }).unwrap();
+    })
+    .unwrap();
 }
 
 #[test]
@@ -681,9 +821,9 @@ fn with() {
         let mut server = Server::<u64>::new(Default::default());
         let (send_results, results) = channel();
 
-        // [:find (sum ?heads) :with ?monster :where [?e :monster ?monster][?e :head ?head]] 
+        // [:find (sum ?heads) :with ?monster :where [?e :monster ?monster][?e :head ?head]]
         let (e, monster, heads) = (1, 2, 3);
-        let plan = Plan::Aggregate(Aggregate{
+        let plan = Plan::Aggregate(Aggregate {
             variables: vec![heads],
             plan: Box::new(Plan::Project(Project {
                 variables: vec![heads, monster],
@@ -693,9 +833,7 @@ fn with() {
                     right_plan: Box::new(Plan::MatchA(e, ":heads".to_string(), heads)),
                 })),
             })),
-            aggregation_fns: vec![
-                AggregationFn::SUM,
-            ],
+            aggregation_fns: vec![AggregationFn::SUM],
             key_symbols: vec![],
             aggregation_symbols: vec![heads],
             with_symbols: vec![monster],
@@ -706,7 +844,13 @@ fn with() {
             server.create_attribute(":heads", scope);
 
             server
-                .test_single(scope, Rule { name: "with".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "with".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -716,13 +860,33 @@ fn with() {
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(1, 1, ":monster".to_string(), Value::String("Cerberus".to_string())),
+                    TxData(
+                        1,
+                        1,
+                        ":monster".to_string(),
+                        Value::String("Cerberus".to_string()),
+                    ),
                     TxData(1, 1, ":heads".to_string(), Value::Number(3)),
-                    TxData(1, 2, ":monster".to_string(), Value::String("Medusa".to_string())),
+                    TxData(
+                        1,
+                        2,
+                        ":monster".to_string(),
+                        Value::String("Medusa".to_string()),
+                    ),
                     TxData(1, 2, ":heads".to_string(), Value::Number(1)),
-                    TxData(1, 3, ":monster".to_string(), Value::String("Cyclops".to_string())),
+                    TxData(
+                        1,
+                        3,
+                        ":monster".to_string(),
+                        Value::String("Cyclops".to_string()),
+                    ),
                     TxData(1, 3, ":heads".to_string(), Value::Number(1)),
-                    TxData(1, 4, ":monster".to_string(), Value::String("Chimera".to_string())),
+                    TxData(
+                        1,
+                        4,
+                        ":monster".to_string(),
+                        Value::String("Chimera".to_string()),
+                    ),
                     TxData(1, 4, ":heads".to_string(), Value::Number(1)),
                 ],
             },
@@ -733,5 +897,6 @@ fn with() {
         worker.step_while(|| server.is_any_outdated());
 
         assert_eq!(results.recv().unwrap(), (vec![Value::Number(6)], 1));
-    }).unwrap();
+    })
+    .unwrap();
 }

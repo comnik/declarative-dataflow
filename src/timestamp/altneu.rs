@@ -25,9 +25,13 @@ pub struct AltNeu<T> {
 
 impl<T> AltNeu<T> {
     /// Wraps a time in Alt.
-    pub fn alt(time: T) -> Self { AltNeu { time, neu: false } }
+    pub fn alt(time: T) -> Self {
+        AltNeu { time, neu: false }
+    }
     /// Wraps a time in Neu.
-    pub fn neu(time: T) -> Self { AltNeu { time, neu: true } }
+    pub fn neu(time: T) -> Self {
+        AltNeu { time, neu: true }
+    }
 }
 
 // Implement timely dataflow's `PartialOrder` trait.
@@ -36,8 +40,7 @@ impl<T: PartialOrder> PartialOrder for AltNeu<T> {
     fn less_equal(&self, other: &Self) -> bool {
         if self.time.eq(&other.time) {
             self.neu <= other.neu
-        }
-        else {
+        } else {
             self.time.less_equal(&other.time)
         }
     }
@@ -79,8 +82,12 @@ impl<T: Timestamp> Refines<T> for AltNeu<T> {
 // This extends the `PartialOrder` implementation with additional structure.
 use differential_dataflow::lattice::Lattice;
 impl<T: Lattice> Lattice for AltNeu<T> {
-    fn minimum() -> Self { AltNeu::alt(T::minimum()) }
-    fn maximum() -> Self { AltNeu::neu(T::maximum()) }
+    fn minimum() -> Self {
+        AltNeu::alt(T::minimum())
+    }
+    fn maximum() -> Self {
+        AltNeu::neu(T::maximum())
+    }
     fn join(&self, other: &Self) -> Self {
         let time = self.time.join(&other.time);
         let mut neu = false;

@@ -28,9 +28,9 @@ use std::{thread, usize};
 
 use getopts::Options;
 
+use timely::dataflow::channels::pact::Exchange;
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
-use timely::dataflow::channels::pact::Exchange;
 use timely::synchronization::Sequencer;
 
 use mio::net::TcpListener;
@@ -40,7 +40,7 @@ use slab::Slab;
 
 use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::server::{Config, Request, Server, CreateAttribute};
+use declarative_dataflow::server::{Config, CreateAttribute, Request, Server};
 use declarative_dataflow::Result;
 
 const SERVER: Token = Token(usize::MAX - 1);
@@ -48,7 +48,9 @@ const RESULTS: Token = Token(usize::MAX - 2);
 const CLI: Token = Token(usize::MAX - 3);
 
 /// A mutation of server state.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug)]
+#[derive(
+    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug,
+)]
 pub struct Command {
     /// The worker that received this command from a client originally
     /// and is therefore the one that should receive all outputs.

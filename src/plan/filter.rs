@@ -2,13 +2,13 @@
 
 use std::collections::HashMap;
 
-use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::Scope;
 
+pub use binding::{BinaryPredicate as Predicate, BinaryPredicateBinding, Binding};
 use plan::{ImplContext, Implementable};
-pub use binding::{Binding, BinaryPredicateBinding, BinaryPredicate as Predicate};
 use Relation;
-use {VariableMap, CollectionRelation, Value, Var};
+use {CollectionRelation, Value, Var, VariableMap};
 
 fn lt(a: &Value, b: &Value) -> bool {
     a < b
@@ -44,9 +44,10 @@ pub struct Filter<P: Implementable> {
     pub constants: HashMap<u32, Value>,
 }
 
-impl<P: Implementable> Implementable for Filter<P>
-{
-    fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
+impl<P: Implementable> Implementable for Filter<P> {
+    fn dependencies(&self) -> Vec<String> {
+        self.plan.dependencies()
+    }
 
     fn into_bindings(&self) -> Vec<Binding> {
         let mut bindings = self.plan.into_bindings();
@@ -60,18 +61,17 @@ impl<P: Implementable> Implementable for Filter<P>
 
         bindings
     }
-    
+
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
     ) -> CollectionRelation<'b, S> {
-        
-        let rel = self.plan
-            .implement(nested, local_arrangements, context);
+        let rel = self.plan.implement(nested, local_arrangements, context);
 
-        let key_offsets: Vec<usize> = self.variables
+        let key_offsets: Vec<usize> = self
+            .variables
             .iter()
             .map(|sym| {
                 rel.symbols()
@@ -94,14 +94,16 @@ impl<P: Implementable> Implementable for Filter<P>
             let constant = self.constants.get(&0).unwrap().clone();
             CollectionRelation {
                 symbols: rel.symbols().to_vec(),
-                tuples: rel.tuples()
+                tuples: rel
+                    .tuples()
                     .filter(move |tuple| binary_predicate(&constant, &tuple[key_offsets[0]])),
             }
         } else if self.constants.contains_key(&1) {
             let constant = self.constants.get(&1).unwrap().clone();
             CollectionRelation {
                 symbols: rel.symbols().to_vec(),
-                tuples: rel.tuples()
+                tuples: rel
+                    .tuples()
                     .filter(move |tuple| binary_predicate(&tuple[key_offsets[0]], &constant)),
             }
         } else {

@@ -1,6 +1,6 @@
 //! Binding language, mainly for use in Hector-powered plans.
 
-use {Aid, Var, Value};
+use {Aid, Value, Var};
 
 /// A thing that can act as a binding of values to symbols.
 pub trait AsBinding {
@@ -40,16 +40,20 @@ impl AsBinding for Binding {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AttributeBinding {
     /// The symbols this binding talks about.
-    pub symbols: (Var,Var),
+    pub symbols: (Var, Var),
     /// The name of a globally known attribute backing this binding.
     pub source_attribute: Aid,
 }
 
 impl AsBinding for AttributeBinding {
     fn binds(&self, sym: &Var) -> Option<usize> {
-        if self.symbols.0 == *sym { Some(0) }
-        else if self.symbols.1 == *sym { Some(1) }
-        else { None }
+        if self.symbols.0 == *sym {
+            Some(0)
+        } else if self.symbols.1 == *sym {
+            Some(1)
+        } else {
+            None
+        }
     }
 }
 
@@ -64,8 +68,11 @@ pub struct ConstantBinding {
 
 impl AsBinding for ConstantBinding {
     fn binds(&self, sym: &Var) -> Option<usize> {
-        if self.symbol == *sym { Some(0) }
-        else { None }
+        if self.symbol == *sym {
+            Some(0)
+        } else {
+            None
+        }
     }
 }
 
@@ -90,15 +97,19 @@ pub enum BinaryPredicate {
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct BinaryPredicateBinding {
     /// The symbols this binding talks about.
-    pub symbols: (Var,Var),
+    pub symbols: (Var, Var),
     /// Logical predicate to apply.
     pub predicate: BinaryPredicate,
 }
 
 impl AsBinding for BinaryPredicateBinding {
     fn binds(&self, sym: &Var) -> Option<usize> {
-        if self.symbols.0 == *sym { Some(0) }
-        else if self.symbols.1 == *sym { Some(1) }
-        else { None }
+        if self.symbols.0 == *sym {
+            Some(0)
+        } else if self.symbols.1 == *sym {
+            Some(1)
+        } else {
+            None
+        }
     }
 }

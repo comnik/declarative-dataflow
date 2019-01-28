@@ -3,23 +3,23 @@
 extern crate differential_dataflow;
 extern crate timely;
 
-use std::hash::Hash;
 use std::collections::{HashMap, HashSet};
+use std::hash::Hash;
 
 use timely::dataflow::operators::{Filter, Map};
-use timely::dataflow::{Scope, ProbeHandle};
+use timely::dataflow::{ProbeHandle, Scope};
 
 use differential_dataflow::collection::Collection;
 use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
+use plan::{ImplContext, Implementable};
 use sources::{Source, Sourceable};
-use plan::{ImplContext, Implementable,};
 
+use Rule;
+use {implement, implement_neu, CollectionIndex, RelationHandle, TraceKeyHandle};
 use {Aid, Eid, Value};
-use {Rule};
-use {implement, implement_neu, RelationHandle, CollectionIndex, TraceKeyHandle,};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -128,7 +128,7 @@ pub struct Server<Token: Hash> {
     /// Server configuration.
     pub config: Config,
     /// Input handles to global arrangements.
-    pub input_handles: HashMap<String, InputSession<u64, (Value,Value), isize>>,
+    pub input_handles: HashMap<String, InputSession<u64, (Value, Value), isize>>,
     /// Implementation context.
     pub context: Context,
     /// A probe for the transaction id time domain.
@@ -152,33 +152,23 @@ pub struct Context {
 }
 
 impl ImplContext for Context {
-    fn rule
-        (&self, name: &str) -> Option<&Rule>
-    {
+    fn rule(&self, name: &str) -> Option<&Rule> {
         self.rules.get(name)
     }
-    
-    fn global_arrangement
-        (&mut self, name: &str) -> Option<&mut RelationHandle>
-    {
+
+    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle> {
         self.global_arrangements.get_mut(name)
     }
 
-    fn forward_index
-        (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>
-    {
+    fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>> {
         self.forward.get_mut(name)
     }
 
-    fn reverse_index
-        (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>
-    {
+    fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>> {
         self.reverse.get_mut(name)
     }
 
-    fn is_underconstrained
-        (&self, name: &str) -> bool
-    {
+    fn is_underconstrained(&self, name: &str) -> bool {
         self.underconstrained.contains(name)
     }
 }
@@ -204,21 +194,36 @@ impl<Token: Hash> Server<Token> {
     /// Returns commands to install built-in plans.
     pub fn builtins() -> Vec<Request> {
         vec![
-            Request::CreateAttribute(CreateAttribute { name: "df.pattern/e".to_string() }), 
-            Request::CreateAttribute(CreateAttribute { name: "df.pattern/a".to_string() }), 
-            Request::CreateAttribute(CreateAttribute { name: "df.pattern/v".to_string() }), 
-
-            Request::CreateAttribute(CreateAttribute { name: "df.join/binding".to_string() }), 
-
-            Request::CreateAttribute(CreateAttribute { name: "df.union/binding".to_string() }), 
-
-            Request::CreateAttribute(CreateAttribute { name: "df.project/binding".to_string() }), 
-            Request::CreateAttribute(CreateAttribute { name: "df.project/symbols".to_string() }), 
-
-            Request::CreateAttribute(CreateAttribute { name: "df/name".to_string() }), 
-            Request::CreateAttribute(CreateAttribute { name: "df.name/symbols".to_string() }), 
-            Request::CreateAttribute(CreateAttribute { name: "df.name/plan".to_string() }),
-
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.pattern/e".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.pattern/a".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.pattern/v".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.join/binding".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.union/binding".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.project/binding".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.project/symbols".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df/name".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.name/symbols".to_string(),
+            }),
+            Request::CreateAttribute(CreateAttribute {
+                name: "df.name/plan".to_string(),
+            }),
             // Request::Register(Register {
             //     publish: vec!["df.rules".to_string()],
             //     rules: vec![
@@ -283,7 +288,8 @@ impl<Token: Hash> Server<Token> {
         if owner == worker_index {
             // only the owner should actually introduce new inputs
 
-            let handle = self.input_handles
+            let handle = self
+                .input_handles
                 .get_mut(&a)
                 .expect(&format!("Attribute {} does not exist.", a));
 
@@ -300,7 +306,8 @@ impl<Token: Hash> Server<Token> {
 
             // @TODO do this smarter, e.g. grouped by handle
             for TxData(op, e, a, v) in tx_data {
-                let handle = self.input_handles
+                let handle = self
+                    .input_handles
                     .get_mut(&a)
                     .expect(&format!("Attribute {} does not exist.", a));
 
@@ -336,12 +343,13 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handles an Interest request.
-    pub fn interest<S: Scope<Timestamp = u64>>
-        (&mut self, name: &str, scope: &mut S) -> &mut TraceKeyHandle<Vec<Value>, u64, isize>
-    {
+    pub fn interest<S: Scope<Timestamp = u64>>(
+        &mut self,
+        name: &str,
+        scope: &mut S,
+    ) -> &mut TraceKeyHandle<Vec<Value>, u64, isize> {
         match name {
             "df.timely/operates" => {
-
                 // use timely::logging::{BatchLogger, TimelyEvent};
                 // use timely::dataflow::operators::capture::EventWriter;
 
@@ -359,7 +367,7 @@ impl<Token: Hash> Server<Token> {
                 //     .as_collection()
 
                 panic!("not quite there yet")
-            },
+            }
             _ => {
                 if self.context.global_arrangements.contains_key(name) {
                     // Rule is already implemented.
@@ -371,7 +379,8 @@ impl<Token: Hash> Server<Token> {
                         self.register_global_arrangement(name, trace);
                     }
 
-                    self.context.global_arrangement(name)
+                    self.context
+                        .global_arrangement(name)
                         .expect("Relation of interest wasn't actually implemented.")
                 } else {
                     let rel_map = implement(name, scope, &mut self.context);
@@ -380,7 +389,8 @@ impl<Token: Hash> Server<Token> {
                         self.register_global_arrangement(name, trace);
                     }
 
-                    self.context.global_arrangement(name)
+                    self.context
+                        .global_arrangement(name)
                         .expect("Relation of interest wasn't actually implemented.")
                 }
             }
@@ -398,23 +408,21 @@ impl<Token: Hash> Server<Token> {
     //         .as_collection(|e, v| vec![e.clone(), v.clone()])
     //         .probe_with(&mut self.probe)
     // }
-    
+
     /// Handle a Register request.
-    pub fn register(&mut self, req: Register)
-    {
+    pub fn register(&mut self, req: Register) {
         let Register { rules, publish: _ } = req;
 
         for rule in rules.into_iter() {
             if self.context.rules.contains_key(&rule.name) {
                 // @TODO panic if hashes don't match
                 // panic!("Attempted to re-register a named relation");
-                continue
+                continue;
             } else {
                 if self.config.enable_meta == true {
                     let mut data = rule.plan.datafy();
-                    let tx_data: Vec<TxData> = data.drain(..)
-                        .map(|(e,a,v)| TxData(1, e, a, v))
-                        .collect();
+                    let tx_data: Vec<TxData> =
+                        data.drain(..).map(|(e, a, v)| TxData(1, e, a, v)).collect();
 
                     self.transact(Transact { tx: None, tx_data }, 0, 0);
                 }
@@ -425,8 +433,11 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handle a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = u64>>(&mut self, req: RegisterSource, scope: &mut S)
-    {
+    pub fn register_source<S: Scope<Timestamp = u64>>(
+        &mut self,
+        req: RegisterSource,
+        scope: &mut S,
+    ) {
         let RegisterSource { mut names, source } = req;
 
         if names.len() == 1 {
@@ -439,7 +450,7 @@ impl<Token: Hash> Server<Token> {
                 let tuples = datoms.map(|(_idx, tuple)| tuple).as_collection();
 
                 let forward = CollectionIndex::index(&name, &tuples);
-                let reverse = CollectionIndex::index(&name, &tuples.map(|(e,v)| (v,e)));
+                let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
 
                 self.context.forward.insert(name.clone(), forward);
                 self.context.reverse.insert(name, reverse);
@@ -457,7 +468,7 @@ impl<Token: Hash> Server<Token> {
                         .as_collection();
 
                     let forward = CollectionIndex::index(name, &tuples);
-                    let reverse = CollectionIndex::index(name, &tuples.map(|(e,v)| (v,e)));
+                    let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
 
                     self.context.forward.insert(name.to_string(), forward);
                     self.context.reverse.insert(name.to_string(), reverse);
@@ -473,13 +484,13 @@ impl<Token: Hash> Server<Token> {
         if self.context.forward.contains_key(name) {
             panic!("Attribute of name {} already exists.", name);
         } else {
-            let (handle, tuples) = scope.new_collection::<(Value,Value), isize>();
+            let (handle, tuples) = scope.new_collection::<(Value, Value), isize>();
             let forward = CollectionIndex::index(name, &tuples);
-            let reverse = CollectionIndex::index(name, &tuples.map(|(e,v)| (v,e)));
+            let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
 
             self.context.forward.insert(name.to_string(), forward);
             self.context.reverse.insert(name.to_string(), reverse);
-            
+
             self.input_handles.insert(name.to_string(), handle);
         }
     }
@@ -494,7 +505,8 @@ impl<Token: Hash> Server<Token> {
                 }
             }
             Some(name) => {
-                let handle = self.input_handles
+                let handle = self
+                    .input_handles
                     .get_mut(&name)
                     .expect(&format!("Input {} does not exist.", name));
 
@@ -522,7 +534,8 @@ impl<Token: Hash> Server<Token> {
 
     /// Handle a CloseInput request.
     pub fn close_input(&mut self, name: String) {
-        let handle = self.input_handles
+        let handle = self
+            .input_handles
             .remove(&name)
             .expect(&format!("Input {} does not exist.", name));
 
@@ -531,22 +544,22 @@ impl<Token: Hash> Server<Token> {
 
     /// Helper for registering, publishing, and indicating interest in
     /// a single, named query. Used for testing.
-    pub fn test_single<S: Scope<Timestamp = u64>>
-        (&mut self, scope: &mut S, rule: Rule) -> Collection<S, Vec<Value>, isize>
-    {
+    pub fn test_single<S: Scope<Timestamp = u64>>(
+        &mut self,
+        scope: &mut S,
+        rule: Rule,
+    ) -> Collection<S, Vec<Value>, isize> {
         let interest_name = rule.name.clone();
         let publish_name = rule.name.clone();
 
-        self.register(
-            Register {
-                rules: vec![rule],
-                publish: vec![publish_name],
-            }
-        );
+        self.register(Register {
+            rules: vec![rule],
+            publish: vec![publish_name],
+        });
 
         self.interest(&interest_name, scope)
             .import_named(scope, &interest_name)
-            .as_collection(|tuple,_| tuple.clone())
+            .as_collection(|tuple, _| tuple.clone())
             .probe_with(&mut self.probe)
     }
 }

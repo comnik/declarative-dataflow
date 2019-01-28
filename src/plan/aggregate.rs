@@ -1,14 +1,14 @@
 //! Aggregate expression plan.
 
-use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::Scope;
 
 use differential_dataflow::difference::DiffPair;
-use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
 use differential_dataflow::operators::Join as JoinMap;
+use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
 
 use plan::{ImplContext, Implementable};
-use { Relation, VariableMap, CollectionRelation, Value, Var};
+use {CollectionRelation, Relation, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};
 
@@ -52,9 +52,10 @@ pub struct Aggregate<P: Implementable> {
     pub with_symbols: Vec<Var>,
 }
 
-impl<P: Implementable> Implementable for Aggregate<P>
-{
-    fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
+impl<P: Implementable> Implementable for Aggregate<P> {
+    fn dependencies(&self) -> Vec<String> {
+        self.plan.dependencies()
+    }
 
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
@@ -62,7 +63,6 @@ impl<P: Implementable> Implementable for Aggregate<P>
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
     ) -> CollectionRelation<'b, S> {
-        
         let relation = self.plan.implement(nested, local_arrangements, context);
 
         // We split the incoming tuples into their (key, value) parts.
@@ -71,7 +71,7 @@ impl<P: Implementable> Implementable for Aggregate<P>
         // For each aggregation function that is to be applied, we
         // need to determine the index (into the value part of each
         // tuple) at which its argument is to be found.
-        
+
         let mut value_offsets = Vec::new();
         let mut seen = Vec::new();
 
@@ -87,7 +87,7 @@ impl<P: Implementable> Implementable for Aggregate<P>
         // Users can specify weird find clauses like [:find ?key1 (min ?v1) ?key2]
         // and we would like to avoid an extra projection. Thus, we pre-compute
         // the correct output offset for each aggregation.
-        
+
         let mut variables = self.variables.clone();
         let mut output_offsets = Vec::new();
 
@@ -121,18 +121,16 @@ impl<P: Implementable> Implementable for Aggregate<P>
             };
 
             match aggregation_fn {
-                AggregationFn::MIN =>  {
+                AggregationFn::MIN => {
                     let tuples = tuples
                         .map(prepare_unary)
                         .group(|_key, vals, output| {
                             let min = &vals[0].0[0];
                             output.push((min.clone(), 1));
                         })
-                        .map(move |(key, min)| {
-                            (key, vec![min])
-                        });
+                        .map(move |(key, min)| (key, vec![min]));
                     collections.push(tuples);
-                },
+                }
                 AggregationFn::MAX => {
                     let tuples = tuples
                         .map(prepare_unary)
@@ -140,33 +138,27 @@ impl<P: Implementable> Implementable for Aggregate<P>
                             let max = &vals[vals.len() - 1].0[0];
                             output.push((max.clone(), 1));
                         })
-                        .map(move |(key, max)| {
-                            (key, vec![max])
-                        });
+                        .map(move |(key, max)| (key, vec![max]));
                     collections.push(tuples);
-                },
-                AggregationFn::MEDIAN =>  {
+                }
+                AggregationFn::MEDIAN => {
                     let tuples = tuples
                         .map(prepare_unary)
                         .group(|_key, vals, output| {
                             let median = &vals[vals.len() / 2].0[0];
                             output.push((median.clone(), 1));
                         })
-                        .map(move |(key, med)| {
-                            (key, vec![med])
-                        });
+                        .map(move |(key, med)| (key, vec![med]));
                     collections.push(tuples);
-                },
-                AggregationFn::COUNT =>  {
+                }
+                AggregationFn::COUNT => {
                     let tuples = tuples
                         .map(prepare_unary)
                         .group(|_key, input, output| output.push((input.len(), 1)))
-                        .map(move |(key, count)| {
-                            (key, vec![Value::Number(count as i64)])
-                        });
+                        .map(move |(key, count)| (key, vec![Value::Number(count as i64)]));
                     collections.push(tuples);
-                },
-                AggregationFn::SUM =>  {
+                }
+                AggregationFn::SUM => {
                     let tuples = tuples
                         .map(prepare_unary)
                         .consolidate()
@@ -179,12 +171,10 @@ impl<P: Implementable> Implementable for Aggregate<P>
                             Some((key, v as isize))
                         })
                         .count()
-                        .map(move |(key, count)| {
-                            (key, vec![Value::Number(count as i64)])
-                        });
+                        .map(move |(key, count)| (key, vec![Value::Number(count as i64)]));
                     collections.push(tuples);
-                },
-                AggregationFn::AVG =>  {
+                }
+                AggregationFn::AVG => {
                     let tuples = tuples
                         .map(prepare_unary)
                         .consolidate()
@@ -198,12 +188,16 @@ impl<P: Implementable> Implementable for Aggregate<P>
                         })
                         .count()
                         .map(move |(key, diff_pair)| {
-                            (key, vec![Value::Rational32(Ratio::new(
-                                diff_pair.element1 as i32,
-                                diff_pair.element2 as i32))])
+                            (
+                                key,
+                                vec![Value::Rational32(Ratio::new(
+                                    diff_pair.element1 as i32,
+                                    diff_pair.element2 as i32,
+                                ))],
+                            )
                         });
                     collections.push(tuples);
-                },
+                }
                 AggregationFn::VARIANCE => {
                     let tuples = tuples
                         .map(prepare_unary)
@@ -214,53 +208,62 @@ impl<P: Implementable> Implementable for Aggregate<P>
                                 Value::Number(num) => num,
                                 _ => panic!("VARIANCE can only be applied on type Number."),
                             };
-                            Some((key, DiffPair::new(DiffPair::new(v as isize * v as isize, v as isize), 1)))
+                            Some((
+                                key,
+                                DiffPair::new(
+                                    DiffPair::new(v as isize * v as isize, v as isize),
+                                    1,
+                                ),
+                            ))
                         })
                         .count()
                         .map(move |(key, diff_pair)| {
                             let sum_square = diff_pair.element1.element1 as i32;
                             let sum = diff_pair.element1.element2 as i32;
                             let c = diff_pair.element2 as i32;
-                            (key, vec![Value::Rational32(
-                                Rational32::new(sum_square, c) - Rational32::new(sum, c).pow(2))])
+                            (
+                                key,
+                                vec![Value::Rational32(
+                                    Rational32::new(sum_square, c) - Rational32::new(sum, c).pow(2),
+                                )],
+                            )
                         });
                     collections.push(tuples);
-                },
+                }
             };
         }
 
         if collections.len() == 1 {
             let output_index = output_offsets[0];
-            CollectionRelation{
+            CollectionRelation {
                 symbols: self.variables.to_vec(),
-                tuples: collections[0]
-                    .map(move |(key, val)| {
-                        let mut k = key.clone();
-                        let v = val[0].clone();
-                        k.insert(output_index, v);
-                        k
-                    })
+                tuples: collections[0].map(move |(key, val)| {
+                    let mut k = key.clone();
+                    let v = val[0].clone();
+                    k.insert(output_index, v);
+                    k
+                }),
             }
-        }
-        else {
+        } else {
             // @TODO replace this with a join application
             let left = collections.remove(0);
-            let tuples = collections.iter()
-                .fold(left, |coll, next| coll.join_map(&next, |key, v1, v2| {
+            let tuples = collections.iter().fold(left, |coll, next| {
+                coll.join_map(&next, |key, v1, v2| {
                     let mut val = v1.clone();
                     val.append(&mut v2.clone());
                     (key.clone(), val)
-                }));
-            
+                })
+            });
+
             CollectionRelation {
                 symbols: self.variables.to_vec(),
-                tuples: tuples.map(move |(key, vals)|{
+                tuples: tuples.map(move |(key, vals)| {
                     let mut v = key.clone();
-                    for (i, val) in vals.iter().enumerate(){
+                    for (i, val) in vals.iter().enumerate() {
                         v.insert(output_offsets[i], val.clone())
                     }
                     v
-                })
+                }),
             }
         }
     }

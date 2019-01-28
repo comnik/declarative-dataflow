@@ -9,7 +9,7 @@ use std::path::Path;
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
 
-use {Value, Eid};
+use {Eid, Value};
 
 use sources::Sourceable;
 
@@ -26,15 +26,16 @@ pub struct CsvFile {
 }
 
 impl Sourceable for CsvFile {
-    fn source<G: Scope<Timestamp = u64>>
-        (&self, scope: &G, _names: Vec<String>) -> Stream<G, (usize, ((Value,Value), u64, isize))>
-    {
+    fn source<G: Scope<Timestamp = u64>>(
+        &self,
+        scope: &G,
+        _names: Vec<String>,
+    ) -> Stream<G, (usize, ((Value, Value), u64, isize))> {
         let filename = self.path.clone();
 
         generic::operator::source(scope, &format!("File({})", filename), |capability, info| {
-
             let activator = scope.activator_for(&info.address[..]);
-            
+
             let mut cap = Some(capability);
 
             let worker_index = scope.index();
@@ -51,33 +52,52 @@ impl Sourceable for CsvFile {
             // @TODO this is annoying
             let separator = self.separator.clone();
             let schema = self.schema.clone();
-            
+
             move |output| {
                 if iterator.peek().is_some() {
-
                     let mut session = output.session(cap.as_ref().unwrap());
-                    
+
                     for readline in iterator.by_ref().take(255) {
-                        
                         let line: String = readline.ok().expect("read error");
 
                         if (datum_index % num_workers == worker_index) && line.len() > 0 {
-
                             let columns: Vec<&str> = line.split(separator).collect();
 
-                            let eid = Value::Eid(columns[0].trim().trim_matches('"').parse::<Eid>().expect("not a eid"));
-                            
+                            let eid = Value::Eid(
+                                columns[0]
+                                    .trim()
+                                    .trim_matches('"')
+                                    .parse::<Eid>()
+                                    .expect("not a eid"),
+                            );
+
                             for (name_idx, (offset, type_hint)) in schema.iter().enumerate() {
                                 let v = match type_hint {
-                                    Value::String(_) => Value::String(columns[*offset].trim().trim_matches('"').to_string()),
-                                    Value::Number(_) => Value::Number(columns[*offset].trim().trim_matches('"').parse::<i64>().expect("not a number")),
-                                    Value::Eid(_) => Value::Eid(columns[*offset].trim().trim_matches('"').parse::<Eid>().expect("not a eid")),
-                                    _ => panic!("Only String, Number, and Eid are supported at the moment."),
+                                    Value::String(_) => Value::String(
+                                        columns[*offset].trim().trim_matches('"').to_string(),
+                                    ),
+                                    Value::Number(_) => Value::Number(
+                                        columns[*offset]
+                                            .trim()
+                                            .trim_matches('"')
+                                            .parse::<i64>()
+                                            .expect("not a number"),
+                                    ),
+                                    Value::Eid(_) => Value::Eid(
+                                        columns[*offset]
+                                            .trim()
+                                            .trim_matches('"')
+                                            .parse::<Eid>()
+                                            .expect("not a eid"),
+                                    ),
+                                    _ => panic!(
+                                        "Only String, Number, and Eid are supported at the moment."
+                                    ),
                                 };
 
                                 session.give((name_idx, ((eid.clone(), v), 0, 1)));
                             }
-                            
+
                             num_datums_read += 1;
                         }
 
@@ -85,9 +105,11 @@ impl Sourceable for CsvFile {
                     }
 
                     activator.activate();
-                    
                 } else {
-                    println!("[WORKER {}] read {} out of {} datums", worker_index, num_datums_read, datum_index);
+                    println!(
+                        "[WORKER {}] read {} out of {} datums",
+                        worker_index, num_datums_read, datum_index
+                    );
                     cap = None;
                 }
             }

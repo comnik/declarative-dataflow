@@ -3,33 +3,33 @@
 use std::ops::Deref;
 use std::sync::atomic::{self, AtomicUsize};
 
-use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::Scope;
 
-use binding::{Binding, AttributeBinding, ConstantBinding};
+use binding::{AttributeBinding, Binding, ConstantBinding};
+use Rule;
 use {Aid, Eid, Value, Var};
-use {Rule};
-use {CollectionIndex, RelationHandle, Relation, VariableMap, CollectionRelation};
+use {CollectionIndex, CollectionRelation, Relation, RelationHandle, VariableMap};
 
-pub mod project;
 pub mod aggregate;
-pub mod union;
-pub mod join;
-pub mod hector;
 pub mod antijoin;
 pub mod filter;
-pub mod transform;
+pub mod hector;
+pub mod join;
+pub mod project;
 pub mod pull;
+pub mod transform;
+pub mod union;
 
-pub use self::project::Project;
 pub use self::aggregate::{Aggregate, AggregationFn};
-pub use self::union::Union;
-pub use self::join::Join;
-pub use self::hector::Hector;
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
-pub use self::transform::{Function, Transform};
+pub use self::hector::Hector;
+pub use self::join::Join;
+pub use self::project::Project;
 pub use self::pull::{Pull, PullLevel};
+pub use self::transform::{Function, Transform};
+pub use self::union::Union;
 
 static ID: AtomicUsize = atomic::ATOMIC_USIZE_INIT;
 static SYM: AtomicUsize = atomic::ATOMIC_USIZE_INIT;
@@ -48,32 +48,27 @@ pub fn gensym() -> Var {
 /// implementation of plans.
 pub trait ImplContext {
     /// Returns the set of constraints associated with a rule.
-    fn rule
-        (&self, name: &str) -> Option<&Rule>;
-    
+    fn rule(&self, name: &str) -> Option<&Rule>;
+
     /// Returns a mutable reference to a (non-base) relation, if one
     /// is registered under the given name.
-    fn global_arrangement
-        (&mut self, name: &str) -> Option<&mut RelationHandle>;
+    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle>;
 
     /// Returns a mutable reference to an attribute (a base relation)
     /// arranged from eid -> value, if one is registered under the
     /// given name.
-    fn forward_index
-        (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
+    fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
 
     /// Returns a mutable reference to an attribute (a base relation)
     /// arranged from value -> eid, if one is registered under the
     /// given name.
-    fn reverse_index
-        (&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
+    fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
 
     /// Returns the current opinion as to whether this rule is
     /// underconstrained. Underconstrained rules cannot be safely
     /// materialized and re-used on their own (i.e. without more
     /// specific constraints).
-    fn is_underconstrained
-        (&self, name: &str) -> bool;
+    fn is_underconstrained(&self, name: &str) -> bool;
 }
 
 /// A type that can be implemented as a simple relation.
@@ -90,8 +85,10 @@ pub trait Implementable {
     }
 
     /// @TODO
-    fn datafy(&self) -> Vec<(Eid, Aid, Value)> { Vec::new() }
-    
+    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
+        Vec::new()
+    }
+
     /// Implements the type as a simple relation.
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
@@ -160,7 +157,6 @@ impl Plan {
 }
 
 impl Implementable for Plan {
-
     fn dependencies(&self) -> Vec<String> {
         // @TODO provide a general fold for plans
         match self {
@@ -194,23 +190,36 @@ impl Implementable for Plan {
             &Plan::Negate(ref plan) => plan.into_bindings(),
             &Plan::Filter(ref filter) => filter.into_bindings(),
             &Plan::Transform(ref transform) => transform.into_bindings(),
-            &Plan::MatchA(e, ref a, v) => vec![
-                Binding::Attribute(AttributeBinding { symbols: (e, v,), source_attribute: a.to_string() }),
-            ],
+            &Plan::MatchA(e, ref a, v) => vec![Binding::Attribute(AttributeBinding {
+                symbols: (e, v),
+                source_attribute: a.to_string(),
+            })],
             &Plan::MatchEA(match_e, ref a, v) => {
-                let e = gensym(); 
+                let e = gensym();
                 vec![
-                    Binding::Attribute(AttributeBinding { symbols: (e, v,), source_attribute: a.to_string() }),
-                    Binding::Constant(ConstantBinding { symbol: e, value: Value::Eid(match_e) }),
+                    Binding::Attribute(AttributeBinding {
+                        symbols: (e, v),
+                        source_attribute: a.to_string(),
+                    }),
+                    Binding::Constant(ConstantBinding {
+                        symbol: e,
+                        value: Value::Eid(match_e),
+                    }),
                 ]
-            },
+            }
             &Plan::MatchAV(e, ref a, ref match_v) => {
                 let v = gensym();
                 vec![
-                    Binding::Attribute(AttributeBinding { symbols: (e, v,), source_attribute: a.to_string() }),
-                    Binding::Constant(ConstantBinding { symbol: v, value: match_v.clone() }),
+                    Binding::Attribute(AttributeBinding {
+                        symbols: (e, v),
+                        source_attribute: a.to_string(),
+                    }),
+                    Binding::Constant(ConstantBinding {
+                        symbol: v,
+                        value: match_v.clone(),
+                    }),
                 ]
-            },
+            }
             &Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
             &Plan::Pull(ref pull) => pull.into_bindings(),
             &Plan::PullLevel(ref path) => path.into_bindings(),
@@ -229,15 +238,25 @@ impl Implementable for Plan {
             &Plan::Negate(ref plan) => plan.datafy(),
             &Plan::Filter(ref filter) => filter.datafy(),
             &Plan::Transform(ref transform) => transform.datafy(),
-            &Plan::MatchA(_e, ref a, _v) => vec![
-                (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string()))
-            ],
+            &Plan::MatchA(_e, ref a, _v) => vec![(
+                next_id(),
+                "df.pattern/a".to_string(),
+                Value::Aid(a.to_string()),
+            )],
             &Plan::MatchEA(e, ref a, _) => vec![
                 (next_id(), "df.pattern/e".to_string(), Value::Eid(e.clone())),
-                (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string())),
+                (
+                    next_id(),
+                    "df.pattern/a".to_string(),
+                    Value::Aid(a.to_string()),
+                ),
             ],
             &Plan::MatchAV(_, ref a, ref v) => vec![
-                (next_id(), "df.pattern/a".to_string(), Value::Aid(a.to_string())),
+                (
+                    next_id(),
+                    "df.pattern/a".to_string(),
+                    Value::Aid(a.to_string()),
+                ),
                 (next_id(), "df.pattern/v".to_string(), v.clone()),
             ],
             &Plan::NameExpr(_, ref _name) => Vec::new(),
@@ -251,8 +270,7 @@ impl Implementable for Plan {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
-    {
+    ) -> CollectionRelation<'b, S> {
         match self {
             &Plan::Project(ref projection) => {
                 projection.implement(nested, local_arrangements, context)
@@ -260,15 +278,9 @@ impl Implementable for Plan {
             &Plan::Aggregate(ref aggregate) => {
                 aggregate.implement(nested, local_arrangements, context)
             }
-            &Plan::Union(ref union) => {
-                union.implement(nested, local_arrangements, context)
-            }
-            &Plan::Join(ref join) => {
-                join.implement(nested, local_arrangements, context)
-            }
-            &Plan::Hector(ref hector) => {
-                hector.implement(nested, local_arrangements, context)
-            }
+            &Plan::Union(ref union) => union.implement(nested, local_arrangements, context),
+            &Plan::Join(ref join) => join.implement(nested, local_arrangements, context),
+            &Plan::Hector(ref hector) => hector.implement(nested, local_arrangements, context),
             &Plan::Antijoin(ref antijoin) => {
                 antijoin.implement(nested, local_arrangements, context)
             }
@@ -279,9 +291,7 @@ impl Implementable for Plan {
                     tuples: rel.tuples().negate(),
                 }
             }
-            &Plan::Filter(ref filter) => {
-                filter.implement(nested, local_arrangements, context)
-            }
+            &Plan::Filter(ref filter) => filter.implement(nested, local_arrangements, context),
             &Plan::Transform(ref transform) => {
                 transform.implement(nested, local_arrangements, context)
             }
@@ -292,7 +302,7 @@ impl Implementable for Plan {
                         .validate_trace
                         .import_named(&nested.parent, a)
                         .enter(nested)
-                        .as_collection(|(e,v), _| vec![e.clone(), v.clone()]),
+                        .as_collection(|(e, v), _| vec![e.clone(), v.clone()]),
                 };
 
                 CollectionRelation {
@@ -350,7 +360,7 @@ impl Implementable for Plan {
                     // we should then immediately assume that it is
                     // available as a global arrangement, but we'll do
                     // so for now.
-                    
+
                     match context.global_arrangement(name) {
                         None => panic!("{:?} not in query map", name),
                         Some(named) => CollectionRelation {
@@ -358,12 +368,12 @@ impl Implementable for Plan {
                             tuples: named
                                 .import_named(&nested.parent, name)
                                 .enter(nested)
-                            // @TODO this destroys all the arrangement re-use
+                                // @TODO this destroys all the arrangement re-use
                                 .as_collection(|tuple, _| tuple.clone()),
                         },
                     }
                 }
-            },
+            }
             &Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
             &Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
         }

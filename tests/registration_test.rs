@@ -23,18 +23,42 @@ fn match_ea_after_input() {
         });
 
         let tx_data = vec![
-            TxData(1, 1, ":name".to_string(), Value::String("Dipper".to_string())),
-            TxData(1, 1, ":name".to_string(), Value::String("Alias".to_string())),
-            TxData(1, 2, ":name".to_string(), Value::String("Mabel".to_string())),
+            TxData(
+                1,
+                1,
+                ":name".to_string(),
+                Value::String("Dipper".to_string()),
+            ),
+            TxData(
+                1,
+                1,
+                ":name".to_string(),
+                Value::String("Alias".to_string()),
+            ),
+            TxData(
+                1,
+                2,
+                ":name".to_string(),
+                Value::String("Mabel".to_string()),
+            ),
         ];
-        let tx0 = Transact { tx: Some(0), tx_data };
+        let tx0 = Transact {
+            tx: Some(0),
+            tx_data,
+        };
         server.transact(tx0, 0, 0);
 
         worker.step_while(|| server.is_any_outdated());
-        
+
         worker.dataflow::<u64, _, _>(|scope| {
             server
-                .test_single(scope, Rule { name: "match_ea".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "match_ea".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -42,9 +66,16 @@ fn match_ea_after_input() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::String("Alias".to_string())], 1));
-        assert_eq!(results.recv().unwrap(), (vec![Value::String("Dipper".to_string())], 1));
-    }).unwrap();
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::String("Alias".to_string())], 1)
+        );
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::String("Dipper".to_string())], 1)
+        );
+    })
+    .unwrap();
 }
 
 #[test]
@@ -61,9 +92,12 @@ fn join_after_input() {
         worker.step_while(|| server.is_any_outdated());
 
         {
-            let tx_data = vec![
-                TxData(1, 1, ":user/id".to_string(), Value::String("123-456-789".to_string())),
-            ];
+            let tx_data = vec![TxData(
+                1,
+                1,
+                ":user/id".to_string(),
+                Value::String("123-456-789".to_string()),
+            )];
             let tx0 = Transact { tx: None, tx_data };
             server.transact(tx0, 0, 0);
 
@@ -71,9 +105,12 @@ fn join_after_input() {
         }
 
         {
-            let tx_data = vec![
-                TxData(1, 101, ":transfer/from".to_string(), Value::String("123-456-789".to_string())),
-            ];
+            let tx_data = vec![TxData(
+                1,
+                101,
+                ":transfer/from".to_string(),
+                Value::String("123-456-789".to_string()),
+            )];
             let tx1 = Transact { tx: None, tx_data };
             server.transact(tx1, 0, 0);
 
@@ -81,7 +118,6 @@ fn join_after_input() {
         }
 
         worker.dataflow::<u64, _, _>(|scope| {
-
             let (transfer, sender, uuid) = (1, 2, 3);
             let plan = Plan::Project(Project {
                 variables: vec![transfer, sender],
@@ -93,7 +129,13 @@ fn join_after_input() {
             });
 
             server
-                .test_single(scope, Rule { name: "join".to_string(), plan, })
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "join".to_string(),
+                        plan,
+                    },
+                )
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -101,6 +143,10 @@ fn join_after_input() {
 
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(results.recv().unwrap(), (vec![Value::Eid(101), Value::Eid(1)], 1));
-    }).unwrap();
+        assert_eq!(
+            results.recv().unwrap(),
+            (vec![Value::Eid(101), Value::Eid(1)], 1)
+        );
+    })
+    .unwrap();
 }

@@ -1,13 +1,13 @@
 //! Union expression plan.
 
-use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::Scope;
 
 use differential_dataflow::operators::Threshold;
 
-use plan::{ImplContext, Implementable};
 use binding::Binding;
-use {VariableMap, Relation, CollectionRelation, Var};
+use plan::{ImplContext, Implementable};
+use {CollectionRelation, Relation, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -20,8 +20,7 @@ pub struct Union<P: Implementable> {
     pub plans: Vec<P>,
 }
 
-impl<P: Implementable> Implementable for Union<P>
-{
+impl<P: Implementable> Implementable for Union<P> {
     fn dependencies(&self) -> Vec<String> {
         let mut dependencies = Vec::new();
 
@@ -48,7 +47,6 @@ impl<P: Implementable> Implementable for Union<P>
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
     ) -> CollectionRelation<'b, S> {
-        
         use differential_dataflow::AsCollection;
         use timely::dataflow::operators::Concatenate;
 

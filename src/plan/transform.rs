@@ -2,12 +2,12 @@
 
 use std::collections::HashMap;
 
-use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::Scope;
 
 use plan::{ImplContext, Implementable};
 use Relation;
-use {VariableMap, CollectionRelation, Value, Var};
+use {CollectionRelation, Value, Var, VariableMap};
 
 /// Permitted functions.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -38,20 +38,18 @@ pub struct Transform<P: Implementable> {
     pub constants: HashMap<u32, Value>,
 }
 
-impl<P: Implementable> Implementable for Transform<P>
-{
-    fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
-    
+impl<P: Implementable> Implementable for Transform<P> {
+    fn dependencies(&self) -> Vec<String> {
+        self.plan.dependencies()
+    }
+
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
     ) -> CollectionRelation<'b, S> {
-        
-        let rel = self
-            .plan
-            .implement(nested, local_arrangements, context);
+        let rel = self.plan.implement(nested, local_arrangements, context);
 
         let key_offsets: Vec<usize> = self
             .variables
@@ -61,7 +59,8 @@ impl<P: Implementable> Implementable for Transform<P>
                     .iter()
                     .position(|&v| *sym == v)
                     .expect("Symbol not found.")
-            }).collect();
+            })
+            .collect();
 
         let mut symbols = rel.symbols().to_vec().clone();
         symbols.push(self.result_sym);
@@ -136,12 +135,12 @@ impl<P: Implementable> Implementable for Transform<P>
                     let mut result = match constants_local.get(&0) {
                         Some(constant) => match constant {
                             Value::Number(minuend) => *minuend as i64,
-                            _ => panic!("SUBTRACT can only be applied to numbers")
+                            _ => panic!("SUBTRACT can only be applied to numbers"),
                         },
                         None => match tuple[key_offsets[0]] {
                             Value::Number(minuend) => minuend as i64,
                             _ => panic!("SUBTRACT can only be applied to numbers"),
-                        }
+                        },
                     };
 
                     // avoid filtering out the minuend by doubling it
