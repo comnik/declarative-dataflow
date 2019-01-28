@@ -12,11 +12,8 @@ pub struct GraphQl {
     pub query: String,
 }
 
-fn selection_set_to_paths(
-    selection_set: &SelectionSet,
-    parent_path: &Vec<String>
-) -> Vec<PullLevel<Plan>>
-{    
+#[cfg(feature="graphql")]
+fn selection_set_to_paths(selection_set: &SelectionSet, parent_path: &Vec<String>) -> Vec<PullLevel<Plan>> {
     let mut result = vec![];
     let mut pull_attributes = vec![];
     let variables = vec![];
@@ -47,8 +44,7 @@ fn selection_set_to_paths(
     result
 }
 
-/// Converts a GraphQL AST to pull paths.
-///
+/// converts an ast to paths
 /// The structure of a typical parsed ast looks like this:
 /// ```
 /// Document {
@@ -56,7 +52,7 @@ fn selection_set_to_paths(
 ///     Operation(SelectionSet(SelectionSet {
 ///       items: [
 ///         Field(Field {
-///           name: ...,
+///           name: ..., 
 ///           selection_set: SelectionSet(...}
 ///         }),
 ///         ...
