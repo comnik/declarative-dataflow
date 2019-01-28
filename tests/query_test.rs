@@ -1,7 +1,7 @@
 extern crate declarative_dataflow;
 extern crate timely;
 
-use std::collections::HashSet;
+use std::collections::{HashSet, HashMap};
 use std::iter::FromIterator;
 use std::time::Duration;
 use std::sync::mpsc::channel;
@@ -10,7 +10,7 @@ use timely::Configuration;
 use timely::dataflow::operators::Operator;
 use timely::dataflow::channels::pact::Pipeline;
 
-use declarative_dataflow::plan::{Join, Project, Implementable};
+use declarative_dataflow::plan::{Join, Project, Filter, Predicate, Implementable};
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::server::{Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value, Aid};
@@ -112,6 +112,40 @@ fn run_query_cases() {
                 ],
             }
         },
+        // {
+        //     let (e, a, n) = (1, 2, 3);
+
+        //     let mut constants: HashMap<u32, Value> = HashMap::new();
+        //     constants.insert(0, Number(18));
+            
+        //     Case {
+        //         description: "[:find ?e ?n ?a :where [?e :age ?a] [?e :name ?n] [(<= 18 ?a)]]",
+        //         plan: Plan::Project(Project {
+        //             variables: vec![e, n, a],
+        //             plan: Box::new(Plan::Join(Join {
+        //                 variables: vec![e],
+        //                 left_plan: Box::new(Plan::MatchA(e, ":name".to_string(), n)),
+        //                 right_plan: Box::new(Plan::Filter(Filter {
+        //                     variables: vec![a],
+        //                     predicate: Predicate::LTE,
+        //                     plan: Box::new(Plan::MatchA(e, ":age".to_string(), a)),
+        //                     constants: constants,
+        //                 })),
+        //             })),
+        //         }),
+        //         transactions: vec![
+        //             vec![
+        //                 TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),
+        //                 TxData(1, 100, ":age".to_string(), Number(12)),
+        //                 TxData(1, 100, ":name".to_string(), String("Soos".to_string())),
+        //                 TxData(1, 100, ":age".to_string(), Number(30)),
+        //             ],
+        //         ],
+        //         expectations: vec![
+        //             vec![(vec![Eid(100), String("Dipper".to_string()), Number(12)], 0, 1)],
+        //         ],
+        //     }
+        // },
     ];
     
     for case in cases.drain(..) {
