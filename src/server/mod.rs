@@ -136,12 +136,12 @@ pub enum Request {
     /// Requests orderly shutdown of the system.
     Shutdown,
     /// Register a query specified as GraphQL.
-    #[cfg(feature="graphql")]
+    #[cfg(feature = "graphql")]
     GraphQl(String, String),
 }
 
 /// Nested value type for graphQL vec -> nested map transformation
-#[cfg(feature="graphql")]
+#[cfg(feature = "graphql")]
 #[derive(Serialize, Deserialize, Debug, Clone, Ord, Eq)]
 enum NestedVal<T: Eq + Hash + Ord> {
     Map(BTreeMap<T, NestedVal<T>>),
@@ -149,7 +149,7 @@ enum NestedVal<T: Eq + Hash + Ord> {
     Val(T),
 }
 
-#[cfg(feature="graphql")]
+#[cfg(feature = "graphql")]
 impl<T: Eq + Hash + Ord> PartialEq for NestedVal<T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -161,7 +161,7 @@ impl<T: Eq + Hash + Ord> PartialEq for NestedVal<T> {
     }
 }
 
-#[cfg(feature="graphql")]
+#[cfg(feature = "graphql")]
 impl<T: Eq + Hash + Ord> PartialOrd for NestedVal<T> {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match (self, other) {
@@ -178,7 +178,7 @@ impl<T: Eq + Hash + Ord> PartialOrd for NestedVal<T> {
     }
 }
 
-#[cfg(feature="graphql")]
+#[cfg(feature = "graphql")]
 fn paths_to_nested<T: Eq + Hash + Ord + std::fmt::Debug>(paths: Vec<Vec<T>>) -> NestedVal<T> {
     let mut acc: BTreeMap<T, NestedVal<T>> = BTreeMap::new();
     for mut path in paths {
@@ -210,7 +210,7 @@ fn paths_to_nested<T: Eq + Hash + Ord + std::fmt::Debug>(paths: Vec<Vec<T>>) -> 
     NestedVal::Map(acc)
 }
 
-#[cfg(feature="graphql")]
+#[cfg(feature = "graphql")]
 fn squash_nested<T: Eq + Hash + Ord + std::fmt::Debug>(nested: NestedVal<T>) -> NestedVal<T> {
     if let NestedVal::Map(m) = nested {
         let new = m.into_iter().fold(BTreeMap::new(), |mut acc, (k, v)| {
@@ -552,7 +552,7 @@ where
     }
 
     /// Register a GraphQL query
-    #[cfg(feature="graphql")]
+    #[cfg(feature = "graphql")]
     pub fn register_graph_ql<S: Scope<Timestamp = u64>>(
         &mut self,
         query: String,
@@ -567,9 +567,12 @@ where
             publish: vec![name.to_string()],
         };
 
-        self.register(req, scope);
+        self.register(req);
 
         self.interest(name, scope)
+            .import_named(scope, &name)
+            .as_collection(|tuple, _| tuple.clone())
+            .probe_with(&mut self.probe)
             .map(|x| ((), x.to_vec()))
             .group(|_key, inp, out| {
                 let paths: Vec<_> = inp
@@ -581,7 +584,10 @@ where
 
                 out.push((squash_nested(nested), 1));
             })
-            .map(|(_g, x)| { println!("{:?}", x); x });
+            .map(|(_g, x)| {
+                println!("{:?}", x);
+                x
+            });
     }
 
     /// Helper for registering, publishing, and indicating interest in

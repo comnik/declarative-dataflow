@@ -8,9 +8,6 @@ use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, 
 use InputSemantics::Raw;
 use Value::{Aid, Bool, Eid, Number, String};
 
-#[cfg(feature="graphql")]
-use declarative_dataflow::plan::GraphQl;
-
 #[test]
 fn pull_level() {
     timely::execute_directly(|worker| {
@@ -367,59 +364,121 @@ fn pull() {
     });
 }
 
-#[cfg(feature="graphql")]
+#[cfg(feature = "graphql")]
 #[test]
 fn graph_ql() {
-    timely::execute(Configuration::Thread, |worker| {
-        let mut server = Server::<u64>::new(Default::default());
+    timely::execute_directly(|worker| {
+        let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
-        let (a,b,c,) = (1,2,3,);
-        let plan = Plan::GraphQl(GraphQl{ query: "{hero {name height mass}}".to_string() });
+        let plan = Plan::GraphQl(GraphQl::new("{hero {name height mass}}".to_string()));
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_input("hero", scope);
-            server.create_input("name", scope);
-            server.create_input("height", scope);
-            server.create_input("mass", scope);
+            server
+                .context
+                .internal
+                .create_attribute("parent/child", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("name", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("age", Raw, scope)
+                .unwrap();
 
             server
-                .test_single(scope, Rule { name: "graphQl".to_string(), plan })
-                .inspect(move |x| { send_results.send((x.0.clone(), x.2)).unwrap(); });
+                .test_single(
+                    scope,
+                    Rule {
+                        name: "graphQl".to_string(),
+                        plan,
+                    },
+                )
+                .inspect(move |x| {
+                    send_results.send(x.clone()).unwrap();
+                });
         });
 
-        server.transact(
-            vec![
-                TxData(1, 100, "hero".to_string(), Value::Eid(200)),
-                TxData(1, 200, "name".to_string(), Value::String("Batman".to_string())),
-                TxData(1, 200, "mass".to_string(), Value::String("80kg".to_string())),
-            ],
-            0,
-            0,
-        );
+        server
+            .transact(
+                vec![
+                    TxData(1, 100, "name".to_string(), String("Alice".to_string())),
+                    TxData(1, 100, "parent/child".to_string(), Eid(300)),
+                    TxData(1, 200, "name".to_string(), String("Bob".to_string())),
+                    TxData(1, 200, "parent/child".to_string(), Eid(400)),
+                    TxData(1, 300, "name".to_string(), String("Mabel".to_string())),
+                    TxData(1, 300, "age".to_string(), Number(13)),
+                    TxData(1, 400, "name".to_string(), String("Dipper".to_string())),
+                    TxData(1, 400, "age".to_string(), Number(12)),
+                ],
+                0,
+                0,
+            )
+            .unwrap();
+
+        server.advance_domain(None, 1).unwrap();
 
         worker.step_while(|| server.is_any_outdated());
 
         let mut expected = HashSet::new();
 
         expected.insert((
-            vec![Value::Eid(100), Value::Attribute("hero".to_string()),
-                 Value::Eid(200), Value::Attribute("mass".to_string()), Value::String("80kg".to_string())],
-            1
+            vec![
+                Eid(100),
+                Aid("parent/child".to_string()),
+                Eid(300),
+                Aid("age".to_string()),
+                Number(13),
+            ],
+            0,
+            1,
+        ));
+        expected.insert((
+            vec![
+                Eid(100),
+                Aid("parent/child".to_string()),
+                Eid(300),
+                Aid("name".to_string()),
+                String("Mabel".to_string()),
+            ],
+            0,
+            1,
+        ));
+        expected.insert((
+            vec![
+                Eid(200),
+                Aid("parent/child".to_string()),
+                Eid(400),
+                Aid("age".to_string()),
+                Number(12),
+            ],
+            0,
+            1,
         ));
 
         expected.insert((
-            vec![Value::Eid(100), Value::Attribute("hero".to_string()),
-                 Value::Eid(200), Value::Attribute("name".to_string()), Value::String("Batman".to_string())],
-            1
+            vec![
+                Eid(200),
+                Aid("parent/child".to_string()),
+                Eid(400),
+                Aid("name".to_string()),
+                String("Dipper".to_string()),
+            ],
+            0,
+            1,
         ));
 
-        
         for _i in 0..expected.len() {
             let result = results.recv_timeout(Duration::from_millis(400)).unwrap();
-            if !expected.remove(&result) { panic!("unknown result {:?}", result); }
+            if !expected.remove(&result) {
+                panic!("unknown result {:?}", result);
+            }
         }
 
         assert!(results.recv_timeout(Duration::from_millis(400)).is_err());
-    }).unwrap();
+    });
 }

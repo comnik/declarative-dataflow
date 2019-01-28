@@ -12,8 +12,10 @@ pub struct GraphQl {
     pub query: String,
 }
 
-#[cfg(feature="graphql")]
-fn selection_set_to_paths(selection_set: &SelectionSet, parent_path: &Vec<String>) -> Vec<PullLevel<Plan>> {
+fn selection_set_to_paths(
+    selection_set: &SelectionSet,
+    parent_path: &Vec<String>,
+) -> Vec<PullLevel<Plan>> {
     let mut result = vec![];
     let mut pull_attributes = vec![];
     let variables = vec![];
@@ -24,9 +26,12 @@ fn selection_set_to_paths(selection_set: &SelectionSet, parent_path: &Vec<String
                 pull_attributes.push(field.name.to_string());
                 let mut new_parent_path = parent_path.to_vec();
                 new_parent_path.push(field.name.to_string());
-                result.extend(selection_set_to_paths(&field.selection_set, &new_parent_path));
-            },
-            _ => unimplemented!()
+                result.extend(selection_set_to_paths(
+                    &field.selection_set,
+                    &new_parent_path,
+                ));
+            }
+            _ => unimplemented!(),
         }
     }
 
@@ -36,7 +41,7 @@ fn selection_set_to_paths(selection_set: &SelectionSet, parent_path: &Vec<String
             pull_attributes,
             path_attributes: parent_path.to_vec(),
             variables,
-            plan: Box::new(Plan::MatchA(0, parent_path.last().unwrap().to_string(), 1))
+            plan: Box::new(Plan::MatchA(0, parent_path.last().unwrap().to_string(), 1)),
         };
         result.push(pull_level);
     }
@@ -52,7 +57,7 @@ fn selection_set_to_paths(selection_set: &SelectionSet, parent_path: &Vec<String
 ///     Operation(SelectionSet(SelectionSet {
 ///       items: [
 ///         Field(Field {
-///           name: ..., 
+///           name: ...,
 ///           selection_set: SelectionSet(...}
 ///         }),
 ///         ...
@@ -61,18 +66,18 @@ fn selection_set_to_paths(selection_set: &SelectionSet, parent_path: &Vec<String
 ///   ]
 /// }
 /// ```
-fn ast_to_paths (ast: Document) -> Vec<PullLevel<Plan>> {
+fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
     let mut result = vec![];
     for definition in &ast.definitions {
         match definition {
-            Definition::Operation(operation_definition) => {
-                match operation_definition {
-                    OperationDefinition::Query(query) => unimplemented!(),
-                    OperationDefinition::SelectionSet(selection_set) => result.extend(selection_set_to_paths(selection_set, &vec![])),
-                    _ => unimplemented!()
+            Definition::Operation(operation_definition) => match operation_definition {
+                OperationDefinition::Query(query) => unimplemented!(),
+                OperationDefinition::SelectionSet(selection_set) => {
+                    result.extend(selection_set_to_paths(selection_set, &vec![]))
                 }
+                _ => unimplemented!(),
             },
-            Definition::Fragment(fragment_definition) => unimplemented!()
+            Definition::Fragment(fragment_definition) => unimplemented!(),
         };
     }
 
@@ -80,15 +85,29 @@ fn ast_to_paths (ast: Document) -> Vec<PullLevel<Plan>> {
 }
 
 impl Implementable for GraphQl {
-    fn implement<'b, S: Scope<Timestamp = u64>>(
+    fn dependencies(&self) -> Vec<String> {
+        // @TODO cache this?
+        let ast = parse_query(&self.query).expect("graphQL ast parsing failed");
+        let parsed = Pull {
+            variables: vec![],
+            paths: ast_to_paths(ast),
+        };
+
+        parsed.dependencies()
+    }
+
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        local_arrangements: &RelationMap<Iterative<'b, S, u64>>,
-        global_arrangements: &mut QueryMap<isize>,
-    ) -> SimpleRelation<'b, S> {
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        context: &mut I,
+    ) -> CollectionRelation<'b, S> {
         let ast = parse_query(&self.query).expect("graphQL ast parsing failed");
-        let parsed = Pull { paths: ast_to_paths(ast) };
+        let parsed = Pull {
+            variables: vec![],
+            paths: ast_to_paths(ast),
+        };
 
-        parsed.implement(nested, local_arrangements, global_arrangements)
+        parsed.implement(nested, local_arrangements, context)
     }
 }

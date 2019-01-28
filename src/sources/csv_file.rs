@@ -151,7 +151,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                                 let tuple = (eid.clone(), v);
                                 sessions.get_mut(idx).unwrap().give((tuple, time, 1));
                             }
-                            
+
                             num_datums_read += 1;
                         }
 

@@ -89,7 +89,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         // For each aggregation function that is to be applied, we
         // need to determine the index (into the value part of each
         // tuple) at which its argument is to be found.
-        
+
         let mut value_offsets = Vec::new();
         let mut seen = Vec::new();
 
@@ -105,7 +105,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         // Users can specify weird find clauses like [:find ?key1 (min ?v1) ?key2]
         // and we would like to avoid an extra projection. Thus, we pre-compute
         // the correct output offset for each aggregation.
-        
+
         let mut variables = self.variables.clone();
         let mut output_offsets = Vec::new();
 

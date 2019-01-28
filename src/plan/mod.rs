@@ -208,7 +208,7 @@ pub enum Plan {
     /// Single-level pull expression
     PullLevel(PullLevel<Plan>),
     /// GraphQl pull expression
-    #[cfg(feature="graphql")]
+    #[cfg(feature = "graphql")]
     GraphQl(GraphQl),
 }
 
@@ -231,6 +231,7 @@ impl Plan {
             Plan::NameExpr(ref variables, ref _name) => variables.clone(),
             Plan::Pull(ref pull) => pull.variables.clone(),
             Plan::PullLevel(ref path) => path.variables.clone(),
+            Plan::GraphQl(ref q) => q.variables.clone(),
         }
     }
 }
@@ -254,6 +255,7 @@ impl Implementable for Plan {
             Plan::NameExpr(_, ref name) => Dependencies::name(name),
             Plan::Pull(ref pull) => pull.dependencies(),
             Plan::PullLevel(ref path) => path.dependencies(),
+            Plan::GraphQl(ref q) => q.dependencies(),
         }
     }
 
@@ -287,6 +289,8 @@ impl Implementable for Plan {
             Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
             Plan::Pull(ref pull) => pull.into_bindings(),
             Plan::PullLevel(ref path) => path.into_bindings(),
+            #[cfg(feature = "graphql")]
+            Plan::GraphQl(ref q) => q.into_bindings(),
         }
     }
 
@@ -326,6 +330,8 @@ impl Implementable for Plan {
             Plan::NameExpr(_, ref _name) => Vec::new(),
             Plan::Pull(ref pull) => pull.datafy(),
             Plan::PullLevel(ref path) => path.datafy(),
+            #[cfg(feature = "graphql")]
+            Plan::GraphQl(ref q) => q.datafy(),
         }
     }
 
@@ -493,7 +499,7 @@ impl Implementable for Plan {
             Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
             Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
             #[cfg(feature="graphql")]
-            Plan::GraphQl(ref query) => query.implement(nested, local_arrangements, global_arrangements),
+            Plan::GraphQl(ref query) => query.implement(nested, local_arrangements, context),
         }
     }
 }

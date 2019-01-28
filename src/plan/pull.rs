@@ -166,7 +166,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                         let mut result = interleave(path, &path_attributes);
                         result.push(attribute.clone());
                         result.push(v.clone());
-                        
+
                         Some(result)
                     })
                     .inner
@@ -227,5 +227,6 @@ impl<P: Implementable> Implementable for Pull<P> {
         };
 
         (Implemented::Collection(relation), shutdown_handle)
+        }
     }
 }
