@@ -391,6 +391,84 @@ where
     }
 }
 
+// /// A arrangement and variable bindings.
+// pub struct ArrangedRelation<'a, G: Scope>
+// where
+//     G::Timestamp: Lattice+Data
+// {
+//     symbols: Vec<Var>,
+//     tuples: Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
+//                      TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>,
+// }
+
+// impl<'a, G: Scope> Relation<'a, G> for ArrangedRelation<'a, G>
+// where
+//     G::Timestamp: Lattice+Data,
+// {
+//     fn symbols(&self) -> &[Var] { &self.symbols }
+
+//     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
+//         unimplemented!()
+//         self.tuples
+//     }
+
+//     /// Separates tuple fields by those in `syms` and those not.
+//     ///
+//     /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)`
+//     /// containing first exactly those symbols in `syms` in that
+//     /// order, followed by the remaining values in their original
+//     /// order.
+//     fn tuples_by_symbols
+//         (self, syms: &[Var]) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>
+//     {
+//         self.arrange_by_symbols(syms).as_collection(|key,rest| (key,rest))
+//     }
+
+//     fn arrange_by_symbols
+//         (self, syms: &[Var]) -> Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
+//                                          TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>
+//     {
+//         if syms == &self.symbols()[..] {
+//             self.tuples().map(|x| (x, Vec::new()))
+//         } else if syms.is_empty() {
+//             self.tuples().map(|x| (Vec::new(), x))
+//         } else {
+//             let key_length = syms.len();
+//             let values_length = self.symbols().len() - key_length;
+
+//             let mut key_offsets: Vec<usize> = Vec::with_capacity(key_length);
+//             let mut value_offsets: Vec<usize> = Vec::with_capacity(values_length);
+//             let sym_set: HashSet<Var> = syms.iter().cloned().collect();
+
+//             // It is important to preserve the key symbols in the order
+//             // they were specified.
+//             for sym in syms.iter() {
+//                 key_offsets.push(self.symbols().iter().position(|&v| *sym == v).unwrap());
+//             }
+
+//             // Values we'll just take in the order they were.
+//             for (idx, sym) in self.symbols().iter().enumerate() {
+//                 if sym_set.contains(sym) == false {
+//                     value_offsets.push(idx);
+//                 }
+//             }
+
+//             // let debug_keys: Vec<String> = key_offsets.iter().map(|x| x.to_string()).collect();
+//             // let debug_values: Vec<String> = value_offsets.iter().map(|x| x.to_string()).collect();
+//             // println!("key offsets: {:?}", debug_keys);
+//             // println!("value offsets: {:?}", debug_values);
+
+//             self.tuples().map(move |tuple| {
+//                 let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
+//                 // @TODO second clone not really neccessary
+//                 let values: Vec<Value> = value_offsets.iter().map(|i| tuple[*i].clone()).collect();
+
+//                 (key, values)
+//             })
+//         }
+//     }
+// }
+
 /// Returns a deduplicates list of all rules used in the definition of
 /// the specified names. Includes the specified names.
 pub fn collect_dependencies<I: ImplContext>
