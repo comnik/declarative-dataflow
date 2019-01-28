@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use timely::dataflow::scopes::child::Iterative;
 
 use plan::{ImplContext, Implementable};
-pub use binding::BinaryPredicate as Predicate;
+pub use binding::{Binding, BinaryPredicateBinding, BinaryPredicate as Predicate};
 use Relation;
 use {VariableMap, CollectionRelation, Value, Var};
 
@@ -47,6 +47,19 @@ pub struct Filter<P: Implementable> {
 impl<P: Implementable> Implementable for Filter<P>
 {
     fn dependencies(&self) -> Vec<String> { self.plan.dependencies() }
+
+    fn into_bindings(&self) -> Vec<Binding> {
+        let mut bindings = self.plan.into_bindings();
+        let variables = self.variables.clone();
+
+        unimplemented!();
+        // bindings.push(Binding::BinaryPredicate(BinaryPredicateBinding {
+        //     symbols: (variables[0], variables[1]),
+        //     predicate: self.predicate.clone(),
+        // }));
+
+        bindings
+    }
     
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
         &self,
