@@ -10,24 +10,12 @@ use plan::{ImplContext, Implementable};
 use Relation;
 use {CollectionRelation, Value, Var, VariableMap};
 
-fn lt(a: &Value, b: &Value) -> bool {
-    a < b
-}
-fn lte(a: &Value, b: &Value) -> bool {
-    a <= b
-}
-fn gt(a: &Value, b: &Value) -> bool {
-    a > b
-}
-fn gte(a: &Value, b: &Value) -> bool {
-    a >= b
-}
-fn eq(a: &Value, b: &Value) -> bool {
-    a == b
-}
-fn neq(a: &Value, b: &Value) -> bool {
-    a != b
-}
+#[inline(always)]fn lt(a: &Value, b: &Value) -> bool { a < b }
+#[inline(always)]fn lte(a: &Value, b: &Value) -> bool { a <= b }
+#[inline(always)]fn gt(a: &Value, b: &Value) -> bool { a > b }
+#[inline(always)]fn gte(a: &Value, b: &Value) -> bool { a >= b }
+#[inline(always)]fn eq(a: &Value, b: &Value) -> bool { a == b }
+#[inline(always)]fn neq(a: &Value, b: &Value) -> bool { a != b }
 
 /// A plan stage filtering source tuples by the specified
 /// predicate. Frontends are responsible for ensuring that the source
