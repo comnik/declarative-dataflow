@@ -113,7 +113,7 @@ fn main() {
         
         // setup serialized command queue (shared between all workers)
         let mut sequencer: Sequencer<Command> =
-            Sequencer::new(worker, Instant::now(), VecDeque::from(vec![preload_command]));
+            Sequencer::preloaded(worker, Instant::now(), VecDeque::from(vec![preload_command]));
 
         // configure websocket server
         let ws_settings = ws::Settings {

@@ -5,10 +5,8 @@ authors = ["Frank McSherry <fmcsherry@me.com>", "Nikolas Göbel <me@nikolasgoebe
 
 [dependencies]
 jemallocator = "0.1.8"
-timely = { git = "https://github.com/ClockworksIO/timely-dataflow", rev = "25eff5ca6543a1768a3944c0b93a11f88cd798f8", features = ["bincode"] }
-# timely = { path = "/Users/niko/repos/timely-dataflow", features = ["bincode"] }
-# differential-dataflow = { git = "https://github.com/ClockworksIO/differential-dataflow", rev = "2c9774c94945332309a908792103e2b1c0518e28" }
-differential-dataflow = { path = "/Users/niko/repos/differential-dataflow" }
+timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
+differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
 abomonation = "0.7"
 abomonation_derive = "0.3"
 serde = "1"
