@@ -140,99 +140,6 @@ pub enum Request {
     GraphQl(String, String),
 }
 
-/// Nested value type for graphQL vec -> nested map transformation
-#[cfg(feature = "graphql")]
-#[derive(Serialize, Deserialize, Debug, Clone, Ord, Eq)]
-enum NestedVal<T: Eq + Hash + Ord> {
-    Map(BTreeMap<T, NestedVal<T>>),
-    Arr(Vec<NestedVal<T>>),
-    Val(T),
-}
-
-#[cfg(feature = "graphql")]
-impl<T: Eq + Hash + Ord> PartialEq for NestedVal<T> {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (&NestedVal::Map(ref a), &NestedVal::Map(ref b)) => a == b,
-            (&NestedVal::Val(ref a), &NestedVal::Val(ref b)) => a == b,
-            (&NestedVal::Arr(ref a), &NestedVal::Arr(ref b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
-#[cfg(feature = "graphql")]
-impl<T: Eq + Hash + Ord> PartialOrd for NestedVal<T> {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        match (self, other) {
-            (&NestedVal::Map(ref a), &NestedVal::Map(ref b)) => Some(a.values().cmp(b.values())),
-            (&NestedVal::Map(_), _) => Some(Ordering::Greater),
-
-            (&NestedVal::Arr(ref a), &NestedVal::Arr(ref b)) => Some(a.cmp(b)),
-            (&NestedVal::Arr(_), &NestedVal::Map(_)) => Some(Ordering::Less),
-            (&NestedVal::Arr(_), &NestedVal::Val(_)) => Some(Ordering::Greater),
-
-            (&NestedVal::Val(ref a), &NestedVal::Val(ref b)) => Some(a.cmp(b)),
-            (&NestedVal::Val(_), _) => Some(Ordering::Less),
-        }
-    }
-}
-
-#[cfg(feature = "graphql")]
-fn paths_to_nested<T: Eq + Hash + Ord + std::fmt::Debug>(paths: Vec<Vec<T>>) -> NestedVal<T> {
-    let mut acc: BTreeMap<T, NestedVal<T>> = BTreeMap::new();
-    for mut path in paths {
-        let mut current_map = &mut acc;
-        let last_val = path.pop().unwrap();
-        let last_key = path.pop().unwrap();
-
-        for attribute in path {
-            let entry = current_map
-                .entry(attribute)
-                .or_insert_with(|| NestedVal::Map(BTreeMap::new()));
-
-            *entry = match entry {
-                NestedVal::Val(_) => NestedVal::Map(BTreeMap::new()),
-                NestedVal::Map(m) => NestedVal::Map(std::mem::replace(m, BTreeMap::new())),
-                NestedVal::Arr(_) => unreachable!(),
-            };
-
-            match entry {
-                NestedVal::Map(m) => current_map = m,
-                NestedVal::Val(_) => unreachable!(),
-                NestedVal::Arr(_) => unreachable!(),
-            };
-        }
-
-        current_map.insert(last_key, NestedVal::Val(last_val));
-    }
-
-    NestedVal::Map(acc)
-}
-
-#[cfg(feature = "graphql")]
-fn squash_nested<T: Eq + Hash + Ord + std::fmt::Debug>(nested: NestedVal<T>) -> NestedVal<T> {
-    if let NestedVal::Map(m) = nested {
-        let new = m.into_iter().fold(BTreeMap::new(), |mut acc, (k, v)| {
-            let to_add = if let NestedVal::Map(nested_v) = v {
-                let nested_squashed_v: Vec<_> = nested_v
-                    .into_iter()
-                    .map(|(_nested_k, nested_v)| squash_nested(nested_v))
-                    .collect();
-                NestedVal::Arr(nested_squashed_v)
-            } else {
-                v
-            };
-
-            acc.insert(k, to_add);
-            acc
-        });
-        NestedVal::Map(new)
-    } else {
-        nested
-    }
-}
-
 /// Server context maintaining globally registered arrangements and
 /// input handles.
 pub struct Server<T, Token>
@@ -569,25 +476,19 @@ where
 
         self.register(req);
 
-        self.interest(name, scope)
-            .import_named(scope, &name)
-            .as_collection(|tuple, _| tuple.clone())
-            .probe_with(&mut self.probe)
-            .map(|x| ((), x.to_vec()))
-            .group(|_key, inp, out| {
-                let paths: Vec<_> = inp
-                    .into_iter()
-                    .map(|(tuple, _diff)| (*tuple).clone())
-                    .collect();
+        // let rel_map = implement(name, scope, &mut self.context);
 
-                let nested = paths_to_nested(paths);
+        // for (name, trace) in rel_map.into_iter() {
+        //     self.register_global_arrangement(name, trace);
+        // }
 
-                out.push((squash_nested(nested), 1));
-            })
-            .map(|(_g, x)| {
-                println!("{:?}", x);
-                x
-            });
+        // self.context
+        //     .global_arrangement(name)
+        //     .expect("Relation of interest wasn't actually implemented.");
+
+        // self.interest(name, scope)
+        //     .import_named(scope, name)
+        //     .as_collection(|tuple, _| tuple.clone())
     }
 
     /// Helper for registering, publishing, and indicating interest in
