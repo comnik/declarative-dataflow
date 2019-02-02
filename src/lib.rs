@@ -563,7 +563,9 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
 
         // Step 1: Create new recursive variables for each rule.
         for rule in rules.iter() {
-            local_arrangements.insert(rule.name.clone(), Variable::new(nested, Product::new(0, 1)));
+            if context.is_underconstrained(&rule.name) {
+                local_arrangements.insert(rule.name.clone(), Variable::new(nested, Product::new(0, 1)));
+            }
         }
 
         // Step 2: Create public arrangements for published relations.
@@ -635,7 +637,9 @@ where
 
         // Step 1: Create new recursive variables for each rule.
         for name in publish.iter() {
-            local_arrangements.insert(name.to_string(), Variable::new(nested, Product::new(0, 1)));
+            if context.is_underconstrained(name) {
+                local_arrangements.insert(name.to_string(), Variable::new(nested, Product::new(0, 1)));
+            }
         }
 
         // Step 2: Create public arrangements for published relations.
