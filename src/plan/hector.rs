@@ -230,6 +230,7 @@ impl Implementable for Hector {
                 // actually experience change), we construct a delta query
                 // driven by changes to that binding.
 
+                // @TODO only do it for distinct attributes
                 let changes = self.bindings.iter().enumerate()
                     .flat_map(|(idx, delta_binding)| match delta_binding {
                         Binding::Attribute(delta_binding) => {
