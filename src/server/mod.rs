@@ -475,20 +475,6 @@ where
         };
 
         self.register(req);
-
-        // let rel_map = implement(name, scope, &mut self.context);
-
-        // for (name, trace) in rel_map.into_iter() {
-        //     self.register_global_arrangement(name, trace);
-        // }
-
-        // self.context
-        //     .global_arrangement(name)
-        //     .expect("Relation of interest wasn't actually implemented.");
-
-        // self.interest(name, scope)
-        //     .import_named(scope, name)
-        //     .as_collection(|tuple, _| tuple.clone())
     }
 
     /// Helper for registering, publishing, and indicating interest in
