@@ -38,9 +38,9 @@ impl Sourceable for Source {
         scope: &G,
         names: Vec<String>,
     ) -> Stream<G, (usize, ((Value, Value), u64, isize))> {
-        match self {
-            &Source::CsvFile(ref source) => source.source(scope, names),
-            &Source::JsonFile(ref source) => source.source(scope, names),
+        match *self {
+            Source::CsvFile(ref source) => source.source(scope, names),
+            Source::JsonFile(ref source) => source.source(scope, names),
         }
     }
 }

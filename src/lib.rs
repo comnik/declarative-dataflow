@@ -80,8 +80,17 @@ pub enum Value {
     Uuid([u8; 16]),
 }
 
+/// A client-facing, non-exceptional error.
+#[derive(Debug)]
+pub struct Error {
+    /// Error category.
+    pub category: &'static str,
+    /// Free-frorm description.
+    pub message: String,
+}
+
 /// A (tuple, time, diff) triple, as sent back to clients.
-pub type Result = (Vec<Value>, u64, isize);
+pub type ResultDiff = (Vec<Value>, u64, isize);
 
 /// An entity, attribute, value triple.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -324,8 +333,8 @@ where
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
 
     /// Returns the offset at which values for this symbol occur.
-    fn offset(&self, sym: &Var) -> usize {
-        self.symbols().iter().position(|&x| *sym == x).unwrap()
+    fn offset(&self, sym: Var) -> usize {
+        self.symbols().iter().position(move |&x| sym == x).unwrap()
     }
 
     /// A collection with tuples partitioned by `syms`.
@@ -398,7 +407,7 @@ where
 
             // Values we'll just take in the order they were.
             for (idx, sym) in self.symbols().iter().enumerate() {
-                if sym_set.contains(sym) == false {
+                if !sym_set.contains(sym) {
                     value_offsets.push(idx);
                 }
             }
@@ -489,7 +498,7 @@ where
 
 //             // Values we'll just take in the order they were.
 //             for (idx, sym) in self.symbols().iter().enumerate() {
-//                 if sym_set.contains(sym) == false {
+//                 if !sym_set.contains(sym) {
 //                     value_offsets.push(idx);
 //                 }
 //             }
@@ -541,7 +550,7 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
     name: &str,
     scope: &mut S,
     context: &mut I,
-) -> HashMap<String, RelationHandle> {
+) -> Result<HashMap<String, RelationHandle>, Error> {
     scope.iterative::<u64, _, _>(|nested| {
         let publish = vec![name];
         let mut rules = collect_dependencies(&*context, &publish[..]);
@@ -551,13 +560,19 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
 
         // Step 0: Canonicalize, check uniqueness of bindings.
         if rules.is_empty() {
-            panic!("Couldn't find any rules for that name.");
+            return Err(Error {
+                category: "df.error.category/not-found",
+                message: format!("Couldn't find any rules for name {}.", name),
+            });
         }
 
         rules.sort_by(|x, y| x.name.cmp(&y.name));
         for index in 1..rules.len() - 1 {
             if rules[index].name == rules[index - 1].name {
-                panic!("Duplicate rule definitions for rule {}", rules[index].name);
+                return Err(Error {
+                    category: "df.error.category/conflict",
+                    message: format!("Duplicate rule definitions for rule {}", rules[index].name),
+                });
             }
         }
 
@@ -576,7 +591,10 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
 
                 result_map.insert(name.to_string(), trace);
             } else {
-                panic!("Attempted to publish undefined name {:?}", name);
+                return Err(Error {
+                    category: "df.error.category/not-found",
+                    message: format!("Attempted to publish undefined name {}.", name),
+                });
             }
         }
 
@@ -589,13 +607,23 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
 
         // Step 4: Complete named relations in a specific order (sorted by name).
         for (rule, execution) in rules.iter().zip(executions.drain(..)) {
-            local_arrangements
-                .remove(&rule.name)
-                .expect("Rule should be in local_arrangements, but isn't")
-                .set(&execution.tuples().distinct());
+            match local_arrangements.remove(&rule.name) {
+                None => {
+                    return Err(Error {
+                        category: "df.error.category/not-found",
+                        message: format!(
+                            "Rule {} should be in local arrangements, but isn't.",
+                            &rule.name
+                        ),
+                    });
+                }
+                Some(variable) => {
+                    variable.set(&execution.tuples().distinct());
+                }
+            }
         }
 
-        result_map
+        Ok(result_map)
     })
 }
 
@@ -604,7 +632,7 @@ pub fn implement_neu<S, I>(
     name: &str,
     scope: &mut S,
     context: &mut I,
-) -> HashMap<String, RelationHandle>
+) -> Result<HashMap<String, RelationHandle>, Error>
 where
     S: Scope<Timestamp = u64>,
     I: ImplContext,
@@ -618,13 +646,19 @@ where
 
         // Step 0: Canonicalize, check uniqueness of bindings.
         if rules.is_empty() {
-            panic!("Couldn't find any rules for that name.");
+            return Err(Error {
+                category: "df.error.category/not-found",
+                message: format!("Couldn't find any rules for name {}.", name),
+            });
         }
 
         rules.sort_by(|x, y| x.name.cmp(&y.name));
         for index in 1..rules.len() - 1 {
             if rules[index].name == rules[index - 1].name {
-                panic!("Duplicate rule definitions for rule {}", rules[index].name);
+                return Err(Error {
+                    category: "df.error.category/conflict",
+                    message: format!("Duplicate rule definitions for rule {}", rules[index].name),
+                });
             }
         }
 
@@ -651,7 +685,10 @@ where
 
                 result_map.insert(name.to_string(), trace);
             } else {
-                panic!("Attempted to publish undefined name {:?}", name);
+                return Err(Error {
+                    category: "df.error.category/not-found",
+                    message: format!("Attempted to publish undefined name {}.", name),
+                });
             }
         }
 
@@ -673,12 +710,22 @@ where
 
         // Step 4: Complete named relations in a specific order (sorted by name).
         for (rule, execution) in rules.iter().zip(executions.drain(..)) {
-            local_arrangements
-                .remove(&rule.name)
-                .expect("Rule should be in local_arrangements, but isn't")
-                .set(&execution.tuples().distinct());
+            match local_arrangements.remove(&rule.name) {
+                None => {
+                    return Err(Error {
+                        category: "df.error.category/not-found",
+                        message: format!(
+                            "Rule {} should be in local arrangements, but isn't.",
+                            &rule.name
+                        ),
+                    });
+                }
+                Some(variable) => {
+                    variable.set(&execution.tuples().distinct());
+                }
+            }
         }
 
-        result_map
+        Ok(result_map)
     })
 }

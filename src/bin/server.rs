@@ -40,8 +40,8 @@ use slab::Slab;
 
 use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::server::{Config, CreateAttribute, Error, Request, Server};
-use declarative_dataflow::Result;
+use declarative_dataflow::server::{Config, CreateAttribute, Request, Server};
+use declarative_dataflow::{Error, ResultDiff};
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
@@ -125,7 +125,7 @@ fn main() {
         let (send_cli, recv_cli) = mio::channel::channel();
 
         // setup results channel
-        let (send_results, recv_results) = mio::channel::channel::<(String, Vec<Result>)>();
+        let (send_results, recv_results) = mio::channel::channel::<(String, Vec<ResultDiff>)>();
 
         // setup errors channel
         let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<Error>)>();
@@ -299,7 +299,7 @@ fn main() {
                                     info!("NO INTEREST FOR THIS RESULT");
                                 }
                                 Some(tokens) => {
-                                    let serialized = serde_json::to_string::<(String, Vec<Result>)>(
+                                    let serialized = serde_json::to_string::<(String, Vec<ResultDiff>)>(
                                         &(query_name, results),
                                     ).expect("failed to serialize outputs");
                                     let msg = ws::Message::text(serialized);
@@ -500,30 +500,36 @@ fn main() {
                                 worker.dataflow::<u64, _, _>(|scope| {
                                     let name = req.name.clone();
 
-                                    server
-                                        .interest(&req.name, scope)
-                                        .import_named(scope, &req.name)
-                                    // @TODO clone entire batches instead of flattening
-                                        .as_collection(|tuple,_| tuple.clone())
-                                        .inner
-                                    // .stream
-                                    // .map(|batch| (*batch).clone())
-                                        .unary_notify(
-                                            Exchange::new(move |_| owner as u64),
-                                            "ResultsRecv",
-                                            vec![],
-                                            move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
+                                    match server.interest(&req.name, scope) {
+                                        Err(error) => {
+                                            send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                        }
+                                        Ok(trace) => {
+                                            trace
+                                                .import_named(scope, &req.name)
+                                            // @TODO clone entire batches instead of flattening
+                                                .as_collection(|tuple,_| tuple.clone())
+                                                .inner
+                                            // .stream
+                                            // .map(|batch| (*batch).clone())
+                                                .unary_notify(
+                                                    Exchange::new(move |_| owner as u64),
+                                                    "ResultsRecv",
+                                                    vec![],
+                                                    move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
 
-                                                // due to the exchange pact, this closure is only
-                                                // executed by the owning worker
+                                                        // due to the exchange pact, this closure is only
+                                                        // executed by the owning worker
 
-                                                input.for_each(|_time, data| {
-                                                    send_results_handle
-                                                        .send((name.clone(), data.to_vec()))
-                                                        .unwrap();
-                                                });
-                                            })
-                                        .probe_with(&mut server.probe);
+                                                        input.for_each(|_time, data| {
+                                                            send_results_handle
+                                                                .send((name.clone(), data.to_vec()))
+                                                                .unwrap();
+                                                        });
+                                                    })
+                                                .probe_with(&mut server.probe);
+                                        }
+                                    }
                                 });
                             }
                         }
@@ -542,7 +548,11 @@ fn main() {
                                 }
                             });
                         }
-                        Request::AdvanceInput(name, tx) => server.advance_input(name, tx),
+                        Request::AdvanceInput(name, tx) => {
+                            if let Err(error) = server.advance_input(name, tx) {
+                                send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                            }
+                        },
                         Request::CloseInput(name) => server.close_input(name),
                     }
                 }

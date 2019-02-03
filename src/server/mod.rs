@@ -18,7 +18,7 @@ use crate::plan::{ImplContext, Implementable};
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
 use crate::{implement, implement_neu, CollectionIndex, RelationHandle, TraceKeyHandle};
-use crate::{Aid, Eid, Value};
+use crate::{Aid, Eid, Error, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -46,15 +46,6 @@ impl Default for Config {
             enable_meta: false,
         }
     }
-}
-
-/// A client-facing, non-exceptional error.
-#[derive(Debug)]
-pub struct Error {
-    /// Error category.
-    pub category: &'static str,
-    /// Free-frorm description.
-    pub message: String,
 }
 
 /// Transaction data. Conceptually a pair (Datom, diff) but it's kept
@@ -356,7 +347,7 @@ impl<Token: Hash> Server<Token> {
         &mut self,
         name: &str,
         scope: &mut S,
-    ) -> &mut TraceKeyHandle<Vec<Value>, u64, isize> {
+    ) -> Result<&mut TraceKeyHandle<Vec<Value>, u64, isize>, Error> {
         match name {
             "df.timely/operates" => {
                 // use timely::logging::{BatchLogger, TimelyEvent};
@@ -380,43 +371,45 @@ impl<Token: Hash> Server<Token> {
             _ => {
                 if self.context.global_arrangements.contains_key(name) {
                     // Rule is already implemented.
-                    self.context.global_arrangement(name).unwrap()
+                    Ok(self.context.global_arrangement(name).unwrap())
                 } else if self.config.enable_optimizer == true {
-                    let rel_map = implement_neu(name, scope, &mut self.context);
+                    let rel_map = implement_neu(name, scope, &mut self.context)?;
 
                     for (name, trace) in rel_map.into_iter() {
                         self.register_global_arrangement(name, trace);
                     }
 
-                    self.context
-                        .global_arrangement(name)
-                        .expect("Relation of interest wasn't actually implemented.")
+                    match self.context.global_arrangement(name) {
+                        None => Err(Error {
+                            category: "df.error.category/fault",
+                            message: format!(
+                                "Relation of interest ({}) wasn't actually implemented.",
+                                name
+                            ),
+                        }),
+                        Some(trace) => Ok(trace),
+                    }
                 } else {
-                    let rel_map = implement(name, scope, &mut self.context);
+                    let rel_map = implement(name, scope, &mut self.context)?;
 
                     for (name, trace) in rel_map.into_iter() {
                         self.register_global_arrangement(name, trace);
                     }
 
-                    self.context
-                        .global_arrangement(name)
-                        .expect("Relation of interest wasn't actually implemented.")
+                    match self.context.global_arrangement(name) {
+                        None => Err(Error {
+                            category: "df.error.category/fault",
+                            message: format!(
+                                "Relation of interest ({}) wasn't actually implemented.",
+                                name
+                            ),
+                        }),
+                        Some(trace) => Ok(trace),
+                    }
                 }
             }
         }
     }
-
-    // /// Handle an AttributeInterest request.
-    // pub fn attribute_interest<S: Scope<Timestamp = u64>>
-    //     (&mut self, name: &str, scope: &mut S) -> Collection<S, Vec<Value>, isize>
-    // {
-    //     self.attributes
-    //         .get_mut(name)
-    //         .expect(&format!("Could not find attribute {:?}", name))
-    //         .import_named(scope, name)
-    //         .as_collection(|e, v| vec![e.clone(), v.clone()])
-    //         .probe_with(&mut self.probe)
-    // }
 
     /// Handle a Register request.
     pub fn register(&mut self, req: Register) {
@@ -526,7 +519,7 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handle an AdvanceInput request.
-    pub fn advance_input(&mut self, name: Option<String>, tx: u64) {
+    pub fn advance_input(&mut self, name: Option<String>, tx: u64) -> Result<(), Error> {
         match name {
             None => {
                 for handle in self.input_handles.values_mut() {
@@ -534,15 +527,18 @@ impl<Token: Hash> Server<Token> {
                     handle.flush();
                 }
             }
-            Some(name) => {
-                let handle = self
-                    .input_handles
-                    .get_mut(&name)
-                    .expect(&format!("Input {} does not exist.", name));
-
-                handle.advance_to(tx);
-                handle.flush();
-            }
+            Some(name) => match self.input_handles.get_mut(&name) {
+                None => {
+                    return Err(Error {
+                        category: "df.error.category/not-found",
+                        message: format!("Input {} does not exist.", name),
+                    });
+                }
+                Some(handle) => {
+                    handle.advance_to(tx);
+                    handle.flush();
+                }
+            },
         }
 
         if self.config.enable_history == false {
@@ -560,6 +556,8 @@ impl<Token: Hash> Server<Token> {
                 trace.advance_by(frontier_ref);
             }
         }
+
+        Ok(())
     }
 
     /// Handle a CloseInput request.
@@ -587,9 +585,12 @@ impl<Token: Hash> Server<Token> {
             publish: vec![publish_name],
         });
 
-        self.interest(&interest_name, scope)
-            .import_named(scope, &interest_name)
-            .as_collection(|tuple, _| tuple.clone())
-            .probe_with(&mut self.probe)
+        match self.interest(&interest_name, scope) {
+            Err(error) => panic!("{:?}", error),
+            Ok(trace) => trace
+                .import_named(scope, &interest_name)
+                .as_collection(|tuple, _| tuple.clone())
+                .probe_with(&mut self.probe),
+        }
     }
 }

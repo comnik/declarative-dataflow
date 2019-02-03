@@ -21,9 +21,9 @@ fn main() {
 
     for readline in in_file.lines() {
 
-        let line = readline.ok().expect("read error");
+        let line = readline.expect("read error");
 
-        if !line.starts_with('#') && line.len() > 0 {
+        if !line.starts_with('#') && !line.is_empty() {
 
             let mut elts = line[..].split_whitespace();
             let e = elts.next().unwrap();
