@@ -5,7 +5,7 @@ extern crate timely;
 
 use timely::dataflow::{Scope, Stream};
 
-use Value;
+use crate::Value;
 
 pub mod csv_file;
 pub use self::csv_file::CsvFile;

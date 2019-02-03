@@ -5,17 +5,34 @@ use std::collections::HashMap;
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
-pub use binding::{BinaryPredicate as Predicate, BinaryPredicateBinding, Binding};
-use plan::{ImplContext, Implementable};
-use Relation;
-use {CollectionRelation, Value, Var, VariableMap};
+pub use crate::binding::{BinaryPredicate as Predicate, BinaryPredicateBinding, Binding};
+use crate::plan::{ImplContext, Implementable};
+use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
-#[inline(always)]fn lt(a: &Value, b: &Value) -> bool { a < b }
-#[inline(always)]fn lte(a: &Value, b: &Value) -> bool { a <= b }
-#[inline(always)]fn gt(a: &Value, b: &Value) -> bool { a > b }
-#[inline(always)]fn gte(a: &Value, b: &Value) -> bool { a >= b }
-#[inline(always)]fn eq(a: &Value, b: &Value) -> bool { a == b }
-#[inline(always)]fn neq(a: &Value, b: &Value) -> bool { a != b }
+#[inline(always)]
+fn lt(a: &Value, b: &Value) -> bool {
+    a < b
+}
+#[inline(always)]
+fn lte(a: &Value, b: &Value) -> bool {
+    a <= b
+}
+#[inline(always)]
+fn gt(a: &Value, b: &Value) -> bool {
+    a > b
+}
+#[inline(always)]
+fn gte(a: &Value, b: &Value) -> bool {
+    a >= b
+}
+#[inline(always)]
+fn eq(a: &Value, b: &Value) -> bool {
+    a == b
+}
+#[inline(always)]
+fn neq(a: &Value, b: &Value) -> bool {
+    a != b
+}
 
 /// A plan stage filtering source tuples by the specified
 /// predicate. Frontends are responsible for ensuring that the source

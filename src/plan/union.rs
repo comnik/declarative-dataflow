@@ -5,9 +5,9 @@ use timely::dataflow::Scope;
 
 use differential_dataflow::operators::Threshold;
 
-use binding::Binding;
-use plan::{ImplContext, Implementable};
-use {CollectionRelation, Relation, Var, VariableMap};
+use crate::binding::Binding;
+use crate::plan::{ImplContext, Implementable};
+use crate::{CollectionRelation, Relation, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible

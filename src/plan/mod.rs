@@ -6,10 +6,10 @@ use std::sync::atomic::{self, AtomicUsize};
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
-use binding::{AttributeBinding, Binding, ConstantBinding};
-use Rule;
-use {Aid, Eid, Value, Var};
-use {CollectionIndex, CollectionRelation, Relation, RelationHandle, VariableMap};
+use crate::binding::{AttributeBinding, Binding, ConstantBinding};
+use crate::Rule;
+use crate::{Aid, Eid, Value, Var};
+use crate::{CollectionIndex, CollectionRelation, Relation, RelationHandle, VariableMap};
 
 pub mod aggregate;
 pub mod antijoin;
@@ -285,7 +285,7 @@ impl Implementable for Plan {
                 antijoin.implement(nested, local_arrangements, context)
             }
             &Plan::Negate(ref plan) => {
-                let mut rel = plan.implement(nested, local_arrangements, context);
+                let rel = plan.implement(nested, local_arrangements, context);
                 CollectionRelation {
                     symbols: rel.symbols().to_vec(),
                     tuples: rel.tuples().negate(),

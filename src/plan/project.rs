@@ -3,10 +3,10 @@
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
-use binding::Binding;
-use plan::{next_id, ImplContext, Implementable};
-use {Aid, Eid, Value, Var};
-use {CollectionRelation, Relation, VariableMap};
+use crate::binding::Binding;
+use crate::plan::{next_id, ImplContext, Implementable};
+use crate::{Aid, Eid, Value, Var};
+use crate::{CollectionRelation, Relation, VariableMap};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible

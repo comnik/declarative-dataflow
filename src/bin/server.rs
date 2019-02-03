@@ -110,7 +110,7 @@ fn main() {
             client: None,
             cmd: serde_json::to_string::<Vec<Request>>(&builtins).expect("failed to serialize built-in request"),
         };
-        
+
         // setup serialized command queue (shared between all workers)
         let mut sequencer: Sequencer<Command> =
             Sequencer::preloaded(worker, Instant::now(), VecDeque::from(vec![preload_command]));

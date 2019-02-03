@@ -6,9 +6,8 @@ use timely::dataflow::Scope;
 use differential_dataflow::operators::Join;
 use differential_dataflow::operators::Threshold;
 
-use plan::{ImplContext, Implementable};
-use Relation;
-use {CollectionRelation, Var, VariableMap};
+use crate::plan::{ImplContext, Implementable};
+use crate::{CollectionRelation, Relation, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
 /// symbols. Throws if the sources are not union-compatible, i.e. bind

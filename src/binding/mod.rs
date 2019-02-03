@@ -1,6 +1,6 @@
 //! Binding language, mainly for use in Hector-powered plans.
 
-use {Aid, Value, Var};
+use crate::{Aid, Value, Var};
 
 /// A thing that can act as a binding of values to symbols.
 pub trait AsBinding {

@@ -7,8 +7,8 @@ use differential_dataflow::difference::DiffPair;
 use differential_dataflow::operators::Join as JoinMap;
 use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
 
-use plan::{ImplContext, Implementable};
-use {CollectionRelation, Relation, Value, Var, VariableMap};
+use crate::plan::{ImplContext, Implementable};
+use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};
 

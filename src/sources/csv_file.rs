@@ -9,9 +9,8 @@ use std::path::Path;
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
 
-use {Eid, Value};
-
-use sources::Sourceable;
+use crate::sources::Sourceable;
+use crate::{Eid, Value};
 
 /// A local filesystem data source.
 #[derive(Serialize, Deserialize, Clone, Debug)]

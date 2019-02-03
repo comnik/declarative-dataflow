@@ -5,9 +5,8 @@ use std::collections::HashMap;
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
-use plan::{ImplContext, Implementable};
-use Relation;
-use {CollectionRelation, Value, Var, VariableMap};
+use crate::plan::{ImplContext, Implementable};
+use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
 /// Permitted functions.
 #[derive(Serialize, Deserialize, Clone, Debug)]

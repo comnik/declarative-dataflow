@@ -22,10 +22,10 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{AsCollection, Collection, Data, Hashable};
 
-use binding::{AsBinding, BinaryPredicate, Binding};
-use plan::{ImplContext, Implementable};
-use timestamp::altneu::AltNeu;
-use {CollectionRelation, LiveIndex, Value, Var, VariableMap};
+use crate::binding::{AsBinding, BinaryPredicate, Binding};
+use crate::plan::{ImplContext, Implementable};
+use crate::timestamp::altneu::AltNeu;
+use crate::{CollectionRelation, LiveIndex, Value, Var, VariableMap};
 
 /// A type capable of extending a stream of prefixes. Implementors of
 /// `PrefixExtension` provide types and methods for extending a
@@ -39,18 +39,18 @@ trait PrefixExtender<G: Scope> {
     /// Annotates prefixes with the number of extensions the relation would propose.
     fn count(
         &mut self,
-        &Collection<G, (Self::Prefix, usize, usize)>,
-        usize,
+        prefixes: &Collection<G, (Self::Prefix, usize, usize)>,
+        index: usize,
     ) -> Collection<G, (Self::Prefix, usize, usize)>;
     /// Extends each prefix with corresponding extensions.
     fn propose(
         &mut self,
-        &Collection<G, Self::Prefix>,
+        prefixes: &Collection<G, Self::Prefix>,
     ) -> Collection<G, (Self::Prefix, Self::Extension)>;
     /// Restricts proposed extensions by those the extender would have proposed.
     fn validate(
         &mut self,
-        &Collection<G, (Self::Prefix, Self::Extension)>,
+        extensions: &Collection<G, (Self::Prefix, Self::Extension)>,
     ) -> Collection<G, (Self::Prefix, Self::Extension)>;
 }
 
@@ -218,7 +218,7 @@ impl Implementable for Hector {
 
                 // We cache aggressively, to avoid importing and
                 // wrapping things more than once.
-                
+
                 let mut forward_import = HashMap::new();
                 let mut forward_alt = HashMap::new();
                 let mut forward_neu = HashMap::new();
@@ -252,7 +252,7 @@ impl Implementable for Hector {
                                     prefix_symbols.push(constant_binding.symbol.clone());
 
                                     let match_v = constant_binding.value.clone();
-                                        
+
                                     // Guaranteed to intersect with offset zero at this point.
                                     match direction(&prefix_symbols, &delta_binding.symbols).unwrap() {
                                         Direction::Forward(_) => {
@@ -302,7 +302,7 @@ impl Implementable for Hector {
                                     .enter(&scope)
                                     .as_collection(|(e,v),()| vec![e.clone(), v.clone()])
                             };
-                            
+
                             for target in self.variables.iter() {
                                 match AsBinding::binds(&prefix_symbols, target) {
                                     Some(_) => { /* already bound */ continue },
@@ -369,7 +369,7 @@ impl Implementable for Hector {
                                                                         let neu1 = is_neu.clone();
                                                                         let neu2 = is_neu.clone();
                                                                         let neu3 = is_neu.clone();
-                                                                        
+
                                                                         imported.enter_at(
                                                                             &scope,
                                                                             move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
@@ -393,7 +393,7 @@ impl Implementable for Hector {
                                                                         let neu1 = is_neu.clone();
                                                                         let neu2 = is_neu.clone();
                                                                         let neu3 = is_neu.clone();
-                                                                        
+
                                                                         imported.enter_at(
                                                                             &scope,
                                                                             move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
@@ -423,7 +423,7 @@ impl Implementable for Hector {
                                                 out
                                             })
                                     }
-                                }    
+                                }
                             }
 
                             if self.variables == prefix_symbols {
@@ -600,7 +600,7 @@ where
         &mut self,
         prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>,
     ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
-        prefixes.map(|_prefix| panic!("BinaryPredicateExtender should never propose."))
+        prefixes.map(|_prefix| panic!("BinaryPredicateExtender should never be asked to propose."))
     }
 
     fn validate(

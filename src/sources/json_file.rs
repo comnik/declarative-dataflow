@@ -13,9 +13,8 @@ use timely::dataflow::{Scope, Stream};
 
 // use sources::json_file::flate2::read::GzDecoder;
 
-use {Eid, Value};
-
-use sources::Sourceable;
+use crate::sources::Sourceable;
+use crate::{Eid, Value};
 
 /// A local filesystem data source containing JSON objects.
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -63,8 +62,7 @@ impl Sourceable for JsonFile {
                                 // @TODO parse only the names we are interested in
                                 // @TODO run with Value = serde_json::Value
 
-                                let mut obj: serde_json::Value =
-                                    serde_json::from_str(&line).unwrap();
+                                let obj: serde_json::Value = serde_json::from_str(&line).unwrap();
                                 let obj_map = obj.as_object().unwrap();
 
                                 // In the common case we assume that all objects share

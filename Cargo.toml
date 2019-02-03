@@ -2,6 +2,7 @@
 name = "declarative_dataflow"
 version = "0.1.0"
 authors = ["Frank McSherry <fmcsherry@me.com>", "Nikolas Göbel <me@nikolasgoebel.com>"]
+edition = "2018"
 
 [dependencies]
 jemallocator = "0.1.8"

@@ -14,12 +14,11 @@ use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
-use plan::{ImplContext, Implementable};
-use sources::{Source, Sourceable};
-
-use Rule;
-use {implement, implement_neu, CollectionIndex, RelationHandle, TraceKeyHandle};
-use {Aid, Eid, Value};
+use crate::plan::{ImplContext, Implementable};
+use crate::sources::{Source, Sourceable};
+use crate::Rule;
+use crate::{implement, implement_neu, CollectionIndex, RelationHandle, TraceKeyHandle};
+use crate::{Aid, Eid, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -376,7 +375,7 @@ impl<Token: Hash> Server<Token> {
                 } else if self.config.enable_optimizer == true {
                     let rel_map = implement_neu(name, scope, &mut self.context);
 
-                    for (name, mut trace) in rel_map.into_iter() {
+                    for (name, trace) in rel_map.into_iter() {
                         self.register_global_arrangement(name, trace);
                     }
 
@@ -386,7 +385,7 @@ impl<Token: Hash> Server<Token> {
                 } else {
                     let rel_map = implement(name, scope, &mut self.context);
 
-                    for (name, mut trace) in rel_map.into_iter() {
+                    for (name, trace) in rel_map.into_iter() {
                         self.register_global_arrangement(name, trace);
                     }
 

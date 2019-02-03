@@ -6,9 +6,8 @@ use timely::dataflow::Scope;
 
 use differential_dataflow::AsCollection;
 
-use plan::{ImplContext, Implementable};
-use Relation;
-use {Aid, CollectionRelation, Value, Var, VariableMap};
+use crate::plan::{ImplContext, Implementable};
+use crate::{Aid, CollectionRelation, Relation, Value, Var, VariableMap};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.

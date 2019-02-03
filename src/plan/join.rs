@@ -5,10 +5,10 @@ use timely::dataflow::Scope;
 
 use differential_dataflow::operators::JoinCore;
 
-use binding::Binding;
-use plan::{next_id, ImplContext, Implementable};
-use {Aid, Eid, Value, Var};
-use {CollectionRelation, Relation, VariableMap};
+use crate::binding::Binding;
+use crate::plan::{next_id, ImplContext, Implementable};
+use crate::{Aid, Eid, Value, Var};
+use crate::{CollectionRelation, Relation, VariableMap};
 
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
