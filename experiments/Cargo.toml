@@ -5,9 +5,8 @@ authors = ["Nikolas Göbel <me@nikolasgoebel.com>"]
 
 [dependencies]
 jemallocator = "0.1.8"
-timely = { git = "https://github.com/clockworksio/timely-dataflow", rev = "25eff5ca6543a1768a3944c0b93a11f88cd798f8", features = ["bincode"] }
-# timely = { path = "/Users/niko/repos/timely-dataflow", features = ["bincode"] }
-differential-dataflow = { path = "/Users/niko/repos/differential-dataflow" }
+timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
+differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
 graph_map = "0.1"
 
 [dependencies.declarative_dataflow]

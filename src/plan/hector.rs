@@ -23,6 +23,7 @@ use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{AsCollection, Collection, Data, Hashable};
 
 use crate::binding::{AsBinding, BinaryPredicate, Binding};
+use crate::binding::{AttributeBinding, BinaryPredicateBinding, ConstantBinding};
 use crate::plan::{ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
 use crate::{CollectionRelation, LiveIndex, Value, Var, VariableMap};
@@ -54,46 +55,62 @@ trait PrefixExtender<G: Scope> {
     ) -> Collection<G, (Self::Prefix, Self::Extension)>;
 }
 
-// The only thing we know how to make an extender out of (at the
-// moment) is a collection. This could be generalized to any type that
-// can return something implementing PrefixExtender.
-
-trait IntoExtender<'a, S, K, V, TrCount, TrPropose, TrValidate>
+trait IntoExtender<'a, S, V>
 where
-    S: Scope + ScopeParent,
-    K: Data + Hash,
-    V: Data + Hash,
+    S: Scope + ScopeParent + 'a,
     S::Timestamp: Lattice + Data + Timestamp,
-    TrCount: TraceReader<K, (), AltNeu<S::Timestamp>, isize> + Clone,
-    TrPropose: TraceReader<K, V, AltNeu<S::Timestamp>, isize> + Clone,
-    TrValidate: TraceReader<(K, V), (), AltNeu<S::Timestamp>, isize> + Clone,
+    // K: Data + Hash,
+    V: Data + Hash,
 {
-    fn extender_using<P, F: Fn(&P) -> K>(
+    // F: 'static + Fn(&P) -> K
+    fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
-        logic: F,
-    ) -> CollectionExtender<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate>;
+        prefix_symbols: &B,
+    ) -> Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V> + 'a)>;
 }
 
-impl<'a, S, K, V, TrCount, TrPropose, TrValidate>
-    IntoExtender<'a, S, K, V, TrCount, TrPropose, TrValidate>
-    for LiveIndex<Child<'a, S, AltNeu<S::Timestamp>>, K, V, TrCount, TrPropose, TrValidate>
+impl<'a, S> IntoExtender<'a, S, Value> for ConstantBinding
 where
-    S: Scope + ScopeParent,
-    K: Data + Hash,
-    V: Data + Hash,
+    S: Scope + ScopeParent + 'a,
     S::Timestamp: Lattice + Data + Timestamp,
-    TrCount: TraceReader<K, (), AltNeu<S::Timestamp>, isize> + Clone,
-    TrPropose: TraceReader<K, V, AltNeu<S::Timestamp>, isize> + Clone,
-    TrValidate: TraceReader<(K, V), (), AltNeu<S::Timestamp>, isize> + Clone,
 {
-    fn extender_using<P, F: Fn(&P) -> K>(
+    fn into_extender<P: Data + IndexNode<Value>, B: AsBinding + std::fmt::Debug>(
         &self,
-        logic: F,
-    ) -> CollectionExtender<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate> {
-        CollectionExtender {
+        _prefix_symbols: &B,
+    ) -> Box<
+        (dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = Value>
+             + 'a),
+    > {
+        Box::new(ConstantExtender {
             phantom: std::marker::PhantomData,
-            indices: self.clone(),
-            key_selector: Rc::new(logic),
+            value: self.value.clone(),
+        })
+    }
+}
+
+impl<'a, S, V> IntoExtender<'a, S, V> for BinaryPredicateBinding
+where
+    S: Scope + ScopeParent + 'a,
+    S::Timestamp: Lattice + Data + Timestamp,
+    V: Data + Hash,
+{
+    fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
+        &self,
+        prefix_symbols: &B,
+    ) -> Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V> + 'a)>
+    {
+        match direction(prefix_symbols, &self.symbols) {
+            Err(_msg) => {
+                // We won't panic here, this just means the predicate's symbols
+                // aren't sufficiently bound by the prefixes yet.
+                //
+                panic!("TODO")
+            }
+            Ok(direction) => Box::new(BinaryPredicateExtender {
+                phantom: std::marker::PhantomData,
+                predicate: self.predicate.clone(),
+                direction: direction,
+            }),
         }
     }
 }
@@ -322,31 +339,20 @@ impl Implementable for Hector {
                                             if other.binds(target).is_none() { continue; }
 
                                             match other {
+                                                Binding::Not(other) => {
+                                                    unimplemented!();
+                                                    // extenders.push(Box::new(AntijoinExtender {
+                                                    //     phantom: std::marker::PhantomData,
+                                                    //     extender: other.binding.into_extender(),
+                                                    // }));
+                                                }
                                                 Binding::Constant(other) => {
-                                                    extenders.push(Box::new(ConstantExtender {
-                                                        phantom: std::marker::PhantomData,
-                                                        value: other.value.clone(),
-                                                    }));
+                                                    extenders.push(other.into_extender(&prefix_symbols));
                                                 }
                                                 Binding::BinaryPredicate(other) => {
-                                                    match direction(&prefix_symbols, &other.symbols) {
-                                                        Err(_msg) => {
-                                                            // We won't panic here, this just means the predicate's symbols
-                                                            // aren't sufficiently bound by the prefixes yet.
-                                                            //
-                                                            // panic!(msg)
-                                                        },
-                                                        Ok(direction) => {
-                                                            extenders.push(Box::new(BinaryPredicateExtender {
-                                                                phantom: std::marker::PhantomData,
-                                                                predicate: other.predicate.clone(),
-                                                                direction: direction,
-                                                            }));
-                                                        }
-                                                    }
+                                                    extenders.push(other.into_extender(&prefix_symbols));
                                                 }
                                                 Binding::Attribute(other) => {
-
                                                     let (is_neu, forward_cache, reverse_cache) = if other_idx < idx {
                                                         (false, &mut forward_alt, &mut reverse_alt)
                                                     } else {
@@ -357,53 +363,71 @@ impl Implementable for Hector {
                                                         Err(msg) => panic!(msg),
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
-                                                                let forward = forward_cache.entry(&other.source_attribute)
-                                                                    .or_insert_with(|| {
-                                                                        let imported = forward_import.entry(&other.source_attribute)
-                                                                            .or_insert_with(|| {
-                                                                                context.forward_index(&other.source_attribute).unwrap()
-                                                                                    .import(&scope.parent.parent)
-                                                                                    .enter(&scope.parent)
-                                                                            });
+                                                                if !forward_cache.contains_key(&other.source_attribute) {
+                                                                    let imported = forward_import.entry(&other.source_attribute)
+                                                                        .or_insert_with(|| {
+                                                                            context.forward_index(&other.source_attribute).unwrap()
+                                                                                .import(&scope.parent.parent)
+                                                                                .enter(&scope.parent)
+                                                                        });
 
-                                                                        let neu1 = is_neu.clone();
-                                                                        let neu2 = is_neu.clone();
-                                                                        let neu3 = is_neu.clone();
+                                                                    let neu1 = is_neu.clone();
+                                                                    let neu2 = is_neu.clone();
+                                                                    let neu3 = is_neu.clone();
 
+                                                                    forward_cache.insert(
+                                                                        other.source_attribute.clone(),
                                                                         imported.enter_at(
                                                                             &scope,
                                                                             move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
                                                                             move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
                                                                             move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
                                                                         )
-                                                                    });
+                                                                    );
+                                                                }
 
-                                                                extenders.push(Box::new(forward.extender_using(move |tuple: &Vec<Value>| tuple.index(offset))));
-                                                            }
+                                                                let forward = forward_cache.get(&other.source_attribute)
+                                                                    .expect("Source attribute not found in forward cache.");
+
+                                                                extenders.push(Box::new(CollectionExtender {
+                                                                    phantom: std::marker::PhantomData,
+                                                                    indices: forward.clone(),
+                                                                    key_selector: Rc::new(move |tuple: &Vec<Value>| tuple.index(offset)),
+                                                                }));
+                                                            },
                                                             Direction::Reverse(offset) => {
-                                                                let reverse = reverse_cache.entry(&other.source_attribute)
-                                                                    .or_insert_with(|| {
-                                                                        let imported = reverse_import.entry(&other.source_attribute)
-                                                                            .or_insert_with(|| {
-                                                                                context.reverse_index(&other.source_attribute).unwrap()
-                                                                                    .import(&scope.parent.parent)
-                                                                                    .enter(&scope.parent)
-                                                                            });
+                                                                if !reverse_cache.contains_key(&other.source_attribute) {
+                                                                    let imported = reverse_import.entry(&other.source_attribute)
+                                                                        .or_insert_with(|| {
+                                                                            context.reverse_index(&other.source_attribute).unwrap()
+                                                                                .import(&scope.parent.parent)
+                                                                                .enter(&scope.parent)
+                                                                        });
 
-                                                                        let neu1 = is_neu.clone();
-                                                                        let neu2 = is_neu.clone();
-                                                                        let neu3 = is_neu.clone();
+                                                                    let neu1 = is_neu.clone();
+                                                                    let neu2 = is_neu.clone();
+                                                                    let neu3 = is_neu.clone();
 
+                                                                    reverse_cache.insert(
+                                                                        other.source_attribute.clone(),
                                                                         imported.enter_at(
                                                                             &scope,
                                                                             move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
                                                                             move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
                                                                             move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
                                                                         )
-                                                                    });
+                                                                    );
+                                                                }
 
-                                                                extenders.push(Box::new(reverse.extender_using(move |tuple: &Vec<Value>| tuple.index(offset))));
-                                                            }
+                                                                let reverse = reverse_cache.get(&other.source_attribute)
+                                                                    .expect("Source attribute not found in reverse cache.");
+
+                                                                extenders.push(Box::new(CollectionExtender {
+                                                                    phantom: std::marker::PhantomData,
+                                                                    indices: reverse.clone(),
+                                                                    key_selector: Rc::new(move |tuple: &Vec<Value>| tuple.index(offset)),
+                                                                }));
+                                                            },
                                                         }
                                                     }
                                                 }
