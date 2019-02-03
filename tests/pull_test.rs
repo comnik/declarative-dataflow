@@ -1,9 +1,7 @@
 extern crate declarative_dataflow;
 extern crate timely;
 
-use std::cell::RefCell;
-use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::collections::HashSet;
 use std::sync::mpsc::channel;
 use std::time::Duration;
 
@@ -11,7 +9,8 @@ use timely::Configuration;
 
 use declarative_dataflow::plan::{Pull, PullLevel};
 use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Eid, Plan, Rule, Value};
+use declarative_dataflow::{Plan, Rule, Value};
+use Value::{Aid, Bool, Eid, Number, String};
 
 #[test]
 fn pull_level() {
@@ -22,11 +21,7 @@ fn pull_level() {
         let (e,) = (1,);
         let plan = Plan::PullLevel(PullLevel {
             variables: vec![],
-            plan: Box::new(Plan::MatchAV(
-                e.clone(),
-                "admin?".to_string(),
-                Value::Bool(false),
-            )),
+            plan: Box::new(Plan::MatchAV(e, "admin?".to_string(), Bool(false))),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
             path_attributes: vec![],
         });
@@ -53,29 +48,14 @@ fn pull_level() {
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(1, 100, "admin?".to_string(), Value::Bool(true)),
-                    TxData(1, 200, "admin?".to_string(), Value::Bool(false)),
-                    TxData(1, 300, "admin?".to_string(), Value::Bool(false)),
-                    TxData(
-                        1,
-                        100,
-                        "name".to_string(),
-                        Value::String("Mabel".to_string()),
-                    ),
-                    TxData(
-                        1,
-                        200,
-                        "name".to_string(),
-                        Value::String("Dipper".to_string()),
-                    ),
-                    TxData(
-                        1,
-                        300,
-                        "name".to_string(),
-                        Value::String("Soos".to_string()),
-                    ),
-                    TxData(1, 100, "age".to_string(), Value::Number(12)),
-                    TxData(1, 200, "age".to_string(), Value::Number(13)),
+                    TxData(1, 100, "admin?".to_string(), Bool(true)),
+                    TxData(1, 200, "admin?".to_string(), Bool(false)),
+                    TxData(1, 300, "admin?".to_string(), Bool(false)),
+                    TxData(1, 100, "name".to_string(), String("Mabel".to_string())),
+                    TxData(1, 200, "name".to_string(), String("Dipper".to_string())),
+                    TxData(1, 300, "name".to_string(), String("Soos".to_string())),
+                    TxData(1, 100, "age".to_string(), Number(12)),
+                    TxData(1, 200, "age".to_string(), Number(13)),
                 ],
             },
             0,
@@ -85,27 +65,20 @@ fn pull_level() {
         worker.step_while(|| server.is_any_outdated());
 
         let mut expected = HashSet::new();
+        expected.insert((vec![Eid(200), Aid("age".to_string()), Number(13)], 1));
         expected.insert((
             vec![
-                Value::Eid(200),
-                Value::Aid("age".to_string()),
-                Value::Number(13),
+                Eid(200),
+                Aid("name".to_string()),
+                String("Dipper".to_string()),
             ],
             1,
         ));
         expected.insert((
             vec![
-                Value::Eid(200),
-                Value::Aid("name".to_string()),
-                Value::String("Dipper".to_string()),
-            ],
-            1,
-        ));
-        expected.insert((
-            vec![
-                Value::Eid(300),
-                Value::Aid("name".to_string()),
-                Value::String("Soos".to_string()),
+                Eid(300),
+                Aid("name".to_string()),
+                String("Soos".to_string()),
             ],
             1,
         ));
@@ -158,29 +131,14 @@ fn pull_children() {
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(
-                        1,
-                        100,
-                        "name".to_string(),
-                        Value::String("Alice".to_string()),
-                    ),
-                    TxData(1, 100, "parent/child".to_string(), Value::Eid(300)),
-                    TxData(1, 200, "name".to_string(), Value::String("Bob".to_string())),
-                    TxData(1, 200, "parent/child".to_string(), Value::Eid(400)),
-                    TxData(
-                        1,
-                        300,
-                        "name".to_string(),
-                        Value::String("Mabel".to_string()),
-                    ),
-                    TxData(1, 300, "age".to_string(), Value::Number(13)),
-                    TxData(
-                        1,
-                        400,
-                        "name".to_string(),
-                        Value::String("Dipper".to_string()),
-                    ),
-                    TxData(1, 400, "age".to_string(), Value::Number(12)),
+                    TxData(1, 100, "name".to_string(), String("Alice".to_string())),
+                    TxData(1, 100, "parent/child".to_string(), Eid(300)),
+                    TxData(1, 200, "name".to_string(), String("Bob".to_string())),
+                    TxData(1, 200, "parent/child".to_string(), Eid(400)),
+                    TxData(1, 300, "name".to_string(), String("Mabel".to_string())),
+                    TxData(1, 300, "age".to_string(), Number(13)),
+                    TxData(1, 400, "name".to_string(), String("Dipper".to_string())),
+                    TxData(1, 400, "age".to_string(), Number(12)),
                 ],
             },
             0,
@@ -192,41 +150,41 @@ fn pull_children() {
         let mut expected = HashSet::new();
         expected.insert((
             vec![
-                Value::Eid(100),
-                Value::Aid("parent/child".to_string()),
-                Value::Eid(300),
-                Value::Aid("age".to_string()),
-                Value::Number(13),
+                Eid(100),
+                Aid("parent/child".to_string()),
+                Eid(300),
+                Aid("age".to_string()),
+                Number(13),
             ],
             1,
         ));
         expected.insert((
             vec![
-                Value::Eid(100),
-                Value::Aid("parent/child".to_string()),
-                Value::Eid(300),
-                Value::Aid("name".to_string()),
-                Value::String("Mabel".to_string()),
+                Eid(100),
+                Aid("parent/child".to_string()),
+                Eid(300),
+                Aid("name".to_string()),
+                String("Mabel".to_string()),
             ],
             1,
         ));
         expected.insert((
             vec![
-                Value::Eid(200),
-                Value::Aid("parent/child".to_string()),
-                Value::Eid(400),
-                Value::Aid("age".to_string()),
-                Value::Number(12),
+                Eid(200),
+                Aid("parent/child".to_string()),
+                Eid(400),
+                Aid("age".to_string()),
+                Number(12),
             ],
             1,
         ));
         expected.insert((
             vec![
-                Value::Eid(200),
-                Value::Aid("parent/child".to_string()),
-                Value::Eid(400),
-                Value::Aid("name".to_string()),
-                Value::String("Dipper".to_string()),
+                Eid(200),
+                Aid("parent/child".to_string()),
+                Eid(400),
+                Aid("name".to_string()),
+                String("Dipper".to_string()),
             ],
             1,
         ));
@@ -283,14 +241,14 @@ fn pull_children() {
 //             Transact {
 //                 tx: Some(0),
 //                 tx_data: vec![
-//                     TxData(1, 100, "name".to_string(), Value::String("Alice".to_string())),
-//                     TxData(1, 100, "parent/child".to_string(), Value::Eid(300)),
-//                     TxData(1, 200, "name".to_string(), Value::String("Bob".to_string())),
-//                     TxData(1, 200, "parent/child".to_string(), Value::Eid(400)),
-//                     TxData(1, 300, "name".to_string(), Value::String("Mabel".to_string())),
-//                     TxData(1, 300, "age".to_string(), Value::Number(13)),
-//                     TxData(1, 400, "name".to_string(), Value::String("Dipper".to_string())),
-//                     TxData(1, 400, "age".to_string(), Value::Number(12)),
+//                     TxData(1, 100, "name".to_string(), String("Alice".to_string())),
+//                     TxData(1, 100, "parent/child".to_string(), Eid(300)),
+//                     TxData(1, 200, "name".to_string(), String("Bob".to_string())),
+//                     TxData(1, 200, "parent/child".to_string(), Eid(400)),
+//                     TxData(1, 300, "name".to_string(), String("Mabel".to_string())),
+//                     TxData(1, 300, "age".to_string(), Number(13)),
+//                     TxData(1, 400, "name".to_string(), String("Dipper".to_string())),
+//                     TxData(1, 400, "age".to_string(), Number(12)),
 //                 ],
 //             },
 //             0,
@@ -356,27 +314,12 @@ fn pull() {
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(
-                        1,
-                        100,
-                        "name".to_string(),
-                        Value::String("rule".to_string()),
-                    ),
-                    TxData(1, 100, "join/binding".to_string(), Value::Eid(200)),
-                    TxData(1, 100, "join/binding".to_string(), Value::Eid(300)),
-                    TxData(
-                        1,
-                        200,
-                        "pattern/a".to_string(),
-                        Value::Aid("xyz".to_string()),
-                    ),
-                    TxData(1, 300, "pattern/e".to_string(), Value::Eid(12345)),
-                    TxData(
-                        1,
-                        300,
-                        "pattern/a".to_string(),
-                        Value::Aid("asd".to_string()),
-                    ),
+                    TxData(1, 100, "name".to_string(), String("rule".to_string())),
+                    TxData(1, 100, "join/binding".to_string(), Eid(200)),
+                    TxData(1, 100, "join/binding".to_string(), Eid(300)),
+                    TxData(1, 200, "pattern/a".to_string(), Aid("xyz".to_string())),
+                    TxData(1, 300, "pattern/e".to_string(), Eid(12345)),
+                    TxData(1, 300, "pattern/a".to_string(), Aid("asd".to_string())),
                 ],
             },
             0,
@@ -388,39 +331,39 @@ fn pull() {
         let mut expected = HashSet::new();
         expected.insert((
             vec![
-                Value::Eid(100),
-                Value::Aid("name".to_string()),
-                Value::String("rule".to_string()),
+                Eid(100),
+                Aid("name".to_string()),
+                String("rule".to_string()),
             ],
             1,
         ));
         expected.insert((
             vec![
-                Value::Eid(100),
-                Value::Aid("join/binding".to_string()),
-                Value::Eid(200),
-                Value::Aid("pattern/a".to_string()),
-                Value::Aid("xyz".to_string()),
+                Eid(100),
+                Aid("join/binding".to_string()),
+                Eid(200),
+                Aid("pattern/a".to_string()),
+                Aid("xyz".to_string()),
             ],
             1,
         ));
         expected.insert((
             vec![
-                Value::Eid(100),
-                Value::Aid("join/binding".to_string()),
-                Value::Eid(300),
-                Value::Aid("pattern/e".to_string()),
-                Value::Eid(12345),
+                Eid(100),
+                Aid("join/binding".to_string()),
+                Eid(300),
+                Aid("pattern/e".to_string()),
+                Eid(12345),
             ],
             1,
         ));
         expected.insert((
             vec![
-                Value::Eid(100),
-                Value::Aid("join/binding".to_string()),
-                Value::Eid(300),
-                Value::Aid("pattern/a".to_string()),
-                Value::Aid("asd".to_string()),
+                Eid(100),
+                Aid("join/binding".to_string()),
+                Eid(300),
+                Aid("pattern/a".to_string()),
+                Aid("asd".to_string()),
             ],
             1,
         ));

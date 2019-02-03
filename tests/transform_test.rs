@@ -8,6 +8,7 @@ use timely::Configuration;
 use declarative_dataflow::plan::{Function, Transform};
 use declarative_dataflow::server::{Server, Transact, TxData};
 use declarative_dataflow::{Plan, Rule, Value};
+use Value::{Eid, Instant};
 
 #[test]
 fn truncate() {
@@ -47,18 +48,8 @@ fn truncate() {
             Transact {
                 tx: Some(0),
                 tx_data: vec![
-                    TxData(
-                        1,
-                        1,
-                        ":timestamp".to_string(),
-                        Value::Instant(1540048515500),
-                    ),
-                    TxData(
-                        1,
-                        2,
-                        ":timestamp".to_string(),
-                        Value::Instant(1540048515616),
-                    ),
+                    TxData(1, 1, ":timestamp".to_string(), Instant(1_540_048_515_500)),
+                    TxData(1, 2, ":timestamp".to_string(), Instant(1_540_048_515_616)),
                 ],
             },
             0,
@@ -71,9 +62,9 @@ fn truncate() {
             results.recv().unwrap(),
             (
                 vec![
-                    Value::Eid(1),
-                    Value::Instant(1540048515500),
-                    Value::Instant(1540047600000)
+                    Eid(1),
+                    Instant(1_540_048_515_500),
+                    Instant(1_540_047_600_000)
                 ],
                 1
             )
@@ -82,9 +73,9 @@ fn truncate() {
             results.recv().unwrap(),
             (
                 vec![
-                    Value::Eid(2),
-                    Value::Instant(1540048515616),
-                    Value::Instant(1540047600000)
+                    Eid(2),
+                    Instant(1_540_048_515_616),
+                    Instant(1_540_047_600_000)
                 ],
                 1
             )

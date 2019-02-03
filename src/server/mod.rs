@@ -508,7 +508,7 @@ impl<Token: Hash> Server<Token> {
             self.context.reverse.insert(name.to_string(), reverse);
 
             self.input_handles.insert(name.to_string(), handle);
-            
+
             Ok(())
         }
     }

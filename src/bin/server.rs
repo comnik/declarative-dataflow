@@ -484,15 +484,12 @@ fn main() {
                                 // we are the owning worker and thus have to
                                 // keep track of this client's new interest
 
-                                match command.client {
-                                    None => {}
-                                    Some(client) => {
-                                        let client_token = Token(client);
-                                        server.interests
-                                            .entry(req.name.clone())
-                                            .or_insert_with(Vec::new)
-                                            .push(client_token);
-                                    }
+                                if let Some(client) = command.client {
+                                    let client_token = Token(client);
+                                    server.interests
+                                        .entry(req.name.clone())
+                                        .or_insert_with(Vec::new)
+                                        .push(client_token);
                                 }
                             }
 
@@ -545,7 +542,7 @@ fn main() {
                                     } else {
                                         vec![]
                                     };
-                                    
+
                                     send_errors.send((tokens, vec![error])).unwrap();
                                 }
                             });

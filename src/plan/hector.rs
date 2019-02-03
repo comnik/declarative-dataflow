@@ -263,14 +263,14 @@ impl Implementable for Hector {
 
                                 if let Binding::Constant(constant_binding) = conflict {
 
-                                    prefix_symbols.push(constant_binding.symbol.clone());
+                                    prefix_symbols.push(constant_binding.symbol);
 
                                     let match_v = constant_binding.value.clone();
 
                                     // Guaranteed to intersect with offset zero at this point.
                                     match direction(&prefix_symbols, delta_binding.symbols).unwrap() {
                                         Direction::Forward(_) => {
-                                            prefix_symbols.push(delta_binding.symbols.1.clone());
+                                            prefix_symbols.push(delta_binding.symbols.1);
 
                                             // @TODO use wrapper cache here as well
                                             forward_import.entry(&delta_binding.source_attribute)
@@ -285,7 +285,7 @@ impl Implementable for Hector {
                                                 .as_collection(|e,v| vec![e.clone(), v.clone()])
                                         }
                                         Direction::Reverse(_) => {
-                                            prefix_symbols.push(delta_binding.symbols.0.clone());
+                                            prefix_symbols.push(delta_binding.symbols.0);
 
                                             // @TODO use wrapper cache here as well
                                             reverse_import.entry(&delta_binding.source_attribute)
@@ -302,8 +302,8 @@ impl Implementable for Hector {
                                     }
                                 } else { panic!("Can't happen."); }
                             } else {
-                                prefix_symbols.push(delta_binding.symbols.0.clone());
-                                prefix_symbols.push(delta_binding.symbols.1.clone());
+                                prefix_symbols.push(delta_binding.symbols.0);
+                                prefix_symbols.push(delta_binding.symbols.1);
 
                                 // @TODO use wrapper cache here as well
                                 forward_import.entry(&delta_binding.source_attribute)
@@ -368,17 +368,17 @@ impl Implementable for Hector {
                                                                                 .enter(&scope.parent)
                                                                         });
 
-                                                                    let neu1 = is_neu.clone();
-                                                                    let neu2 = is_neu.clone();
-                                                                    let neu3 = is_neu.clone();
+                                                                    let neu1 = is_neu;
+                                                                    let neu2 = is_neu;
+                                                                    let neu3 = is_neu;
 
                                                                     forward_cache.insert(
                                                                         other.source_attribute.clone(),
                                                                         imported.enter_at(
                                                                             &scope,
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
+                                                                            move |_,_,t| AltNeu { time: *t, neu: neu1 },
+                                                                            move |_,_,t| AltNeu { time: *t, neu: neu2 },
+                                                                            move |_,_,t| AltNeu { time: *t, neu: neu3 },
                                                                         )
                                                                     );
                                                                 }
@@ -401,17 +401,17 @@ impl Implementable for Hector {
                                                                                 .enter(&scope.parent)
                                                                         });
 
-                                                                    let neu1 = is_neu.clone();
-                                                                    let neu2 = is_neu.clone();
-                                                                    let neu3 = is_neu.clone();
+                                                                    let neu1 = is_neu;
+                                                                    let neu2 = is_neu;
+                                                                    let neu3 = is_neu;
 
                                                                     reverse_cache.insert(
                                                                         other.source_attribute.clone(),
                                                                         imported.enter_at(
                                                                             &scope,
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
+                                                                            move |_,_,t| AltNeu { time: *t, neu: neu1 },
+                                                                            move |_,_,t| AltNeu { time: *t, neu: neu2 },
+                                                                            move |_,_,t| AltNeu { time: *t, neu: neu3 },
                                                                         )
                                                                     );
                                                                 }
@@ -739,7 +739,7 @@ where
                         data.swap(&mut buffer1);
                         stash
                             .entry(capability.retain())
-                            .or_insert(Vec::new())
+                            .or_insert_with(Vec::new)
                             .extend(buffer1.drain(..))
                     });
 
@@ -788,13 +788,13 @@ where
                                                     session.give((
                                                         (prefix.clone(), count, index),
                                                         time.clone(),
-                                                        diff.clone(),
+                                                        *diff,
                                                     ));
                                                 } else {
                                                     session.give((
                                                         (prefix.clone(), old_count, old_index),
                                                         time.clone(),
-                                                        diff.clone(),
+                                                        *diff,
                                                     ));
                                                 }
                                             }
@@ -812,9 +812,9 @@ where
                     stash.retain(|_, prefixes| !prefixes.is_empty());
 
                     // advance the consolidation frontier (TODO: wierd lexicographic times!)
-                    counts_trace
-                        .as_mut()
-                        .map(|trace| trace.advance_by(&input1.frontier().frontier()));
+                    if let Some(trace) = counts_trace.as_mut() {
+                        trace.advance_by(&input1.frontier().frontier());
+                    }
 
                     if input1.frontier().is_empty() && stash.is_empty() {
                         counts_trace = None;
@@ -856,7 +856,7 @@ where
                             data.swap(&mut buffer1);
                             stash
                                 .entry(capability.retain())
-                                .or_insert(Vec::new())
+                                .or_insert_with(Vec::new)
                                 .extend(buffer1.drain(..))
                         });
 
@@ -901,7 +901,7 @@ where
                                                         session.give((
                                                             (prefix.clone(), value.clone()),
                                                             time.clone(),
-                                                            diff.clone(),
+                                                            *diff,
                                                         ));
                                                     }
                                                     cursor.step_val(&storage);
@@ -921,9 +921,9 @@ where
                         stash.retain(|_, prefixes| !prefixes.is_empty());
 
                         // advance the consolidation frontier (TODO: wierd lexicographic times!)
-                        propose_trace
-                            .as_mut()
-                            .map(|trace| trace.advance_by(&input1.frontier().frontier()));
+                        if let Some(trace) = propose_trace.as_mut() {
+                            trace.advance_by(&input1.frontier().frontier());
+                        }
 
                         if input1.frontier().is_empty() && stash.is_empty() {
                             propose_trace = None;
@@ -973,7 +973,7 @@ where
                             data.swap(&mut buffer1);
                             stash
                                 .entry(capability.retain())
-                                .or_insert(Vec::new())
+                                .or_insert_with(Vec::new)
                                 .extend(buffer1.drain(..))
                         });
 
@@ -1020,7 +1020,7 @@ where
                                                     session.give((
                                                         prefix.clone(),
                                                         time.clone(),
-                                                        diff.clone(),
+                                                        *diff,
                                                     ));
                                                 }
                                             }
@@ -1037,9 +1037,9 @@ where
                         stash.retain(|_, prefixes| !prefixes.is_empty());
 
                         // advance the consolidation frontier (TODO: wierd lexicographic times!)
-                        validate_trace
-                            .as_mut()
-                            .map(|trace| trace.advance_by(&input1.frontier().frontier()));
+                        if let Some(trace) = validate_trace.as_mut() {
+                            trace.advance_by(&input1.frontier().frontier());
+                        }
 
                         if input1.frontier().is_empty() && stash.is_empty() {
                             validate_trace = None;

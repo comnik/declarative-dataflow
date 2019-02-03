@@ -1,7 +1,7 @@
 extern crate declarative_dataflow;
 extern crate timely;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::sync::mpsc::channel;
 use std::time::Duration;
@@ -11,7 +11,7 @@ use timely::dataflow::operators::Operator;
 use timely::Configuration;
 
 use declarative_dataflow::binding::Binding;
-use declarative_dataflow::plan::{Filter, Implementable, Join, Predicate, Project};
+use declarative_dataflow::plan::{Implementable, Join, Project};
 use declarative_dataflow::server::{Server, Transact, TxData};
 use declarative_dataflow::{Aid, Plan, Rule, Value};
 use Value::{Eid, Number, String};
@@ -27,11 +27,8 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
     let mut deps = HashSet::new();
 
     for binding in case.plan.into_bindings().iter() {
-        match binding {
-            Binding::Attribute(binding) => {
-                deps.insert(binding.source_attribute.clone());
-            }
-            _ => {}
+        if let Binding::Attribute(binding) = binding {
+            deps.insert(binding.source_attribute.clone());
         }
     }
 

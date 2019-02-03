@@ -10,7 +10,7 @@ use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::Operator;
 use timely::Configuration;
 
-use declarative_dataflow::binding::BinaryPredicate::{GT, LT};
+use declarative_dataflow::binding::BinaryPredicate::LT;
 use declarative_dataflow::binding::{
     AttributeBinding, BinaryPredicateBinding, Binding, ConstantBinding,
 };
@@ -31,11 +31,8 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
     let mut deps = HashSet::new();
 
     for binding in case.plan.bindings.iter() {
-        match binding {
-            Attribute(binding) => {
-                deps.insert(binding.source_attribute.clone());
-            }
-            _ => {}
+        if let Attribute(binding) = binding {
+            deps.insert(binding.source_attribute.clone());
         }
     }
 
