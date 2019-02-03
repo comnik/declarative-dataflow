@@ -177,7 +177,7 @@ impl<Token: Hash> Server<Token> {
     /// Creates a new server state from a configuration.
     pub fn new(config: Config) -> Self {
         Server {
-            config: config,
+            config,
             input_handles: HashMap::new(),
             context: Context {
                 rules: HashMap::new(),
@@ -411,7 +411,7 @@ impl<Token: Hash> Server<Token> {
 
     /// Handle a Register request.
     pub fn register(&mut self, req: Register) {
-        let Register { rules, publish: _ } = req;
+        let Register { rules, .. } = req;
 
         for rule in rules.into_iter() {
             if self.context.rules.contains_key(&rule.name) {

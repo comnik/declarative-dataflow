@@ -73,11 +73,11 @@ fn main() {
     opts.optflag("", "enable-meta", "enable queries on the query graph");
 
     let args: Vec<String> = std::env::args().collect();
-    let timely_args = std::env::args().take_while(|ref arg| arg.to_string() != "--");
+    let timely_args = std::env::args().take_while(|ref arg| *arg != "--");
 
     timely::execute_from_args(timely_args, move |worker| {
         // read configuration
-        let server_args = args.iter().rev().take_while(|arg| arg.to_string() != "--");
+        let server_args = args.iter().rev().take_while(|arg| *arg != "--");
         let default_config: Config = Default::default();
         let config = match opts.parse(server_args) {
             Err(err) => panic!(err),
@@ -360,17 +360,14 @@ fn main() {
                             let conn_events = connections[token.into()].events();
 
                             if (readiness & conn_events).is_writable() {
-                                match connections[token.into()].write() {
-                                    Err(err) => {
-                                        trace!(
-                                            "[WORKER {}] error while writing: {}",
-                                            worker.index(),
-                                            err
-                                        );
-                                        // @TODO error handling
-                                        connections[token.into()].error(err)
-                                    }
-                                    Ok(_) => {}
+                                if let Err(err) = connections[token.into()].write() {
+                                    trace!(
+                                        "[WORKER {}] error while writing: {}",
+                                        worker.index(),
+                                        err
+                                    );
+                                    // @TODO error handling
+                                    connections[token.into()].error(err)
                                 }
                             }
 
@@ -413,7 +410,7 @@ fn main() {
                         info!("[WORKER {}] {:?}", worker.index(), requests);
 
                         for req in requests.drain(..) {
-                            let owner = command.owner.clone();
+                            let owner = command.owner;
 
                             // @TODO only create a single dataflow, but only if req != Transact
 
@@ -431,7 +428,7 @@ fn main() {
                                                 let client_token = Token(client);
                                                 server.interests
                                                     .entry(req.name.clone())
-                                                    .or_insert(Vec::new())
+                                                    .or_insert_with(Vec::new)
                                                     .push(client_token);
                                             }
                                         }

@@ -64,7 +64,7 @@ impl<P: Implementable> Implementable for Filter<P> {
         //     predicate: self.predicate.clone(),
         // }));
 
-        bindings
+        // bindings
     }
 
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
@@ -96,7 +96,7 @@ impl<P: Implementable> Implementable for Filter<P> {
         };
 
         if self.constants.contains_key(&0) {
-            let constant = self.constants.get(&0).unwrap().clone();
+            let constant = self.constants[&0].clone();
             CollectionRelation {
                 symbols: rel.symbols().to_vec(),
                 tuples: rel
@@ -104,7 +104,7 @@ impl<P: Implementable> Implementable for Filter<P> {
                     .filter(move |tuple| binary_predicate(&constant, &tuple[key_offsets[0]])),
             }
         } else if self.constants.contains_key(&1) {
-            let constant = self.constants.get(&1).unwrap().clone();
+            let constant = self.constants[&1].clone();
             CollectionRelation {
                 symbols: rel.symbols().to_vec(),
                 tuples: rel

@@ -6,12 +6,12 @@ use crate::{Aid, Value, Var};
 pub trait AsBinding {
     /// Iff the binding has opinions about the given symbol, this will
     /// return the offset, otherwise None.
-    fn binds(&self, sym: &Var) -> Option<usize>;
+    fn binds(&self, sym: Var) -> Option<usize>;
 }
 
 impl AsBinding for Vec<Var> {
-    fn binds(&self, sym: &Var) -> Option<usize> {
-        self.iter().position(|&x| *sym == x)
+    fn binds(&self, sym: Var) -> Option<usize> {
+        self.iter().position(|&x| sym == x)
     }
 }
 
@@ -29,12 +29,12 @@ pub enum Binding {
 }
 
 impl AsBinding for Binding {
-    fn binds(&self, sym: &Var) -> Option<usize> {
-        match self {
-            &Binding::Attribute(ref binding) => binding.binds(sym),
-            &Binding::Not(ref binding) => binding.binds(sym),
-            &Binding::Constant(ref binding) => binding.binds(sym),
-            &Binding::BinaryPredicate(ref binding) => binding.binds(sym),
+    fn binds(&self, sym: Var) -> Option<usize> {
+        match *self {
+            Binding::Attribute(ref binding) => binding.binds(sym),
+            Binding::Not(ref binding) => binding.binds(sym),
+            Binding::Constant(ref binding) => binding.binds(sym),
+            Binding::BinaryPredicate(ref binding) => binding.binds(sym),
         }
     }
 }
@@ -49,10 +49,10 @@ pub struct AttributeBinding {
 }
 
 impl AsBinding for AttributeBinding {
-    fn binds(&self, sym: &Var) -> Option<usize> {
-        if self.symbols.0 == *sym {
+    fn binds(&self, sym: Var) -> Option<usize> {
+        if self.symbols.0 == sym {
             Some(0)
-        } else if self.symbols.1 == *sym {
+        } else if self.symbols.1 == sym {
             Some(1)
         } else {
             None
@@ -69,7 +69,7 @@ pub struct AntijoinBinding {
 }
 
 impl AsBinding for AntijoinBinding {
-    fn binds(&self, sym: &Var) -> Option<usize> {
+    fn binds(&self, sym: Var) -> Option<usize> {
         self.binding.binds(sym)
     }
 }
@@ -84,8 +84,8 @@ pub struct ConstantBinding {
 }
 
 impl AsBinding for ConstantBinding {
-    fn binds(&self, sym: &Var) -> Option<usize> {
-        if self.symbol == *sym {
+    fn binds(&self, sym: Var) -> Option<usize> {
+        if self.symbol == sym {
             Some(0)
         } else {
             None
@@ -120,10 +120,10 @@ pub struct BinaryPredicateBinding {
 }
 
 impl AsBinding for BinaryPredicateBinding {
-    fn binds(&self, sym: &Var) -> Option<usize> {
-        if self.symbols.0 == *sym {
+    fn binds(&self, sym: Var) -> Option<usize> {
+        if self.symbols.0 == sym {
             Some(0)
-        } else if self.symbols.1 == *sym {
+        } else if self.symbols.1 == sym {
             Some(1)
         } else {
             None

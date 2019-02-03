@@ -23,7 +23,7 @@ use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{AsCollection, Collection, Data, Hashable};
 
 use crate::binding::{AsBinding, BinaryPredicate, Binding};
-use crate::binding::{AttributeBinding, BinaryPredicateBinding, ConstantBinding};
+use crate::binding::{BinaryPredicateBinding, ConstantBinding};
 use crate::plan::{ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
 use crate::{CollectionRelation, LiveIndex, Value, Var, VariableMap};
@@ -99,7 +99,7 @@ where
         prefix_symbols: &B,
     ) -> Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V> + 'a)>
     {
-        match direction(prefix_symbols, &self.symbols) {
+        match direction(prefix_symbols, self.symbols) {
             Err(_msg) => {
                 // We won't panic here, this just means the predicate's symbols
                 // aren't sufficiently bound by the prefixes yet.
@@ -109,7 +109,7 @@ where
             Ok(direction) => Box::new(BinaryPredicateExtender {
                 phantom: std::marker::PhantomData,
                 predicate: self.predicate.clone(),
-                direction: direction,
+                direction,
             }),
         }
     }
@@ -135,15 +135,12 @@ enum Direction {
     Reverse(usize),
 }
 
-fn direction<P>(
-    prefix_symbols: &P,
-    extender_symbols: &(Var, Var),
-) -> Result<Direction, &'static str>
+fn direction<P>(prefix_symbols: &P, extender_symbols: (Var, Var)) -> Result<Direction, &'static str>
 where
     P: AsBinding + std::fmt::Debug,
 {
-    match AsBinding::binds(prefix_symbols, &extender_symbols.0) {
-        None => match AsBinding::binds(prefix_symbols, &extender_symbols.1) {
+    match AsBinding::binds(prefix_symbols, extender_symbols.0) {
+        None => match AsBinding::binds(prefix_symbols, extender_symbols.1) {
             None => {
                 println!(
                     "Neither extender symbol {:?} bound by prefix {:?}.",
@@ -154,7 +151,7 @@ where
             Some(offset) => Ok(Direction::Reverse(offset)),
         },
         Some(offset) => {
-            match AsBinding::binds(prefix_symbols, &extender_symbols.1) {
+            match AsBinding::binds(prefix_symbols, extender_symbols.1) {
                 Some(_) => Err("Both extender symbols already bound by prefix."),
                 None => {
                     // Prefix binds the first extender symbol, but not
@@ -256,8 +253,8 @@ impl Implementable for Hector {
 
                             let mut source = if let Some(conflict) = self.bindings.iter()
                                 .find(|x| if let Binding::Constant(ref x) = **x {
-                                    x.binds(&delta_binding.symbols.0).is_some()
-                                        || x.binds(&delta_binding.symbols.1).is_some()
+                                    x.binds(delta_binding.symbols.0).is_some()
+                                        || x.binds(delta_binding.symbols.1).is_some()
                                 } else { false })
                             {
                                 // We check explicitly for constant bindings
@@ -271,7 +268,7 @@ impl Implementable for Hector {
                                     let match_v = constant_binding.value.clone();
 
                                     // Guaranteed to intersect with offset zero at this point.
-                                    match direction(&prefix_symbols, &delta_binding.symbols).unwrap() {
+                                    match direction(&prefix_symbols, delta_binding.symbols).unwrap() {
                                         Direction::Forward(_) => {
                                             prefix_symbols.push(delta_binding.symbols.1.clone());
 
@@ -321,7 +318,7 @@ impl Implementable for Hector {
                             };
 
                             for target in self.variables.iter() {
-                                match AsBinding::binds(&prefix_symbols, target) {
+                                match AsBinding::binds(&prefix_symbols, *target) {
                                     Some(_) => { /* already bound */ continue },
                                     None => {
                                         let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=Vec<Value>, Extension=_>>> = vec![];
@@ -336,7 +333,7 @@ impl Implementable for Hector {
                                             if other_idx == idx { continue; }
 
                                             // Ignore any binding not talking about the target symbol.
-                                            if other.binds(target).is_none() { continue; }
+                                            if other.binds(*target).is_none() { continue; }
 
                                             match other {
                                                 Binding::Not(other) => {
@@ -359,7 +356,7 @@ impl Implementable for Hector {
                                                         (true, &mut forward_neu, &mut reverse_neu)
                                                     };
 
-                                                    match direction(&prefix_symbols, &other.symbols) {
+                                                    match direction(&prefix_symbols, other.symbols) {
                                                         Err(msg) => panic!(msg),
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
@@ -457,7 +454,7 @@ impl Implementable for Hector {
                                 Some(source
                                      .map(move |tuple| {
                                          target_variables.iter()
-                                             .map(|x| tuple.index(AsBinding::binds(&prefix_symbols, x).unwrap()))
+                                             .map(|x| tuple.index(AsBinding::binds(&prefix_symbols, *x).unwrap()))
                                              .collect()
                                      })
                                      .inner)

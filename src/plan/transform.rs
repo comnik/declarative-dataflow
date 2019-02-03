@@ -68,7 +68,7 @@ impl<P: Implementable> Implementable for Transform<P> {
 
         match self.function {
             Function::TRUNCATE => CollectionRelation {
-                symbols: symbols,
+                symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     let mut t = match tuple[key_offsets[0]] {
                         Value::Instant(inst) => inst as u64,
@@ -83,9 +83,9 @@ impl<P: Implementable> Implementable for Transform<P> {
 
                     let mod_val = match interval_param.as_ref() {
                         ":minute" => 60000,
-                        ":hour" => 3600000,
-                        ":day" => 86400000,
-                        ":week" => 604800000,
+                        ":hour" => 3_600_000,
+                        ":day" => 86_400_000,
+                        ":week" => 604_800_000,
                         _ => panic!("Unknown interval for TRUNCATE"),
                     };
 
@@ -96,7 +96,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                 }),
             },
             Function::ADD => CollectionRelation {
-                symbols: symbols,
+                symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     let mut result = 0;
 
@@ -126,7 +126,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                 }),
             },
             Function::SUBTRACT => CollectionRelation {
-                symbols: symbols,
+                symbols,
                 tuples: rel.tuples().map(move |tuple| {
                     // minuend is either symbol or variable, depending on
                     // position in transform
