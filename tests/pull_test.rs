@@ -32,9 +32,9 @@ fn pull_level() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute("admin?", scope);
-            server.create_attribute("name", scope);
-            server.create_attribute("age", scope);
+            server.create_attribute("admin?", scope).unwrap();
+            server.create_attribute("name", scope).unwrap();
+            server.create_attribute("age", scope).unwrap();
 
             server
                 .test_single(
@@ -137,9 +137,9 @@ fn pull_children() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute("parent/child", scope);
-            server.create_attribute("name", scope);
-            server.create_attribute("age", scope);
+            server.create_attribute("parent/child", scope).unwrap();
+            server.create_attribute("name", scope).unwrap();
+            server.create_attribute("age", scope).unwrap();
 
             server
                 .test_single(
@@ -259,9 +259,9 @@ fn pull_children() {
 //         let view_handle = Rc::downgrade(&view);
 
 //         worker.dataflow::<u64, _, _>(|scope| {
-//             server.create_attribute("parent/child", scope);
-//             server.create_attribute("name", scope);
-//             server.create_attribute("age", scope);
+//             server.create_attribute("parent/child", scope).unwrap();
+//             server.create_attribute("name", scope).unwrap();
+//             server.create_attribute("age", scope).unwrap();
 
 //             server
 //                 .test_single(scope, Rule { name: "pull_children".to_string(), plan })
@@ -333,11 +333,11 @@ fn pull() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute("name", scope);
-            server.create_attribute("join/binding", scope);
-            server.create_attribute("pattern/e", scope);
-            server.create_attribute("pattern/a", scope);
-            server.create_attribute("pattern/v", scope);
+            server.create_attribute("name", scope).unwrap();
+            server.create_attribute("join/binding", scope).unwrap();
+            server.create_attribute("pattern/e", scope).unwrap();
+            server.create_attribute("pattern/a", scope).unwrap();
+            server.create_attribute("pattern/v", scope).unwrap();
 
             server
                 .test_single(

@@ -48,7 +48,7 @@ fn count() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":amount", scope);
+            server.create_attribute(":amount", scope).unwrap();
 
             server
                 .test_single(
@@ -138,7 +138,7 @@ fn max() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":amount", scope);
+            server.create_attribute(":amount", scope).unwrap();
 
             server
                 .test_single(
@@ -228,7 +228,7 @@ fn min() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":amount", scope);
+            server.create_attribute(":amount", scope).unwrap();
 
             server
                 .test_single(
@@ -318,7 +318,7 @@ fn sum() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":amount", scope);
+            server.create_attribute(":amount", scope).unwrap();
 
             server
                 .test_single(
@@ -408,7 +408,7 @@ fn avg() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":amount", scope);
+            server.create_attribute(":amount", scope).unwrap();
 
             server
                 .test_single(
@@ -497,7 +497,7 @@ fn avg() {
 //         });
 
 //         worker.dataflow::<u64, _, _>(|scope| {
-//             server.create_attribute(":amount", scope);
+//             server.create_attribute(":amount", scope).unwrap();
 
 //             let query_name = "var";
 //             server.register(
@@ -592,7 +592,7 @@ fn median() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":amount", scope);
+            server.create_attribute(":amount", scope).unwrap();
 
             server
                 .test_single(
@@ -710,8 +710,8 @@ fn multi() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":amount", scope);
-            server.create_attribute(":debt", scope);
+            server.create_attribute(":amount", scope).unwrap();
+            server.create_attribute(":debt", scope).unwrap();
 
             server
                 .test_single(
@@ -840,8 +840,8 @@ fn with() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":monster", scope);
-            server.create_attribute(":heads", scope);
+            server.create_attribute(":monster", scope).unwrap();
+            server.create_attribute(":heads", scope).unwrap();
 
             server
                 .test_single(

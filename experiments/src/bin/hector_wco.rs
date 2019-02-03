@@ -37,7 +37,7 @@ fn main() {
         let index = worker.index();
 
         worker.dataflow::<u64,_,_>(|scope| {
-            server.create_attribute("edge", scope);
+            server.create_attribute("edge", scope).unwrap();
 
             server
                 .test_single(scope, Rule { name: "triangles".to_string(), plan })

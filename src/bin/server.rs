@@ -40,7 +40,7 @@ use slab::Slab;
 
 use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::server::{Config, CreateAttribute, Request, Server};
+use declarative_dataflow::server::{Config, CreateAttribute, Error, Request, Server};
 use declarative_dataflow::Result;
 
 const SERVER: Token = Token(usize::MAX - 1);
@@ -59,15 +59,6 @@ pub struct Command {
     pub client: Option<usize>,
     /// Requests issued by the client.
     pub requests: Vec<Request>,
-}
-
-/// A client-facing, non-exceptional error.
-#[derive(Debug)]
-pub struct Error {
-    /// Error category.
-    pub category: &'static str,
-    /// Free-frorm description.
-    pub message: String,
 }
 
 fn main() {
@@ -546,8 +537,17 @@ fn main() {
                             });
                         }
                         Request::CreateAttribute(CreateAttribute { name }) => {
+                            let client = command.client;
                             worker.dataflow::<u64, _, _>(|scope| {
-                                server.create_attribute(&name, scope);
+                                if let Err(error) = server.create_attribute(&name, scope) {
+                                    let tokens = if let Some(client) = client {
+                                        vec![Token(client)]
+                                    } else {
+                                        vec![]
+                                    };
+                                    
+                                    send_errors.send((tokens, vec![error])).unwrap();
+                                }
                             });
                         }
                         Request::AdvanceInput(name, tx) => server.advance_input(name, tx),

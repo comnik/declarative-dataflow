@@ -149,7 +149,7 @@ fn run_query_cases() {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
-                    server.create_attribute(dep, scope);
+                    server.create_attribute(dep, scope).unwrap();
                 }
 
                 server

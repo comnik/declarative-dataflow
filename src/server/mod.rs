@@ -48,6 +48,15 @@ impl Default for Config {
     }
 }
 
+/// A client-facing, non-exceptional error.
+#[derive(Debug)]
+pub struct Error {
+    /// Error category.
+    pub category: &'static str,
+    /// Free-frorm description.
+    pub message: String,
+}
+
 /// Transaction data. Conceptually a pair (Datom, diff) but it's kept
 /// intentionally flat to be more directly compatible with Datomic.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -480,9 +489,16 @@ impl<Token: Hash> Server<Token> {
     /// Creates a new collection of (e,v) tuples and indexes it in
     /// various ways. Stores forward, and reverse indices, as well as
     /// the input handle in the server state.
-    pub fn create_attribute<S: Scope<Timestamp = u64>>(&mut self, name: &str, scope: &mut S) {
+    pub fn create_attribute<S: Scope<Timestamp = u64>>(
+        &mut self,
+        name: &str,
+        scope: &mut S,
+    ) -> Result<(), Error> {
         if self.context.forward.contains_key(name) {
-            panic!("Attribute of name {} already exists.", name);
+            Err(Error {
+                category: "df.error.category/conflict",
+                message: format!("An attribute of name {} already exists.", name),
+            })
         } else {
             let (handle, tuples) = scope.new_collection::<(Value, Value), isize>();
             let forward = CollectionIndex::index(name, &tuples);
@@ -492,6 +508,8 @@ impl<Token: Hash> Server<Token> {
             self.context.reverse.insert(name.to_string(), reverse);
 
             self.input_handles.insert(name.to_string(), handle);
+            
+            Ok(())
         }
     }
 
