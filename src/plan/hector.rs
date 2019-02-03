@@ -62,11 +62,10 @@ where
     // K: Data + Hash,
     V: Data + Hash,
 {
-    // F: 'static + Fn(&P) -> K
     fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
         prefix_symbols: &B,
-    ) -> Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V> + 'a)>;
+    ) -> Vec<Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V> + 'a)>>;
 }
 
 impl<'a, S> IntoExtender<'a, S, Value> for ConstantBinding
@@ -77,14 +76,16 @@ where
     fn into_extender<P: Data + IndexNode<Value>, B: AsBinding + std::fmt::Debug>(
         &self,
         _prefix_symbols: &B,
-    ) -> Box<
+    ) -> Vec<Box<
         (dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = Value>
-             + 'a),
+             + 'a)>,
     > {
-        Box::new(ConstantExtender {
-            phantom: std::marker::PhantomData,
-            value: self.value.clone(),
-        })
+        vec![
+            Box::new(ConstantExtender {
+                phantom: std::marker::PhantomData,
+                value: self.value.clone(),
+            })
+        ]
     }
 }
 
@@ -97,20 +98,21 @@ where
     fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
         prefix_symbols: &B,
-    ) -> Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V> + 'a)>
+    ) -> Vec<Box<(dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V> + 'a)>>
     {
         match direction(prefix_symbols, self.symbols) {
             Err(_msg) => {
                 // We won't panic here, this just means the predicate's symbols
                 // aren't sufficiently bound by the prefixes yet.
-                //
-                panic!("TODO")
+                vec![]
             }
-            Ok(direction) => Box::new(BinaryPredicateExtender {
-                phantom: std::marker::PhantomData,
-                predicate: self.predicate.clone(),
-                direction,
-            }),
+            Ok(direction) => vec![
+                Box::new(BinaryPredicateExtender {
+                    phantom: std::marker::PhantomData,
+                    predicate: self.predicate.clone(),
+                    direction,
+                })
+            ],
         }
     }
 }
@@ -344,10 +346,10 @@ impl Implementable for Hector {
                                                     // }));
                                                 }
                                                 Binding::Constant(other) => {
-                                                    extenders.push(other.into_extender(&prefix_symbols));
+                                                    extenders.append(&mut other.into_extender(&prefix_symbols));
                                                 }
                                                 Binding::BinaryPredicate(other) => {
-                                                    extenders.push(other.into_extender(&prefix_symbols));
+                                                    extenders.append(&mut other.into_extender(&prefix_symbols));
                                                 }
                                                 Binding::Attribute(other) => {
                                                     let (is_neu, forward_cache, reverse_cache) = if other_idx < idx {
