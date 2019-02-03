@@ -20,6 +20,8 @@ impl AsBinding for Vec<Var> {
 pub enum Binding {
     /// Two symbols bound by (e,v) pairs from an attribute.
     Attribute(AttributeBinding),
+    /// Symbols that must not be bound by the wrapped binding.
+    Not(AntijoinBinding),
     /// A symbol bound by a constant value.
     Constant(ConstantBinding),
     /// Two symbols bound by a binary predicate.
@@ -30,6 +32,7 @@ impl AsBinding for Binding {
     fn binds(&self, sym: &Var) -> Option<usize> {
         match self {
             &Binding::Attribute(ref binding) => binding.binds(sym),
+            &Binding::Not(ref binding) => binding.binds(sym),
             &Binding::Constant(ref binding) => binding.binds(sym),
             &Binding::BinaryPredicate(ref binding) => binding.binds(sym),
         }
@@ -54,6 +57,20 @@ impl AsBinding for AttributeBinding {
         } else {
             None
         }
+    }
+}
+
+/// Describes symbols whose possible values must not be contained in
+/// the specified attribute.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct AntijoinBinding {
+    /// The wrapped binding.
+    pub binding: Box<Binding>,
+}
+
+impl AsBinding for AntijoinBinding {
+    fn binds(&self, sym: &Var) -> Option<usize> {
+        self.binding.binds(sym)
     }
 }
 

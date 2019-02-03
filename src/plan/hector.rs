@@ -1053,3 +1053,49 @@ where
             .as_collection()
     }
 }
+
+struct AntijoinExtender<'a, S, V, P>
+where
+    S: Scope + ScopeParent,
+    S::Timestamp: Lattice + Data,
+    V: Data,
+{
+    phantom: std::marker::PhantomData<P>,
+    extender:
+        Box<dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V>>,
+}
+
+impl<'a, S, V, P> PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>>
+    for AntijoinExtender<'a, S, V, P>
+where
+    S: Scope + ScopeParent,
+    S::Timestamp: Lattice + Data,
+    V: Data + Hash,
+    P: Data,
+{
+    type Prefix = P;
+    type Extension = V;
+
+    fn count(
+        &mut self,
+        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
+        _index: usize,
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)> {
+        // @TODO return an option here to avoid cloning the collection?
+        prefixes.map(|prefix| prefix)
+    }
+
+    fn propose(
+        &mut self,
+        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>,
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+        prefixes.map(|_prefix| panic!("AntijoinExtender should never be asked to propose."))
+    }
+
+    fn validate(
+        &mut self,
+        extensions: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>,
+    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+        extensions.concat(&self.extender.validate(extensions).negate())
+    }
+}
