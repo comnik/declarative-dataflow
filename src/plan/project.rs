@@ -11,7 +11,7 @@ use crate::{CollectionRelation, Relation, VariableMap};
 /// A plan stage projecting its source to only the specified sequence
 /// of symbols. Throws on unbound symbols. Frontends are responsible
 /// for ensuring that the source binds all requested symbols.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Project<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

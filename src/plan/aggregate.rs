@@ -13,7 +13,7 @@ use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 use num_rational::{Ratio, Rational32};
 
 /// Permitted aggregation function.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum AggregationFn {
     /// Minimum
     MIN,
@@ -36,7 +36,7 @@ pub enum AggregationFn {
 /// [WIP] A plan stage applying the specified aggregation functions to
 /// bindings for the specified symbols. Given multiple aggregations
 /// we iterate and n-1 joins are applied to the results.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Aggregate<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

@@ -48,9 +48,7 @@ const RESULTS: Token = Token(usize::MAX - 2);
 const CLI: Token = Token(usize::MAX - 3);
 
 /// A mutation of server state.
-#[derive(
-    Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Abomonation, Serialize, Deserialize, Debug,
-)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]
 pub struct Command {
     /// The worker that received this command from a client originally
     /// and is therefore the one that should receive all outputs.
@@ -58,8 +56,8 @@ pub struct Command {
     /// The client token that issued the command. Only relevant to the
     /// owning worker, as no one else has the connection.
     pub client: Option<usize>,
-    /// Unparsed representation of the command.
-    pub cmd: String,
+    /// Requests issued by the client.
+    pub requests: Vec<Request>,
 }
 
 fn main() {
@@ -108,7 +106,7 @@ fn main() {
         let preload_command = Command {
             owner: worker.index(),
             client: None,
-            cmd: serde_json::to_string::<Vec<Request>>(&builtins).expect("failed to serialize built-in request"),
+            requests: builtins,
         };
 
         // setup serialized command queue (shared between all workers)
@@ -203,13 +201,18 @@ fn main() {
                 match event.token() {
                     CLI => {
                         while let Ok(cli_input) = recv_cli.try_recv() {
-                            let command = Command {
-                                owner: worker.index(),
-                                client: None,
-                                cmd: cli_input,
-                            };
-
-                            sequencer.push(command);
+                            match serde_json::from_str::<Vec<Request>>(&cli_input) {
+                                Err(msg) => {
+                                    panic!("failed to parse command: {:?}", msg);
+                                }
+                                Ok(requests) => {
+                                    sequencer.push(Command {
+                                        owner: worker.index(),
+                                        client: None,
+                                        requests,
+                                    });
+                                }
+                            }
                         }
 
                         poll.reregister(
@@ -334,19 +337,22 @@ fn main() {
                                         for conn_event in conn_events.drain(0..) {
                                             match conn_event {
                                                 ConnEvent::Message(msg) => {
-                                                    let command = Command {
-                                                        owner: worker.index(),
-                                                        client: Some(token.into()),
-                                                        cmd: msg.into_text().unwrap(),
-                                                    };
+                                                    match serde_json::from_str::<Vec<Request>>(&msg.into_text().unwrap()) {
+                                                        Err(msg) => {
+                                                            panic!("failed to parse command: {:?}", msg);
+                                                        }
+                                                        Ok(requests) => {
+                                                            let command = Command {
+                                                                owner: worker.index(),
+                                                                client: Some(token.into()),
+                                                                requests,
+                                                            };
 
-                                                    trace!(
-                                                        "[WORKER {}] {:?}",
-                                                        worker.index(),
-                                                        command
-                                                    );
+                                                            trace!("[WORKER {}] {:?}", worker.index(), command);
 
-                                                    sequencer.push(command);
+                                                            sequencer.push(command);
+                                                        }
+                                                    }
                                                 }
                                                 _ => {
                                                     println!("other");
@@ -401,88 +407,81 @@ fn main() {
 
             // handle commands
 
-            while let Some(command) = sequencer.next() {
-                match serde_json::from_str::<Vec<Request>>(&command.cmd) {
-                    Err(msg) => {
-                        panic!("failed to parse command: {:?}", msg);
-                    }
-                    Ok(mut requests) => {
-                        info!("[WORKER {}] {:?}", worker.index(), requests);
+            while let Some(mut command) = sequencer.next() {
+                info!("[WORKER {}] {:?}", worker.index(), command);
 
-                        for req in requests.drain(..) {
-                            let owner = command.owner;
+                for req in command.requests.drain(..) {
+                    let owner = command.owner;
 
-                            // @TODO only create a single dataflow, but only if req != Transact
+                    // @TODO only create a single dataflow, but only if req != Transact
 
-                            match req {
-                                Request::Datom(e, a, v, diff, tx) => server.datom(owner, worker.index(), e, a, v, diff, tx),
-                                Request::Transact(req) => server.transact(req, owner, worker.index()),
-                                Request::Interest(req) => {
-                                    if owner == worker.index() {
-                                        // we are the owning worker and thus have to
-                                        // keep track of this client's new interest
+                    match req {
+                        Request::Datom(e, a, v, diff, tx) => server.datom(owner, worker.index(), e, a, v, diff, tx),
+                        Request::Transact(req) => server.transact(req, owner, worker.index()),
+                        Request::Interest(req) => {
+                            if owner == worker.index() {
+                                // we are the owning worker and thus have to
+                                // keep track of this client's new interest
 
-                                        match command.client {
-                                            None => {}
-                                            Some(client) => {
-                                                let client_token = Token(client);
-                                                server.interests
-                                                    .entry(req.name.clone())
-                                                    .or_insert_with(Vec::new)
-                                                    .push(client_token);
-                                            }
-                                        }
-                                    }
-
-                                    if !server.context.global_arrangements.contains_key(&req.name) {
-
-                                        let send_results_handle = send_results.clone();
-
-                                        worker.dataflow::<u64, _, _>(|scope| {
-                                            let name = req.name.clone();
-
-                                            server
-                                                .interest(&req.name, scope)
-                                                .import_named(scope, &req.name)
-                                            // @TODO clone entire batches instead of flattening
-                                                .as_collection(|tuple,_| tuple.clone())
-                                                .inner
-                                                // .stream
-                                                // .map(|batch| (*batch).clone())
-                                                .unary_notify(
-                                                    Exchange::new(move |_| owner as u64),
-                                                    "ResultsRecv",
-                                                    vec![],
-                                                    move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
-
-                                                        // due to the exchange pact, this closure is only
-                                                        // executed by the owning worker
-
-                                                        input.for_each(|_time, data| {
-                                                            send_results_handle
-                                                                .send((name.clone(), data.to_vec()))
-                                                                .unwrap();
-                                                        });
-                                                    })
-                                                .probe_with(&mut server.probe);
-                                        });
+                                match command.client {
+                                    None => {}
+                                    Some(client) => {
+                                        let client_token = Token(client);
+                                        server.interests
+                                            .entry(req.name.clone())
+                                            .or_insert_with(Vec::new)
+                                            .push(client_token);
                                     }
                                 }
-                                Request::Register(req) => server.register(req),
-                                Request::RegisterSource(req) => {
-                                    worker.dataflow::<u64, _, _>(|scope| {
-                                        server.register_source(req, scope);
-                                    });
-                                }
-                                Request::CreateAttribute(CreateAttribute { name }) => {
-                                    worker.dataflow::<u64, _, _>(|scope| {
-                                        server.create_attribute(&name, scope);
-                                    });
-                                }
-                                Request::AdvanceInput(name, tx) => server.advance_input(name, tx),
-                                Request::CloseInput(name) => server.close_input(name),
+                            }
+
+                            if !server.context.global_arrangements.contains_key(&req.name) {
+
+                                let send_results_handle = send_results.clone();
+
+                                worker.dataflow::<u64, _, _>(|scope| {
+                                    let name = req.name.clone();
+
+                                    server
+                                        .interest(&req.name, scope)
+                                        .import_named(scope, &req.name)
+                                    // @TODO clone entire batches instead of flattening
+                                        .as_collection(|tuple,_| tuple.clone())
+                                        .inner
+                                    // .stream
+                                    // .map(|batch| (*batch).clone())
+                                        .unary_notify(
+                                            Exchange::new(move |_| owner as u64),
+                                            "ResultsRecv",
+                                            vec![],
+                                            move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
+
+                                                // due to the exchange pact, this closure is only
+                                                // executed by the owning worker
+
+                                                input.for_each(|_time, data| {
+                                                    send_results_handle
+                                                        .send((name.clone(), data.to_vec()))
+                                                        .unwrap();
+                                                });
+                                            })
+                                        .probe_with(&mut server.probe);
+                                });
                             }
                         }
+                        Request::Register(req) => server.register(req),
+                        Request::RegisterSource(req) => {
+                            worker.dataflow::<u64, _, _>(|scope| {
+                                server.register_source(req, scope);
+                            });
+                        }
+                        Request::CreateAttribute(CreateAttribute { name }) => {
+                            worker.dataflow::<u64, _, _>(|scope| {
+                                server.create_attribute(&name, scope);
+                            });
+                        }
+                        Request::AdvanceInput(name, tx) => server.advance_input(name, tx),
+                        Request::CloseInput(name) => server.close_input(name),
                     }
                 }
             }

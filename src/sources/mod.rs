@@ -24,7 +24,7 @@ pub trait Sourceable {
 }
 
 /// Supported external data sources.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Source {
     /// CSV files
     CsvFile(CsvFile),

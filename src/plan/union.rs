@@ -12,7 +12,7 @@ use crate::{CollectionRelation, Relation, Var, VariableMap};
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
 /// (i.e. bind all of the same symbols in the same order).
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Union<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

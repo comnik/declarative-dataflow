@@ -13,7 +13,7 @@ use crate::sources::Sourceable;
 use crate::{Eid, Value};
 
 /// A local filesystem data source.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct CsvFile {
     /// Path to a file on each workers local filesystem.
     pub path: String,

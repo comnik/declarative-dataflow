@@ -11,7 +11,7 @@ use crate::{Aid, CollectionRelation, Relation, Value, Var, VariableMap};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct PullLevel<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
@@ -30,7 +30,7 @@ pub struct PullLevel<P: Implementable> {
 ///
 /// (?parent)                      <- [:parent/name] | no constraints
 /// (?parent :parent/child ?child) <- [:child/name]  | [?parent :parent/child ?child]
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Pull<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

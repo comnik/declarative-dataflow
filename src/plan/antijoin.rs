@@ -12,7 +12,7 @@ use crate::{CollectionRelation, Relation, Var, VariableMap};
 /// A plan stage anti-joining both its sources on the specified
 /// symbols. Throws if the sources are not union-compatible, i.e. bind
 /// all of the same symbols in the same order.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Antijoin<P1: Implementable, P2: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

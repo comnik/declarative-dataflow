@@ -1,7 +1,5 @@
 //! Function expression plan.
 
-use std::collections::HashMap;
-
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
@@ -9,7 +7,7 @@ use crate::plan::{ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
 /// Permitted functions.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Function {
     /// Truncates a unix timestamp into an hourly interval
     TRUNCATE,
@@ -23,7 +21,7 @@ pub enum Function {
 /// Frontends are responsible for ensuring that the source
 /// binds the argument symbols and that the result is projected onto
 /// the right symbol.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Transform<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
@@ -33,8 +31,8 @@ pub struct Transform<P: Implementable> {
     pub plan: Box<P>,
     /// Function to apply
     pub function: Function,
-    /// Constant intputs
-    pub constants: HashMap<u32, Value>,
+    /// Constant inputs
+    pub constants: Vec<Option<Value>>,
 }
 
 impl<P: Implementable> Implementable for Transform<P> {
@@ -75,9 +73,9 @@ impl<P: Implementable> Implementable for Transform<P> {
                         _ => panic!("TRUNCATE can only be applied to timestamps"),
                     };
                     let default_interval = String::from(":hour");
-                    let interval_param = match constants_local.get(&1) {
-                        Some(Value::String(interval)) => interval as &String,
-                        None => &default_interval,
+                    let interval_param = match constants_local[1].clone() {
+                        Some(Value::String(interval)) => interval,
+                        None => default_interval,
                         _ => panic!("Parameter for TRUNCATE must be a string"),
                     };
 
@@ -111,13 +109,15 @@ impl<P: Implementable> Implementable for Transform<P> {
                     }
 
                     // summands (constants)
-                    for (_key, val) in &constants_local {
-                        let summand = match val {
-                            Value::Number(s) => *s as i64,
-                            _ => panic!("ADD can only be applied to numbers"),
-                        };
+                    for arg in &constants_local {
+                        if let Some(constant) = arg {
+                            let summand = match constant {
+                                Value::Number(s) => *s as i64,
+                                _ => panic!("ADD can only be applied to numbers"),
+                            };
 
-                        result = result + summand;
+                            result = result + summand;
+                        }
                     }
 
                     let mut v = tuple.clone();
@@ -131,9 +131,9 @@ impl<P: Implementable> Implementable for Transform<P> {
                     // minuend is either symbol or variable, depending on
                     // position in transform
 
-                    let mut result = match constants_local.get(&0) {
+                    let mut result = match constants_local[0].clone() {
                         Some(constant) => match constant {
-                            Value::Number(minuend) => *minuend as i64,
+                            Value::Number(minuend) => minuend as i64,
                             _ => panic!("SUBTRACT can only be applied to numbers"),
                         },
                         None => match tuple[key_offsets[0]] {
@@ -156,13 +156,15 @@ impl<P: Implementable> Implementable for Transform<P> {
                     }
 
                     // subtrahends (constants)
-                    for (_key, val) in &constants_local {
-                        let subtrahend = match val {
-                            Value::Number(s) => *s as i64,
-                            _ => panic!("SUBTRACT can only be applied to numbers"),
-                        };
+                    for arg in &constants_local {
+                        if let Some(constant) = arg {
+                            let subtrahend = match constant {
+                                Value::Number(s) => *s as i64,
+                                _ => panic!("SUBTRACT can only be applied to numbers"),
+                            };
 
-                        result = result - subtrahend;
+                            result = result - subtrahend;
+                        }
                     }
 
                     let mut v = tuple.clone();

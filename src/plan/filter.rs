@@ -1,7 +1,5 @@
 //! Predicate expression plan.
 
-use std::collections::HashMap;
-
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
@@ -37,7 +35,7 @@ fn neq(a: &Value, b: &Value) -> bool {
 /// A plan stage filtering source tuples by the specified
 /// predicate. Frontends are responsible for ensuring that the source
 /// binds the argument symbols.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Filter<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
@@ -45,8 +43,8 @@ pub struct Filter<P: Implementable> {
     pub predicate: Predicate,
     /// Plan for the data source.
     pub plan: Box<P>,
-    /// Constant intputs
-    pub constants: HashMap<u32, Value>,
+    /// Constant inputs
+    pub constants: Vec<Option<Value>>,
 }
 
 impl<P: Implementable> Implementable for Filter<P> {
@@ -95,16 +93,14 @@ impl<P: Implementable> Implementable for Filter<P> {
             Predicate::NEQ => neq,
         };
 
-        if self.constants.contains_key(&0) {
-            let constant = self.constants[&0].clone();
+        if let Some(constant) = self.constants[0].clone() {
             CollectionRelation {
                 symbols: rel.symbols().to_vec(),
                 tuples: rel
                     .tuples()
                     .filter(move |tuple| binary_predicate(&constant, &tuple[key_offsets[0]])),
             }
-        } else if self.constants.contains_key(&1) {
-            let constant = self.constants[&1].clone();
+        } else if let Some(constant) = self.constants[1].clone() {
             CollectionRelation {
                 symbols: rel.symbols().to_vec(),
                 tuples: rel

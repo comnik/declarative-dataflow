@@ -13,7 +13,7 @@ use crate::{CollectionRelation, Relation, VariableMap};
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
 /// sources.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Join<P1: Implementable, P2: Implementable> {
     /// TODO
     pub variables: Vec<Var>,

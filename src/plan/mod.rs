@@ -99,7 +99,7 @@ pub trait Implementable {
 }
 
 /// Possible query plan types.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Plan {
     /// Projection
     Project(Project<Plan>),

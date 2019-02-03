@@ -16,7 +16,7 @@ impl AsBinding for Vec<Var> {
 }
 
 /// Binding types supported by Hector.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Binding {
     /// Two symbols bound by (e,v) pairs from an attribute.
     Attribute(AttributeBinding),
@@ -40,7 +40,7 @@ impl AsBinding for Binding {
 }
 
 /// Describes symbols whose possible values are given by an attribute.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct AttributeBinding {
     /// The symbols this binding talks about.
     pub symbols: (Var, Var),
@@ -62,7 +62,7 @@ impl AsBinding for AttributeBinding {
 
 /// Describes symbols whose possible values must not be contained in
 /// the specified attribute.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct AntijoinBinding {
     /// The wrapped binding.
     pub binding: Box<Binding>,
@@ -75,7 +75,7 @@ impl AsBinding for AntijoinBinding {
 }
 
 /// Describes symbols whose possible values are given by an attribute.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct ConstantBinding {
     /// The symbol this binding talks about.
     pub symbol: Var,
@@ -94,7 +94,7 @@ impl AsBinding for ConstantBinding {
 }
 
 /// Built-in binary predicates.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum BinaryPredicate {
     /// Less than
     LT,
@@ -111,7 +111,7 @@ pub enum BinaryPredicate {
 }
 
 /// Describe a binary predicate constraint.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct BinaryPredicateBinding {
     /// The symbols this binding talks about.
     pub symbols: (Var, Var),

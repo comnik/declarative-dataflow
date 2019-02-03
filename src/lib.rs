@@ -300,7 +300,7 @@ where
 type Var = u32;
 
 /// A named relation.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Rule {
     /// The name identifying the relation.
     pub name: String,
