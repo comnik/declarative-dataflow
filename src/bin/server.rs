@@ -46,7 +46,8 @@ use declarative_dataflow::Result;
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
 const ERRORS: Token = Token(usize::MAX - 3);
-const CLI: Token = Token(usize::MAX - 4);
+const SYSTEM: Token = Token(usize::MAX - 4);
+const CLI: Token = Token(usize::MAX - 5);
 
 /// A mutation of server state.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]
@@ -56,7 +57,7 @@ pub struct Command {
     pub owner: usize,
     /// The client token that issued the command. Only relevant to the
     /// owning worker, as no one else has the connection.
-    pub client: Option<usize>,
+    pub client: usize,
     /// Requests issued by the client.
     pub requests: Vec<Request>,
 }
@@ -106,7 +107,7 @@ fn main() {
         let builtins = Server::<Token>::builtins();
         let preload_command = Command {
             owner: worker.index(),
-            client: None,
+            client: SYSTEM.0,
             requests: builtins,
         };
 
@@ -225,7 +226,7 @@ fn main() {
                                 Ok(requests) => {
                                     sequencer.push(Command {
                                         owner: worker.index(),
-                                        client: None,
+                                        client: SYSTEM.0,
                                         requests,
                                     });
                                 }
@@ -405,7 +406,7 @@ fn main() {
                                                         Ok(requests) => {
                                                             let command = Command {
                                                                 owner: worker.index(),
-                                                                client: Some(token.into()),
+                                                                client: token.into(),
                                                                 requests,
                                                             };
 
@@ -473,6 +474,7 @@ fn main() {
 
                 for req in command.requests.drain(..) {
                     let owner = command.owner;
+                    let client = command.client;
 
                     // @TODO only create a single dataflow, but only if req != Transact
 
@@ -484,13 +486,11 @@ fn main() {
                                 // we are the owning worker and thus have to
                                 // keep track of this client's new interest
 
-                                if let Some(client) = command.client {
-                                    let client_token = Token(client);
-                                    server.interests
-                                        .entry(req.name.clone())
-                                        .or_insert_with(Vec::new)
-                                        .push(client_token);
-                                }
+                                let client_token = Token(command.client);
+                                server.interests
+                                    .entry(req.name.clone())
+                                    .or_insert_with(Vec::new)
+                                    .push(client_token);
                             }
 
                             if !server.context.global_arrangements.contains_key(&req.name) {
@@ -530,20 +530,15 @@ fn main() {
                         Request::Register(req) => server.register(req),
                         Request::RegisterSource(req) => {
                             worker.dataflow::<u64, _, _>(|scope| {
-                                server.register_source(req, scope);
+                                if let Err(error) = server.register_source(req, scope) {
+                                    send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                }
                             });
                         }
                         Request::CreateAttribute(CreateAttribute { name }) => {
-                            let client = command.client;
                             worker.dataflow::<u64, _, _>(|scope| {
                                 if let Err(error) = server.create_attribute(&name, scope) {
-                                    let tokens = if let Some(client) = client {
-                                        vec![Token(client)]
-                                    } else {
-                                        vec![]
-                                    };
-
-                                    send_errors.send((tokens, vec![error])).unwrap();
+                                    send_errors.send((vec![Token(client)], vec![error])).unwrap();
                                 }
                             });
                         }

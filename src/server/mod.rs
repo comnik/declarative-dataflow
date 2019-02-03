@@ -446,7 +446,7 @@ impl<Token: Hash> Server<Token> {
         &mut self,
         req: RegisterSource,
         scope: &mut S,
-    ) {
+    ) -> Result<(), Error> {
         let RegisterSource { mut names, source } = req;
 
         if names.len() == 1 {
@@ -454,7 +454,10 @@ impl<Token: Hash> Server<Token> {
             let datoms = source.source(scope, names.clone());
 
             if self.context.forward.contains_key(&name) {
-                panic!("Source name clashes with registered relation.");
+                Err(Error {
+                    category: "df.error.category/conflict",
+                    message: format!("An attribute of name {} already exists.", name),
+                })
             } else {
                 let tuples = datoms.map(|(_idx, tuple)| tuple).as_collection();
 
@@ -463,13 +466,18 @@ impl<Token: Hash> Server<Token> {
 
                 self.context.forward.insert(name.clone(), forward);
                 self.context.reverse.insert(name, reverse);
+
+                Ok(())
             }
         } else if names.len() > 1 {
             let datoms = source.source(scope, names.clone());
 
             for (name_idx, name) in names.iter().enumerate() {
                 if self.context.forward.contains_key(name) {
-                    panic!("Source name clashes with registered relation.");
+                    return Err(Error {
+                        category: "df.error.category/conflict",
+                        message: format!("An attribute of name {} already exists.", name),
+                    });
                 } else {
                     let tuples = datoms
                         .filter(move |(idx, _tuple)| *idx == name_idx)
@@ -483,6 +491,10 @@ impl<Token: Hash> Server<Token> {
                     self.context.reverse.insert(name.to_string(), reverse);
                 }
             }
+
+            Ok(())
+        } else {
+            Ok(())
         }
     }
 
