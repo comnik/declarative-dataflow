@@ -45,7 +45,8 @@ use declarative_dataflow::Result;
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
-const CLI: Token = Token(usize::MAX - 3);
+const ERRORS: Token = Token(usize::MAX - 3);
+const CLI: Token = Token(usize::MAX - 4);
 
 /// A mutation of server state.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]
@@ -58,6 +59,15 @@ pub struct Command {
     pub client: Option<usize>,
     /// Requests issued by the client.
     pub requests: Vec<Request>,
+}
+
+/// A client-facing, non-exceptional error.
+#[derive(Debug)]
+pub struct Error {
+    /// Error category.
+    pub category: &'static str,
+    /// Free-frorm description.
+    pub message: String,
 }
 
 fn main() {
@@ -123,7 +133,10 @@ fn main() {
         let (send_cli, recv_cli) = mio::channel::channel();
 
         // setup results channel
-        let (send_results, recv_results) = mio::channel::channel();
+        let (send_results, recv_results) = mio::channel::channel::<(String, Vec<Result>)>();
+
+        // setup errors channel
+        let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<Error>)>();
 
         // setup server socket
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
@@ -161,6 +174,14 @@ fn main() {
             Ready::readable(),
             PollOpt::edge() | PollOpt::oneshot(),
         ).unwrap();
+
+        poll.register(
+            &recv_errors,
+            ERRORS,
+            Ready::readable(),
+            PollOpt::edge() | PollOpt::oneshot(),
+        ).unwrap();
+
         poll.register(&server_socket, SERVER, Ready::readable(), PollOpt::level())
             .unwrap();
 
@@ -202,8 +223,13 @@ fn main() {
                     CLI => {
                         while let Ok(cli_input) = recv_cli.try_recv() {
                             match serde_json::from_str::<Vec<Request>>(&cli_input) {
-                                Err(msg) => {
-                                    panic!("failed to parse command: {:?}", msg);
+                                Err(serde_error) => {
+                                    let error = Error {
+                                        category: "df.error.category/incorrect",
+                                        message: serde_error.to_string(),
+                                    };
+
+                                    send_errors.send((vec![], vec![error])).unwrap();
                                 }
                                 Ok(requests) => {
                                     sequencer.push(Command {
@@ -289,7 +315,6 @@ fn main() {
                                     for &token in tokens.iter() {
                                         // @TODO check whether connection still exists
                                         let conn = &mut connections[token.into()];
-                                        info!("[WORKER {}] sending msg {:?}", worker.index(), msg);
 
                                         conn.send_message(msg.clone())
                                             .expect("failed to send message");
@@ -308,6 +333,46 @@ fn main() {
                         poll.reregister(
                             &recv_results,
                             RESULTS,
+                            Ready::readable(),
+                            PollOpt::edge() | PollOpt::oneshot(),
+                        ).unwrap();
+                    }
+                    ERRORS => {
+                        while let Ok((tokens, mut errors)) = recv_errors.try_recv() {
+                            info!("[WORKER {}] sending errors {:?}", worker.index(), errors);
+
+                            let serializable = errors.drain(..).map(|error| {
+                                let mut serializable = serde_json::Map::new();
+                                serializable.insert("df.error/category".to_string(), serde_json::Value::String(error.category.to_string()));
+                                serializable.insert("df.error/message".to_string(), serde_json::Value::String(error.message.to_string()));
+
+                                serializable
+                            }).collect();
+
+                            let serialized = serde_json::to_string::<(String, Vec<serde_json::Map<_,_>>)>(
+                                &("df.error".to_string(), serializable)
+                            ).expect("failed to serialize errors");
+                            let msg = ws::Message::text(serialized);
+
+                            for &token in tokens.iter() {
+                                // @TODO check whether connection still exists
+                                let conn = &mut connections[token.into()];
+
+                                conn.send_message(msg.clone())
+                                    .expect("failed to send message");
+
+                                poll.reregister(
+                                    conn.socket(),
+                                    conn.token(),
+                                    conn.events(),
+                                    PollOpt::edge() | PollOpt::oneshot(),
+                                ).unwrap();
+                            }
+                        }
+
+                        poll.reregister(
+                            &recv_results,
+                            ERRORS,
                             Ready::readable(),
                             PollOpt::edge() | PollOpt::oneshot(),
                         ).unwrap();
@@ -338,8 +403,13 @@ fn main() {
                                             match conn_event {
                                                 ConnEvent::Message(msg) => {
                                                     match serde_json::from_str::<Vec<Request>>(&msg.into_text().unwrap()) {
-                                                        Err(msg) => {
-                                                            panic!("failed to parse command: {:?}", msg);
+                                                        Err(serde_error) => {
+                                                            let error = Error {
+                                                                category: "df.error.category/incorrect",
+                                                                message: serde_error.to_string(),
+                                                            };
+
+                                                            send_errors.send((vec![token], vec![error])).unwrap();
                                                         }
                                                         Ok(requests) => {
                                                             let command = Command {

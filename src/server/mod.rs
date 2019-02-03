@@ -366,7 +366,7 @@ impl<Token: Hash> Server<Token> {
                 //     })
                 //     .as_collection()
 
-                panic!("not quite there yet")
+                unimplemented!();
             }
             _ => {
                 if self.context.global_arrangements.contains_key(name) {
