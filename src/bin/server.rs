@@ -470,7 +470,11 @@ fn main() {
             // handle commands
 
             while let Some(mut command) = sequencer.next() {
-                info!("[WORKER {}] {:?}", worker.index(), command);
+
+                // Count-up sequence numbers.
+                server.next_tx += 1;
+
+                info!("[WORKER {}] {:?} {:?}", worker.index(), server.next_tx, command);
 
                 for req in command.requests.drain(..) {
                     let owner = command.owner;

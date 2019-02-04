@@ -126,6 +126,8 @@ pub enum Request {
 pub struct Server<Token: Hash> {
     /// Server configuration.
     pub config: Config,
+    /// Internal sequence number domain.
+    pub next_tx: u64,
     /// Input handles to global arrangements.
     pub input_handles: HashMap<String, InputSession<u64, (Value, Value), isize>>,
     /// Implementation context.
@@ -178,6 +180,7 @@ impl<Token: Hash> Server<Token> {
     pub fn new(config: Config) -> Self {
         Server {
             config,
+            next_tx: 0,
             input_handles: HashMap::new(),
             context: Context {
                 rules: HashMap::new(),
@@ -315,12 +318,12 @@ impl<Token: Hash> Server<Token> {
             }
         }
 
-        for handle in self.input_handles.values_mut() {
-            let next_tx = match tx {
-                None => handle.epoch() + 1,
-                Some(tx) => tx + 1,
-            };
+        let next_tx = match tx {
+            None => self.next_tx,
+            Some(tx) => tx + 1,
+        };
 
+        for handle in self.input_handles.values_mut() {
             handle.advance_to(next_tx);
             handle.flush();
         }
