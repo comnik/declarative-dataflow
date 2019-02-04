@@ -56,9 +56,9 @@ impl Sourceable for JsonFile {
                         let mut session = output.session(cap.as_ref().unwrap());
 
                         for readline in iterator.by_ref().take(256 - 1) {
-                            let line = readline.ok().expect("read error");
+                            let line = readline.expect("read error");
 
-                            if (object_index % num_workers == worker_index) && line.len() > 0 {
+                            if (object_index % num_workers == worker_index) && !line.is_empty() {
                                 // @TODO parse only the names we are interested in
                                 // @TODO run with Value = serde_json::Value
 

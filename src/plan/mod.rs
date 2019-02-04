@@ -159,42 +159,42 @@ impl Plan {
 impl Implementable for Plan {
     fn dependencies(&self) -> Vec<String> {
         // @TODO provide a general fold for plans
-        match self {
-            &Plan::Project(ref projection) => projection.dependencies(),
-            &Plan::Aggregate(ref aggregate) => aggregate.dependencies(),
-            &Plan::Union(ref union) => union.dependencies(),
-            &Plan::Join(ref join) => join.dependencies(),
-            &Plan::Hector(ref hector) => hector.dependencies(),
-            &Plan::Antijoin(ref antijoin) => antijoin.dependencies(),
-            &Plan::Negate(ref plan) => plan.dependencies(),
-            &Plan::Filter(ref filter) => filter.dependencies(),
-            &Plan::Transform(ref transform) => transform.dependencies(),
-            &Plan::MatchA(_, _, _) => Vec::new(),
-            &Plan::MatchEA(_, _, _) => Vec::new(),
-            &Plan::MatchAV(_, _, _) => Vec::new(),
-            &Plan::NameExpr(_, ref name) => vec![name.to_string()],
-            &Plan::Pull(ref pull) => pull.dependencies(),
-            &Plan::PullLevel(ref path) => path.dependencies(),
+        match *self {
+            Plan::Project(ref projection) => projection.dependencies(),
+            Plan::Aggregate(ref aggregate) => aggregate.dependencies(),
+            Plan::Union(ref union) => union.dependencies(),
+            Plan::Join(ref join) => join.dependencies(),
+            Plan::Hector(ref hector) => hector.dependencies(),
+            Plan::Antijoin(ref antijoin) => antijoin.dependencies(),
+            Plan::Negate(ref plan) => plan.dependencies(),
+            Plan::Filter(ref filter) => filter.dependencies(),
+            Plan::Transform(ref transform) => transform.dependencies(),
+            Plan::MatchA(_, _, _) => Vec::new(),
+            Plan::MatchEA(_, _, _) => Vec::new(),
+            Plan::MatchAV(_, _, _) => Vec::new(),
+            Plan::NameExpr(_, ref name) => vec![name.to_string()],
+            Plan::Pull(ref pull) => pull.dependencies(),
+            Plan::PullLevel(ref path) => path.dependencies(),
         }
     }
 
     fn into_bindings(&self) -> Vec<Binding> {
         // @TODO provide a general fold for plans
-        match self {
-            &Plan::Project(ref projection) => projection.into_bindings(),
-            &Plan::Aggregate(ref aggregate) => aggregate.into_bindings(),
-            &Plan::Union(ref union) => union.into_bindings(),
-            &Plan::Join(ref join) => join.into_bindings(),
-            &Plan::Hector(ref hector) => hector.into_bindings(),
-            &Plan::Antijoin(ref antijoin) => antijoin.into_bindings(),
-            &Plan::Negate(ref plan) => plan.into_bindings(),
-            &Plan::Filter(ref filter) => filter.into_bindings(),
-            &Plan::Transform(ref transform) => transform.into_bindings(),
-            &Plan::MatchA(e, ref a, v) => vec![Binding::Attribute(AttributeBinding {
+        match *self {
+            Plan::Project(ref projection) => projection.into_bindings(),
+            Plan::Aggregate(ref aggregate) => aggregate.into_bindings(),
+            Plan::Union(ref union) => union.into_bindings(),
+            Plan::Join(ref join) => join.into_bindings(),
+            Plan::Hector(ref hector) => hector.into_bindings(),
+            Plan::Antijoin(ref antijoin) => antijoin.into_bindings(),
+            Plan::Negate(ref plan) => plan.into_bindings(),
+            Plan::Filter(ref filter) => filter.into_bindings(),
+            Plan::Transform(ref transform) => transform.into_bindings(),
+            Plan::MatchA(e, ref a, v) => vec![Binding::Attribute(AttributeBinding {
                 symbols: (e, v),
                 source_attribute: a.to_string(),
             })],
-            &Plan::MatchEA(match_e, ref a, v) => {
+            Plan::MatchEA(match_e, ref a, v) => {
                 let e = gensym();
                 vec![
                     Binding::Attribute(AttributeBinding {
@@ -207,7 +207,7 @@ impl Implementable for Plan {
                     }),
                 ]
             }
-            &Plan::MatchAV(e, ref a, ref match_v) => {
+            Plan::MatchAV(e, ref a, ref match_v) => {
                 let v = gensym();
                 vec![
                     Binding::Attribute(AttributeBinding {
@@ -220,38 +220,38 @@ impl Implementable for Plan {
                     }),
                 ]
             }
-            &Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
-            &Plan::Pull(ref pull) => pull.into_bindings(),
-            &Plan::PullLevel(ref path) => path.into_bindings(),
+            Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
+            Plan::Pull(ref pull) => pull.into_bindings(),
+            Plan::PullLevel(ref path) => path.into_bindings(),
         }
     }
 
     fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
         // @TODO provide a general fold for plans
-        match self {
-            &Plan::Project(ref projection) => projection.datafy(),
-            &Plan::Aggregate(ref aggregate) => aggregate.datafy(),
-            &Plan::Union(ref union) => union.datafy(),
-            &Plan::Join(ref join) => join.datafy(),
-            &Plan::Hector(ref hector) => hector.datafy(),
-            &Plan::Antijoin(ref antijoin) => antijoin.datafy(),
-            &Plan::Negate(ref plan) => plan.datafy(),
-            &Plan::Filter(ref filter) => filter.datafy(),
-            &Plan::Transform(ref transform) => transform.datafy(),
-            &Plan::MatchA(_e, ref a, _v) => vec![(
+        match *self {
+            Plan::Project(ref projection) => projection.datafy(),
+            Plan::Aggregate(ref aggregate) => aggregate.datafy(),
+            Plan::Union(ref union) => union.datafy(),
+            Plan::Join(ref join) => join.datafy(),
+            Plan::Hector(ref hector) => hector.datafy(),
+            Plan::Antijoin(ref antijoin) => antijoin.datafy(),
+            Plan::Negate(ref plan) => plan.datafy(),
+            Plan::Filter(ref filter) => filter.datafy(),
+            Plan::Transform(ref transform) => transform.datafy(),
+            Plan::MatchA(_e, ref a, _v) => vec![(
                 next_id(),
                 "df.pattern/a".to_string(),
                 Value::Aid(a.to_string()),
             )],
-            &Plan::MatchEA(e, ref a, _) => vec![
-                (next_id(), "df.pattern/e".to_string(), Value::Eid(e.clone())),
+            Plan::MatchEA(e, ref a, _) => vec![
+                (next_id(), "df.pattern/e".to_string(), Value::Eid(e)),
                 (
                     next_id(),
                     "df.pattern/a".to_string(),
                     Value::Aid(a.to_string()),
                 ),
             ],
-            &Plan::MatchAV(_, ref a, ref v) => vec![
+            Plan::MatchAV(_, ref a, ref v) => vec![
                 (
                     next_id(),
                     "df.pattern/a".to_string(),
@@ -259,9 +259,9 @@ impl Implementable for Plan {
                 ),
                 (next_id(), "df.pattern/v".to_string(), v.clone()),
             ],
-            &Plan::NameExpr(_, ref _name) => Vec::new(),
-            &Plan::Pull(ref pull) => pull.datafy(),
-            &Plan::PullLevel(ref path) => path.datafy(),
+            Plan::NameExpr(_, ref _name) => Vec::new(),
+            Plan::Pull(ref pull) => pull.datafy(),
+            Plan::PullLevel(ref path) => path.datafy(),
         }
     }
 
@@ -271,31 +271,29 @@ impl Implementable for Plan {
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
     ) -> CollectionRelation<'b, S> {
-        match self {
-            &Plan::Project(ref projection) => {
+        match *self {
+            Plan::Project(ref projection) => {
                 projection.implement(nested, local_arrangements, context)
             }
-            &Plan::Aggregate(ref aggregate) => {
+            Plan::Aggregate(ref aggregate) => {
                 aggregate.implement(nested, local_arrangements, context)
             }
-            &Plan::Union(ref union) => union.implement(nested, local_arrangements, context),
-            &Plan::Join(ref join) => join.implement(nested, local_arrangements, context),
-            &Plan::Hector(ref hector) => hector.implement(nested, local_arrangements, context),
-            &Plan::Antijoin(ref antijoin) => {
-                antijoin.implement(nested, local_arrangements, context)
-            }
-            &Plan::Negate(ref plan) => {
+            Plan::Union(ref union) => union.implement(nested, local_arrangements, context),
+            Plan::Join(ref join) => join.implement(nested, local_arrangements, context),
+            Plan::Hector(ref hector) => hector.implement(nested, local_arrangements, context),
+            Plan::Antijoin(ref antijoin) => antijoin.implement(nested, local_arrangements, context),
+            Plan::Negate(ref plan) => {
                 let rel = plan.implement(nested, local_arrangements, context);
                 CollectionRelation {
                     symbols: rel.symbols().to_vec(),
                     tuples: rel.tuples().negate(),
                 }
             }
-            &Plan::Filter(ref filter) => filter.implement(nested, local_arrangements, context),
-            &Plan::Transform(ref transform) => {
+            Plan::Filter(ref filter) => filter.implement(nested, local_arrangements, context),
+            Plan::Transform(ref transform) => {
                 transform.implement(nested, local_arrangements, context)
             }
-            &Plan::MatchA(sym1, ref a, sym2) => {
+            Plan::MatchA(sym1, ref a, sym2) => {
                 let tuples = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => index
@@ -310,7 +308,7 @@ impl Implementable for Plan {
                     tuples,
                 }
             }
-            &Plan::MatchEA(match_e, ref a, sym1) => {
+            Plan::MatchEA(match_e, ref a, sym1) => {
                 let tuples = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => index
@@ -326,7 +324,7 @@ impl Implementable for Plan {
                     tuples,
                 }
             }
-            &Plan::MatchAV(sym1, ref a, ref match_v) => {
+            Plan::MatchAV(sym1, ref a, ref match_v) => {
                 let tuples = match context.reverse_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
@@ -345,7 +343,7 @@ impl Implementable for Plan {
                     tuples,
                 }
             }
-            &Plan::NameExpr(ref syms, ref name) => {
+            Plan::NameExpr(ref syms, ref name) => {
                 if context.is_underconstrained(name) {
                     match local_arrangements.get(name) {
                         None => panic!("{:?} not in relation map", name),
@@ -374,8 +372,8 @@ impl Implementable for Plan {
                     }
                 }
             }
-            &Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
-            &Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
+            Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
+            Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
         }
     }
 }

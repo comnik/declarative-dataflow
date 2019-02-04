@@ -38,9 +38,9 @@ pub struct Pull<P: Implementable> {
     pub paths: Vec<PullLevel<P>>,
 }
 
-fn interleave(values: &Vec<Value>, constants: &Vec<Aid>) -> Vec<Value> {
+fn interleave(values: &[Value], constants: &[Aid]) -> Vec<Value> {
     if values.is_empty() || constants.is_empty() {
-        values.clone()
+        values.to_owned()
     } else {
         let size: usize = values.len() + constants.len();
         // + 2, because we know there'll be a and v coming...
@@ -53,12 +53,12 @@ fn interleave(values: &Vec<Value>, constants: &Vec<Aid>) -> Vec<Value> {
             if i % 2 == 0 {
                 // on even indices we take from the result tuple
                 result.push(values[next_value].clone());
-                next_value = next_value + 1;
+                next_value += 1;
             } else {
                 // on odd indices we interleave an attribute
                 let a = constants[next_const].clone();
                 result.push(Value::Aid(a));
-                next_const = next_const + 1;
+                next_const += 1;
             }
         }
 

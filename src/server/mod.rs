@@ -325,13 +325,13 @@ impl<Token: Hash> Server<Token> {
             handle.flush();
         }
 
-        if self.config.enable_history == false {
+        if !self.config.enable_history {
             // if historical queries don't matter, we should advance
             // the index traces to allow them to compact
 
             let mut frontier = Vec::new();
             for handle in self.input_handles.values() {
-                frontier.push(handle.time().clone() - 1);
+                frontier.push(*handle.time() - 1);
             }
 
             let frontier_ref = &frontier;
@@ -372,7 +372,7 @@ impl<Token: Hash> Server<Token> {
                 if self.context.global_arrangements.contains_key(name) {
                     // Rule is already implemented.
                     Ok(self.context.global_arrangement(name).unwrap())
-                } else if self.config.enable_optimizer == true {
+                } else if self.config.enable_optimizer {
                     let rel_map = implement_neu(name, scope, &mut self.context)?;
 
                     for (name, trace) in rel_map.into_iter() {
@@ -421,7 +421,7 @@ impl<Token: Hash> Server<Token> {
                 // panic!("Attempted to re-register a named relation");
                 continue;
             } else {
-                if self.config.enable_meta == true {
+                if self.config.enable_meta {
                     let mut data = rule.plan.datafy();
                     let tx_data: Vec<TxData> =
                         data.drain(..).map(|(e, a, v)| TxData(1, e, a, v)).collect();
@@ -505,12 +505,16 @@ impl<Token: Hash> Server<Token> {
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let (handle, tuples) = scope.new_collection::<(Value, Value), isize>();
+            let (mut handle, tuples) = scope.new_collection::<(Value, Value), isize>();
             let forward = CollectionIndex::index(name, &tuples);
             let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
 
             self.context.forward.insert(name.to_string(), forward);
             self.context.reverse.insert(name.to_string(), reverse);
+
+            // We must bring the new input up to speed to avoid
+            // stalling the rest of the dataflow.
+            handle.advance_to(self.next_tx);
 
             self.input_handles.insert(name.to_string(), handle);
 
@@ -541,13 +545,13 @@ impl<Token: Hash> Server<Token> {
             },
         }
 
-        if self.config.enable_history == false {
+        if !self.config.enable_history {
             // if historical queries don't matter, we should advance
             // the index traces to allow them to compact
 
             let mut frontier = Vec::new();
             for handle in self.input_handles.values() {
-                frontier.push(handle.time().clone() - 1);
+                frontier.push(*handle.time() - 1);
             }
 
             let frontier_ref = &frontier;

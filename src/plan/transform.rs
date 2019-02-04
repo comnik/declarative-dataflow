@@ -105,7 +105,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                             _ => panic!("ADD can only be applied to numbers"),
                         };
 
-                        result = result + summand;
+                        result += summand;
                     }
 
                     // summands (constants)
@@ -116,7 +116,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                                 _ => panic!("ADD can only be applied to numbers"),
                             };
 
-                            result = result + summand;
+                            result += summand;
                         }
                     }
 
@@ -152,7 +152,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                             _ => panic!("SUBTRACT can only be applied to numbers"),
                         };
 
-                        result = result - subtrahend;
+                        result -= subtrahend;
                     }
 
                     // subtrahends (constants)
@@ -163,7 +163,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                                 _ => panic!("SUBTRACT can only be applied to numbers"),
                             };
 
-                            result = result - subtrahend;
+                            result -= subtrahend;
                         }
                     }
 

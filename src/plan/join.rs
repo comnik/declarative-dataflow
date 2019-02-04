@@ -55,24 +55,12 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
 
         let mut left_eids: Vec<(Eid, Aid, Value)> = left_data
             .iter()
-            .map(|(e, _, _)| {
-                (
-                    eid.clone(),
-                    "df.join/binding".to_string(),
-                    Value::Eid(e.clone()),
-                )
-            })
+            .map(|(e, _, _)| (eid, "df.join/binding".to_string(), Value::Eid(*e)))
             .collect();
 
         let mut right_eids: Vec<(Eid, Aid, Value)> = right_data
             .iter()
-            .map(|(e, _, _)| {
-                (
-                    eid.clone(),
-                    "df.join/binding".to_string(),
-                    Value::Eid(e.clone()),
-                )
-            })
+            .map(|(e, _, _)| (eid, "df.join/binding".to_string(), Value::Eid(*e)))
             .collect();
 
         let mut data = Vec::with_capacity(

@@ -35,7 +35,7 @@ impl<P: Implementable> Implementable for Project<P> {
         if data.is_empty() {
             Vec::new()
         } else {
-            let child_eid = data[0].0.clone();
+            let child_eid = data[0].0;
 
             data.push((eid, "df.project/binding".to_string(), Value::Eid(child_eid)));
 

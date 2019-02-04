@@ -49,7 +49,7 @@ impl Sourceable for CsvFile {
             let mut datum_index = 0;
 
             // @TODO this is annoying
-            let separator = self.separator.clone();
+            let separator = self.separator;
             let schema = self.schema.clone();
 
             move |output| {
@@ -57,9 +57,9 @@ impl Sourceable for CsvFile {
                     let mut session = output.session(cap.as_ref().unwrap());
 
                     for readline in iterator.by_ref().take(255) {
-                        let line: String = readline.ok().expect("read error");
+                        let line: String = readline.expect("read error");
 
-                        if (datum_index % num_workers == worker_index) && line.len() > 0 {
+                        if (datum_index % num_workers == worker_index) && !line.is_empty() {
                             let columns: Vec<&str> = line.split(separator).collect();
 
                             let eid = Value::Eid(
