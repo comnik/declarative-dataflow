@@ -10,6 +10,7 @@ use timely::dataflow::operators::{Filter, Map};
 use timely::dataflow::{ProbeHandle, Scope};
 
 use differential_dataflow::collection::Collection;
+use differential_dataflow::operators::Threshold;
 use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
@@ -41,7 +42,6 @@ impl Default for Config {
             port: 6262,
             enable_cli: false,
             enable_history: false,
-            // enable_optimizer: false,
             enable_optimizer: false,
             enable_meta: false,
         }
@@ -455,7 +455,12 @@ impl<Token: Hash> Server<Token> {
                     message: format!("An attribute of name {} already exists.", name),
                 })
             } else {
-                let tuples = datoms.map(|(_idx, tuple)| tuple).as_collection();
+                let tuples = datoms
+                    .map(|(_idx, tuple)| tuple)
+                    .as_collection()
+                // Ensure that redundant (e,v) pairs don't cause
+                // misleading proposals during joining.
+                    .distinct();
 
                 let forward = CollectionIndex::index(&name, &tuples);
                 let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
@@ -478,7 +483,10 @@ impl<Token: Hash> Server<Token> {
                     let tuples = datoms
                         .filter(move |(idx, _tuple)| *idx == name_idx)
                         .map(|(_idx, tuple)| tuple)
-                        .as_collection();
+                        .as_collection()
+                    // Ensure that redundant (e,v) pairs don't cause
+                    // misleading proposals during joining.
+                        .distinct();
 
                     let forward = CollectionIndex::index(name, &tuples);
                     let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
@@ -508,7 +516,12 @@ impl<Token: Hash> Server<Token> {
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let (mut handle, tuples) = scope.new_collection::<(Value, Value), isize>();
+            let (mut handle, mut tuples) = scope.new_collection::<(Value, Value), isize>();
+
+            // Ensure that redundant (e,v) pairs don't cause
+            // misleading proposals during joining.
+            tuples = tuples.distinct();
+
             let forward = CollectionIndex::index(name, &tuples);
             let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
 
