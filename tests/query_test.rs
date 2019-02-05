@@ -12,8 +12,8 @@ use timely::Configuration;
 
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Implementable, Join, Project};
-use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Aid, Plan, Rule, Value};
+use declarative_dataflow::server::Server;
+use declarative_dataflow::{Aid, Plan, Rule, TxData, Value};
 use Value::{Eid, Number, String};
 
 struct Case {
@@ -146,7 +146,11 @@ fn run_query_cases() {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
-                    server.create_attribute(dep, scope).unwrap();
+                    server
+                        .context
+                        .internal
+                        .create_attribute(dep, scope)
+                        .unwrap();
                 }
 
                 server
@@ -168,10 +172,13 @@ fn run_query_cases() {
             });
 
             let mut transactions = case.transactions.clone();
+            let mut next_tx = 0;
 
             for (tx_id, tx_data) in transactions.drain(..).enumerate() {
-                let tx = Some(tx_id as u64);
-                server.transact(Transact { tx, tx_data }, 0, 0);
+                next_tx += 1;
+
+                server.transact(tx_data, 0, 0).unwrap();
+                server.advance_domain(None, next_tx).unwrap();
 
                 worker.step_while(|| server.is_any_outdated());
 

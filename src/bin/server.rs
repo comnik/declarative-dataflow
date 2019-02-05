@@ -41,7 +41,7 @@ use slab::Slab;
 use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server};
-use declarative_dataflow::{Error, ResultDiff};
+use declarative_dataflow::{Error, ImplContext, ResultDiff};
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
@@ -182,6 +182,9 @@ fn main() {
             worker.index(),
             config
         );
+
+        // Sequence counter for commands.
+        let mut next_tx: u64 = 0;
 
         loop {
             // each worker has to...
@@ -331,7 +334,7 @@ fn main() {
                     }
                     ERRORS => {
                         while let Ok((tokens, mut errors)) = recv_errors.try_recv() {
-                            info!("[WORKER {}] sending errors {:?}", worker.index(), errors);
+                            error!("[WORKER {}] {:?}", worker.index(), errors);
 
                             let serializable = errors.drain(..).map(|error| {
                                 let mut serializable = serde_json::Map::new();
@@ -472,19 +475,23 @@ fn main() {
             while let Some(mut command) = sequencer.next() {
 
                 // Count-up sequence numbers.
-                server.next_tx += 1;
+                next_tx += 1;
 
-                info!("[WORKER {}] {:?} {:?}", worker.index(), server.next_tx, command);
+                info!("[WORKER {}] {:?} {:?}", worker.index(), next_tx, command);
+
+                let owner = command.owner;
+                let client = command.client;
 
                 for req in command.requests.drain(..) {
-                    let owner = command.owner;
-                    let client = command.client;
 
                     // @TODO only create a single dataflow, but only if req != Transact
 
                     match req {
-                        Request::Datom(e, a, v, diff, tx) => server.datom(owner, worker.index(), e, a, v, diff, tx),
-                        Request::Transact(req) => server.transact(req, owner, worker.index()),
+                        Request::Transact(req) => {
+                            if let Err(error) = server.transact(req, owner, worker.index()) {
+                                send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                            }
+                        }
                         Request::Interest(req) => {
                             if owner == worker.index() {
                                 // we are the owning worker and thus have to
@@ -497,7 +504,7 @@ fn main() {
                                     .push(client_token);
                             }
 
-                            if !server.context.global_arrangements.contains_key(&req.name) {
+                            if server.context.global_arrangement(&req.name).is_none() {
 
                                 let send_results_handle = send_results.clone();
 
@@ -537,7 +544,11 @@ fn main() {
                                 });
                             }
                         }
-                        Request::Register(req) => server.register(req),
+                        Request::Register(req) => {
+                            if let Err(error) = server.register(req) {
+                                send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                            }
+                        }
                         Request::RegisterSource(req) => {
                             worker.dataflow::<u64, _, _>(|scope| {
                                 if let Err(error) = server.register_source(req, scope) {
@@ -547,18 +558,26 @@ fn main() {
                         }
                         Request::CreateAttribute(CreateAttribute { name }) => {
                             worker.dataflow::<u64, _, _>(|scope| {
-                                if let Err(error) = server.create_attribute(&name, scope) {
+                                if let Err(error) = server.context.internal.create_attribute(&name, scope) {
                                     send_errors.send((vec![Token(client)], vec![error])).unwrap();
                                 }
                             });
                         }
-                        Request::AdvanceInput(name, tx) => {
-                            if let Err(error) = server.advance_input(name, tx) {
+                        Request::AdvanceDomain(name, next) => {
+                            if let Err(error) = server.advance_domain(name, next) {
                                 send_errors.send((vec![Token(client)], vec![error])).unwrap();
                             }
-                        },
-                        Request::CloseInput(name) => server.close_input(name),
+                        }
+                        Request::CloseInput(name) => {
+                            if let Err(error) = server.context.internal.close_input(name) {
+                                send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                            }
+                        }
                     }
+                }
+
+                if let Err(error) = server.advance_domain(None, next_tx as u64) {
+                    send_errors.send((vec![Token(client)], vec![error])).unwrap();
                 }
             }
 

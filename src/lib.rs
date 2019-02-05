@@ -17,6 +17,7 @@ extern crate serde_derive;
 extern crate num_rational;
 
 pub mod binding;
+pub mod domain;
 pub mod plan;
 pub mod server;
 pub mod sources;
@@ -88,6 +89,11 @@ pub struct Error {
     /// Free-frorm description.
     pub message: String,
 }
+
+/// Transaction data. Conceptually a pair (Datom, diff) but it's kept
+/// intentionally flat to be more directly compatible with Datomic.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub struct TxData(pub isize, pub Eid, pub Aid, pub Value);
 
 /// A (tuple, time, diff) triple, as sent back to clients.
 pub type ResultDiff = (Vec<Value>, u64, isize);
@@ -193,6 +199,13 @@ where
             propose_trace: self.propose_trace.import(scope),
             validate_trace: self.validate_trace.import(scope),
         }
+    }
+
+    /// Advances the traces maintained in this index.
+    pub fn advance_by(&mut self, frontier: &[T]) {
+        self.count_trace.advance_by(frontier);
+        self.propose_trace.advance_by(frontier);
+        self.validate_trace.advance_by(frontier);
     }
 }
 

@@ -1,6 +1,3 @@
-extern crate declarative_dataflow;
-extern crate timely;
-
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::sync::mpsc::channel;
@@ -15,8 +12,8 @@ use declarative_dataflow::binding::{
     AttributeBinding, BinaryPredicateBinding, Binding, ConstantBinding,
 };
 use declarative_dataflow::plan::Hector;
-use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Aid, Plan, Rule, Value};
+use declarative_dataflow::server::Server;
+use declarative_dataflow::{Aid, Plan, Rule, TxData, Value};
 use Binding::{Attribute, BinaryPredicate, Constant};
 use Value::{Eid, Number, String};
 
@@ -276,7 +273,11 @@ fn run_hector_cases() {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
-                    server.create_attribute(dep, scope).unwrap();
+                    server
+                        .context
+                        .internal
+                        .create_attribute(dep, scope)
+                        .unwrap();
                 }
 
                 server
@@ -298,10 +299,13 @@ fn run_hector_cases() {
             });
 
             let mut transactions = case.transactions.clone();
+            let mut next_tx = 0;
 
             for (tx_id, tx_data) in transactions.drain(..).enumerate() {
-                let tx = Some(tx_id as u64);
-                server.transact(Transact { tx, tx_data }, 0, 0);
+                next_tx += 1;
+
+                server.transact(tx_data, 0, 0).unwrap();
+                server.advance_domain(None, next_tx).unwrap();
 
                 worker.step_while(|| server.is_any_outdated());
 

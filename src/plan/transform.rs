@@ -3,6 +3,7 @@
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
+use crate::binding::Binding;
 use crate::plan::{ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
@@ -38,6 +39,10 @@ pub struct Transform<P: Implementable> {
 impl<P: Implementable> Implementable for Transform<P> {
     fn dependencies(&self) -> Vec<String> {
         self.plan.dependencies()
+    }
+
+    fn into_bindings(&self) -> Vec<Binding> {
+        self.plan.into_bindings()
     }
 
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(

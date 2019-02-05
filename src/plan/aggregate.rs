@@ -7,6 +7,7 @@ use differential_dataflow::difference::DiffPair;
 use differential_dataflow::operators::Join as JoinMap;
 use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
 
+use crate::binding::Binding;
 use crate::plan::{ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
@@ -55,6 +56,10 @@ pub struct Aggregate<P: Implementable> {
 impl<P: Implementable> Implementable for Aggregate<P> {
     fn dependencies(&self) -> Vec<String> {
         self.plan.dependencies()
+    }
+
+    fn into_bindings(&self) -> Vec<Binding> {
+        self.plan.into_bindings()
     }
 
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(

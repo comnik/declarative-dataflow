@@ -3,23 +3,22 @@
 
 use std::collections::HashMap;
 
-use timely::dataflow::{Scope, Stream, ProbeHandle};
 use timely::dataflow::operators::{Filter, Map};
-use timely::progress::Timestamp;
+use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::order::TotalOrder;
+use timely::progress::Timestamp;
 
-use differential_dataflow::AsCollection;
 use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::trace::TraceReader;
 use differential_dataflow::operators::Threshold;
+use differential_dataflow::AsCollection;
 
-use crate::{Aid, Value, Error, TxData};
 use crate::CollectionIndex;
+use crate::{Aid, Error, TxData, Value};
 
 /// A domain manages attributes (and their inputs) hat share a
 /// timestamp semantics (e.g. come from the same logical source).
-pub struct Domain<T: Timestamp+Lattice+TotalOrder> {
+pub struct Domain<T: Timestamp + Lattice + TotalOrder> {
     /// The current timestamp.
     now_at: T,
     /// Input handles to attributes in this domain.
@@ -32,7 +31,10 @@ pub struct Domain<T: Timestamp+Lattice+TotalOrder> {
     pub reverse: HashMap<Aid, CollectionIndex<Value, Value, T>>,
 }
 
-impl<T: Timestamp+Lattice+TotalOrder> Domain<T> {
+impl<T> Domain<T>
+where
+    T: Timestamp + Lattice + TotalOrder,
+{
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
         Domain {
@@ -47,7 +49,7 @@ impl<T: Timestamp+Lattice+TotalOrder> Domain<T> {
     /// Creates a new collection of (e,v) tuples and indexes it in
     /// various ways. Stores forward, and reverse indices, as well as
     /// the input handle in the server state.
-    pub fn create_attribute<S: Scope<Timestamp=T>>(
+    pub fn create_attribute<S: Scope<Timestamp = T>>(
         &mut self,
         name: &str,
         scope: &mut S,
@@ -71,13 +73,13 @@ impl<T: Timestamp+Lattice+TotalOrder> Domain<T> {
             self.reverse.insert(name.to_string(), reverse);
 
             self.input_sessions.insert(name.to_string(), handle);
-            
+
             Ok(())
         }
     }
 
     /// Creates attributes from an external datoms source.
-    pub fn create_source<S: Scope<Timestamp=T>>(
+    pub fn create_source<S: Scope<Timestamp = T>>(
         &mut self,
         name: &str,
         name_idx: Option<usize>,
@@ -91,14 +93,15 @@ impl<T: Timestamp+Lattice+TotalOrder> Domain<T> {
         } else {
             let datoms = match name_idx {
                 None => datoms.map(|(_idx, tuple)| tuple),
-                Some(name_idx) => datoms.filter(move |(idx, _tuple)| *idx == name_idx)
+                Some(name_idx) => datoms
+                    .filter(move |(idx, _tuple)| *idx == name_idx)
                     .map(|(_idx, tuple)| tuple),
             };
-                
+
             let tuples = datoms
                 .as_collection()
-            // Ensure that redundant (e,v) pairs don't cause
-            // misleading proposals during joining.
+                // Ensure that redundant (e,v) pairs don't cause
+                // misleading proposals during joining.
                 .distinct();
 
             let forward = CollectionIndex::index(&name, &tuples);
@@ -134,34 +137,47 @@ impl<T: Timestamp+Lattice+TotalOrder> Domain<T> {
     /// Closes and drops an existing input.
     pub fn close_input(&mut self, name: String) -> Result<(), Error> {
         match self.input_sessions.remove(&name) {
-            None => {
-                Err(Error {
-                    category: "df.error.category/not-found",
-                    message: format!("Input {} does not exist.", name),
-                })
-            }
+            None => Err(Error {
+                category: "df.error.category/not-found",
+                message: format!("Input {} does not exist.", name),
+            }),
             Some(handle) => {
                 handle.close();
                 Ok(())
             }
         }
     }
-    
-    /// Advances the domain to `next`. The `trace_slack` parameter
-    /// specifies whether (and if so how closely) traces should follow
-    /// the input frontier. More slack means less compact
-    /// outputs. Setting this to None maintains full trace histories.
-    pub fn advance_to(&mut self, next: T, trace_slack: Option<T>) {
+
+    /// Advances the domain to `next`. The `trace_next` parameter can
+    /// be used to indicate whether (and if so how closely) traces
+    /// should follow the input frontier. Setting this to None
+    /// maintains full trace histories.
+    pub fn advance_to(&mut self, next: T, trace_next: Option<T>) {
         // Assert that we do not rewind time.
         assert!(self.now_at.less_equal(&next));
 
-        for handle in self.input_sessions.values_mut() {
-            handle.advance_to(next.clone());
-            handle.flush();
-        }
+        if !self.now_at.eq(&next) {
+            self.now_at = next.clone();
 
-        if let Some(slack) = trace_slack {
-            @TODO ADVANCE ATTRIBUTE TRACES
+            for handle in self.input_sessions.values_mut() {
+                handle.advance_to(next.clone());
+                handle.flush();
+            }
+
+            if let Some(trace_next) = trace_next {
+                // if historical queries don't matter, we should advance
+                // the index traces to allow them to compact
+
+                let frontier = &[trace_next];
+
+                for index in self.forward.values_mut() {
+                    index.advance_by(frontier);
+                }
+
+                for index in self.reverse.values_mut() {
+                    index.advance_by(frontier);
+                }
+            }
         }
     }
 

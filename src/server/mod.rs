@@ -1,25 +1,19 @@
 //! Server logic for driving the library via commands.
 
-extern crate differential_dataflow;
-extern crate timely;
-
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 
-use timely::dataflow::operators::{Filter, Map};
 use timely::dataflow::{ProbeHandle, Scope};
 
 use differential_dataflow::collection::Collection;
-use differential_dataflow::operators::Threshold;
-use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::trace::TraceReader;
-use differential_dataflow::AsCollection;
 
+use crate::domain::Domain;
 use crate::plan::{ImplContext, Implementable};
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
 use crate::{implement, implement_neu, CollectionIndex, RelationHandle, TraceKeyHandle};
-use crate::{Aid, Eid, Error, Value};
+use crate::{Aid, Error, TxData, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -46,21 +40,6 @@ impl Default for Config {
             enable_meta: false,
         }
     }
-}
-
-/// Transaction data. Conceptually a pair (Datom, diff) but it's kept
-/// intentionally flat to be more directly compatible with Datomic.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct TxData(pub isize, pub Eid, pub Aid, pub Value);
-
-/// A request expressing the arrival of inputs to one or more
-/// collections. Optionally a timestamp may be specified.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct Transact {
-    /// The timestamp at which this transaction occured.
-    pub tx: Option<u64>,
-    /// A sequence of additions and retractions.
-    pub tx_data: Vec<TxData>,
 }
 
 /// A request expressing interest in receiving results published under
@@ -103,10 +82,8 @@ pub struct CreateAttribute {
 /// Possible request types.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
-    /// Sends a single datom.
-    Datom(Eid, Aid, Value, isize, u64),
     /// Sends inputs via one or more registered handles.
-    Transact(Transact),
+    Transact(Vec<TxData>),
     /// Expresses interest in a named relation.
     Interest(Interest),
     /// Registers one or more named relations.
@@ -115,8 +92,8 @@ pub enum Request {
     RegisterSource(RegisterSource),
     /// Creates a named input handle that can be `Transact`ed upon.
     CreateAttribute(CreateAttribute),
-    /// Advances and flushes a named input handle.
-    AdvanceInput(Option<String>, u64),
+    /// Advances the specified domain to the specified time.
+    AdvanceDomain(Option<String>, u64),
     /// Closes a named input handle.
     CloseInput(String),
 }
@@ -126,30 +103,35 @@ pub enum Request {
 pub struct Server<Token: Hash> {
     /// Server configuration.
     pub config: Config,
-    /// Internal sequence number domain.
-    pub next_tx: u64,
-    /// Input handles to global arrangements.
-    pub input_handles: HashMap<String, InputSession<u64, (Value, Value), isize>>,
     /// Implementation context.
     pub context: Context,
-    /// A probe for the transaction id time domain.
-    pub probe: ProbeHandle<u64>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, Vec<Token>>,
+    /// Probe keeping track of overall dataflow progress.
+    pub probe: ProbeHandle<u64>,
 }
 
 /// Implementation context.
 pub struct Context {
     /// Representation of named rules.
     pub rules: HashMap<Aid, Rule>,
-    /// Named relations.
-    pub global_arrangements: HashMap<Aid, RelationHandle>,
-    /// Forward attribute indices eid -> v.
-    pub forward: HashMap<Aid, CollectionIndex<Value, Value, u64>>,
-    /// Reverse attribute indices v -> eid.
-    pub reverse: HashMap<Aid, CollectionIndex<Value, Value, u64>>,
     /// Set of rules known to be underconstrained.
     pub underconstrained: HashSet<Aid>,
+    /// Internal domain of command sequence numbers.
+    pub internal: Domain<u64>,
+    /// Named relations.
+    pub arrangements: HashMap<Aid, RelationHandle>,
+}
+
+impl Context {
+    /// Inserts a new named relation.
+    pub fn register_arrangement(&mut self, name: String, mut trace: RelationHandle) {
+        // decline the capability for that trace handle to subset its
+        // view of the data
+        trace.distinguish_since(&[]);
+
+        self.arrangements.insert(name, trace);
+    }
 }
 
 impl ImplContext for Context {
@@ -158,15 +140,15 @@ impl ImplContext for Context {
     }
 
     fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle> {
-        self.global_arrangements.get_mut(name)
+        self.arrangements.get_mut(name)
     }
 
     fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>> {
-        self.forward.get_mut(name)
+        self.internal.forward.get_mut(name)
     }
 
     fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>> {
-        self.reverse.get_mut(name)
+        self.internal.reverse.get_mut(name)
     }
 
     fn is_underconstrained(&self, name: &str) -> bool {
@@ -180,17 +162,14 @@ impl<Token: Hash> Server<Token> {
     pub fn new(config: Config) -> Self {
         Server {
             config,
-            next_tx: 0,
-            input_handles: HashMap::new(),
             context: Context {
                 rules: HashMap::new(),
-                global_arrangements: HashMap::new(),
-                forward: HashMap::new(),
-                reverse: HashMap::new(),
+                internal: Domain::new(0),
                 underconstrained: HashSet::new(),
+                arrangements: HashMap::new(),
             },
-            probe: ProbeHandle::new(),
             interests: HashMap::new(),
+            probe: ProbeHandle::new(),
         }
     }
 
@@ -257,91 +236,18 @@ impl<Token: Hash> Server<Token> {
         ]
     }
 
-    fn register_global_arrangement(&mut self, name: String, mut trace: RelationHandle) {
-        // decline the capability for that trace handle to subset its
-        // view of the data
-        trace.distinguish_since(&[]);
-
-        self.context.global_arrangements.insert(name, trace);
-    }
-
-    /// Returns true iff the probe is behind any input handle. Mostly
-    /// used as a convenience method during testing.
-    pub fn is_any_outdated(&self) -> bool {
-        for handle in self.input_handles.values() {
-            if self.probe.less_than(handle.time()) {
-                return true;
-            }
-        }
-
-        false
-    }
-
-    /// Handle a Datom request.
-    pub fn datom(
+    /// Handle a Transact request.
+    pub fn transact(
         &mut self,
+        tx_data: Vec<TxData>,
         owner: usize,
         worker_index: usize,
-        e: Eid,
-        a: Aid,
-        v: Value,
-        diff: isize,
-        _tx: u64,
-    ) {
+    ) -> Result<(), Error> {
+        // only the owner should actually introduce new inputs
         if owner == worker_index {
-            // only the owner should actually introduce new inputs
-
-            let handle = self
-                .input_handles
-                .get_mut(&a)
-                .expect(&format!("Attribute {} does not exist.", a));
-
-            handle.update((Value::Eid(e), v), diff);
-        }
-    }
-
-    /// Handle a Transact request.
-    pub fn transact(&mut self, req: Transact, owner: usize, worker_index: usize) {
-        let Transact { tx, tx_data } = req;
-
-        if owner == worker_index {
-            // only the owner should actually introduce new inputs
-
-            // @TODO do this smarter, e.g. grouped by handle
-            for TxData(op, e, a, v) in tx_data {
-                let handle = self
-                    .input_handles
-                    .get_mut(&a)
-                    .expect(&format!("Attribute {} does not exist.", a));
-
-                handle.update((Value::Eid(e), v), op);
-            }
-        }
-
-        let next_tx = match tx {
-            None => self.next_tx,
-            Some(tx) => tx + 1,
-        };
-
-        for handle in self.input_handles.values_mut() {
-            handle.advance_to(next_tx);
-            handle.flush();
-        }
-
-        if !self.config.enable_history {
-            // if historical queries don't matter, we should advance
-            // the index traces to allow them to compact
-
-            let mut frontier = Vec::new();
-            for handle in self.input_handles.values() {
-                frontier.push(*handle.time() - 1);
-            }
-
-            let frontier_ref = &frontier;
-
-            for trace in self.context.global_arrangements.values_mut() {
-                trace.advance_by(frontier_ref);
-            }
+            self.context.internal.transact(tx_data)
+        } else {
+            Ok(())
         }
     }
 
@@ -372,14 +278,16 @@ impl<Token: Hash> Server<Token> {
                 unimplemented!();
             }
             _ => {
-                if self.context.global_arrangements.contains_key(name) {
+                // We need to do a `contains_key` here to avoid taking
+                // a mut ref on context.
+                if self.context.arrangements.contains_key(name) {
                     // Rule is already implemented.
                     Ok(self.context.global_arrangement(name).unwrap())
                 } else if self.config.enable_optimizer {
                     let rel_map = implement_neu(name, scope, &mut self.context)?;
 
                     for (name, trace) in rel_map.into_iter() {
-                        self.register_global_arrangement(name, trace);
+                        self.context.register_arrangement(name, trace);
                     }
 
                     match self.context.global_arrangement(name) {
@@ -396,7 +304,7 @@ impl<Token: Hash> Server<Token> {
                     let rel_map = implement(name, scope, &mut self.context)?;
 
                     for (name, trace) in rel_map.into_iter() {
-                        self.register_global_arrangement(name, trace);
+                        self.context.register_arrangement(name, trace);
                     }
 
                     match self.context.global_arrangement(name) {
@@ -415,7 +323,7 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handle a Register request.
-    pub fn register(&mut self, req: Register) {
+    pub fn register(&mut self, req: Register) -> Result<(), Error> {
         let Register { rules, .. } = req;
 
         for rule in rules.into_iter() {
@@ -429,12 +337,14 @@ impl<Token: Hash> Server<Token> {
                     let tx_data: Vec<TxData> =
                         data.drain(..).map(|(e, a, v)| TxData(1, e, a, v)).collect();
 
-                    self.transact(Transact { tx: None, tx_data }, 0, 0);
+                    self.transact(tx_data, 0, 0)?;
                 }
 
                 self.context.rules.insert(rule.name.to_string(), rule);
             }
         }
+
+        Ok(())
     }
 
     /// Handle a RegisterSource request.
@@ -449,51 +359,14 @@ impl<Token: Hash> Server<Token> {
             let name = names.pop().unwrap();
             let datoms = source.source(scope, names.clone());
 
-            if self.context.forward.contains_key(&name) {
-                Err(Error {
-                    category: "df.error.category/conflict",
-                    message: format!("An attribute of name {} already exists.", name),
-                })
-            } else {
-                let tuples = datoms
-                    .map(|(_idx, tuple)| tuple)
-                    .as_collection()
-                // Ensure that redundant (e,v) pairs don't cause
-                // misleading proposals during joining.
-                    .distinct();
-
-                let forward = CollectionIndex::index(&name, &tuples);
-                let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
-
-                self.context.forward.insert(name.clone(), forward);
-                self.context.reverse.insert(name, reverse);
-
-                Ok(())
-            }
+            self.context.internal.create_source(&name, None, &datoms)
         } else if names.len() > 1 {
             let datoms = source.source(scope, names.clone());
 
             for (name_idx, name) in names.iter().enumerate() {
-                if self.context.forward.contains_key(name) {
-                    return Err(Error {
-                        category: "df.error.category/conflict",
-                        message: format!("An attribute of name {} already exists.", name),
-                    });
-                } else {
-                    let tuples = datoms
-                        .filter(move |(idx, _tuple)| *idx == name_idx)
-                        .map(|(_idx, tuple)| tuple)
-                        .as_collection()
-                    // Ensure that redundant (e,v) pairs don't cause
-                    // misleading proposals during joining.
-                        .distinct();
-
-                    let forward = CollectionIndex::index(name, &tuples);
-                    let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
-
-                    self.context.forward.insert(name.to_string(), forward);
-                    self.context.reverse.insert(name.to_string(), reverse);
-                }
+                self.context
+                    .internal
+                    .create_source(name, Some(name_idx), &datoms)?;
             }
 
             Ok(())
@@ -502,92 +375,48 @@ impl<Token: Hash> Server<Token> {
         }
     }
 
-    /// Creates a new collection of (e,v) tuples and indexes it in
-    /// various ways. Stores forward, and reverse indices, as well as
-    /// the input handle in the server state.
-    pub fn create_attribute<S: Scope<Timestamp = u64>>(
-        &mut self,
-        name: &str,
-        scope: &mut S,
-    ) -> Result<(), Error> {
-        if self.context.forward.contains_key(name) {
-            Err(Error {
-                category: "df.error.category/conflict",
-                message: format!("An attribute of name {} already exists.", name),
-            })
-        } else {
-            let (mut handle, mut tuples) = scope.new_collection::<(Value, Value), isize>();
-
-            // Ensure that redundant (e,v) pairs don't cause
-            // misleading proposals during joining.
-            tuples = tuples.distinct();
-
-            let forward = CollectionIndex::index(name, &tuples);
-            let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
-
-            self.context.forward.insert(name.to_string(), forward);
-            self.context.reverse.insert(name.to_string(), reverse);
-
-            // We must bring the new input up to speed to avoid
-            // stalling the rest of the dataflow.
-            handle.advance_to(self.next_tx);
-
-            self.input_handles.insert(name.to_string(), handle);
-
-            Ok(())
-        }
-    }
-
-    /// Handle an AdvanceInput request.
-    pub fn advance_input(&mut self, name: Option<String>, tx: u64) -> Result<(), Error> {
+    /// Handle an AdvanceDomain request.
+    pub fn advance_domain(&mut self, name: Option<String>, next: u64) -> Result<(), Error> {
         match name {
             None => {
-                for handle in self.input_handles.values_mut() {
-                    handle.advance_to(tx);
-                    handle.flush();
+                // If history is not enabled, we want to keep traces advanced
+                // up to the previous time.
+                let trace_next = if self.config.enable_history {
+                    None
+                } else {
+                    Some(next - 1)
+                };
+
+                self.context.internal.advance_to(next, trace_next);
+
+                if let Some(trace_next) = trace_next {
+                    // if historical queries don't matter, we should advance
+                    // the index traces to allow them to compact
+
+                    let frontier = &[trace_next];
+
+                    for trace in self.context.arrangements.values_mut() {
+                        trace.advance_by(frontier);
+                    }
                 }
+
+                Ok(())
             }
-            Some(name) => match self.input_handles.get_mut(&name) {
-                None => {
-                    return Err(Error {
-                        category: "df.error.category/not-found",
-                        message: format!("Input {} does not exist.", name),
-                    });
-                }
-                Some(handle) => {
-                    handle.advance_to(tx);
-                    handle.flush();
-                }
-            },
+            Some(_) => Err(Error {
+                category: "df.error.category/unsupported",
+                message: "Named domains are not yet supported.".to_string(),
+            }),
         }
-
-        if !self.config.enable_history {
-            // if historical queries don't matter, we should advance
-            // the index traces to allow them to compact
-
-            let mut frontier = Vec::new();
-            for handle in self.input_handles.values() {
-                frontier.push(*handle.time() - 1);
-            }
-
-            let frontier_ref = &frontier;
-
-            for trace in self.context.global_arrangements.values_mut() {
-                trace.advance_by(frontier_ref);
-            }
-        }
-
-        Ok(())
     }
 
-    /// Handle a CloseInput request.
-    pub fn close_input(&mut self, name: String) {
-        let handle = self
-            .input_handles
-            .remove(&name)
-            .expect(&format!("Input {} does not exist.", name));
+    /// Returns true iff the probe is behind any input handle. Mostly
+    /// used as a convenience method during testing.
+    pub fn is_any_outdated(&self) -> bool {
+        if self.probe.less_than(self.context.internal.time()) {
+            return true;
+        }
 
-        handle.close();
+        false
     }
 
     /// Helper for registering, publishing, and indicating interest in
@@ -603,7 +432,8 @@ impl<Token: Hash> Server<Token> {
         self.register(Register {
             rules: vec![rule],
             publish: vec![publish_name],
-        });
+        })
+        .unwrap();
 
         match self.interest(&interest_name, scope) {
             Err(error) => panic!("{:?}", error),
