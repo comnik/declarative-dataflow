@@ -270,6 +270,8 @@ impl Implementable for Hector {
                                 // in conflict with the source binding here, in order to avoid
                                 // starting with single-symbol prefixes in the general case.
 
+                                // @TODO Not just constant bindings can cause issues here!
+
                                 if let Binding::Constant(constant_binding) = conflict {
 
                                     prefix_symbols.push(constant_binding.symbol);
