@@ -1,6 +1,3 @@
-extern crate declarative_dataflow;
-extern crate timely;
-
 use std::collections::HashSet;
 use std::iter::FromIterator;
 use std::sync::mpsc::channel;
@@ -13,7 +10,7 @@ use timely::Configuration;
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Implementable, Join, Project};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Aid, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Aid, AttributeSemantics, Plan, Rule, TxData, Value};
 use Value::{Eid, Number, String};
 
 struct Case {
@@ -149,7 +146,7 @@ fn run_query_cases() {
                     server
                         .context
                         .internal
-                        .create_attribute(dep, scope)
+                        .create_attribute(dep, AttributeSemantics::Raw, scope)
                         .unwrap();
                 }
 

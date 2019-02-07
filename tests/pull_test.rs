@@ -1,6 +1,3 @@
-extern crate declarative_dataflow;
-extern crate timely;
-
 use std::collections::HashSet;
 use std::sync::mpsc::channel;
 use std::time::Duration;
@@ -8,8 +5,9 @@ use std::time::Duration;
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Pull, PullLevel};
-use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Plan, Rule, Value};
+use declarative_dataflow::server::Server;
+use declarative_dataflow::{AttributeSemantics, Plan, Rule, TxData, Value};
+use AttributeSemantics::Raw;
 use Value::{Aid, Bool, Eid, Number, String};
 
 #[test]
@@ -27,9 +25,21 @@ fn pull_level() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute("admin?", scope).unwrap();
-            server.create_attribute("name", scope).unwrap();
-            server.create_attribute("age", scope).unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("admin?", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("name", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("age", Raw, scope)
+                .unwrap();
 
             server
                 .test_single(
@@ -44,10 +54,9 @@ fn pull_level() {
                 });
         });
 
-        server.transact(
-            Transact {
-                tx: Some(0),
-                tx_data: vec![
+        server
+            .transact(
+                vec![
                     TxData(1, 100, "admin?".to_string(), Bool(true)),
                     TxData(1, 200, "admin?".to_string(), Bool(false)),
                     TxData(1, 300, "admin?".to_string(), Bool(false)),
@@ -57,10 +66,12 @@ fn pull_level() {
                     TxData(1, 100, "age".to_string(), Number(12)),
                     TxData(1, 200, "age".to_string(), Number(13)),
                 ],
-            },
-            0,
-            0,
-        );
+                0,
+                0,
+            )
+            .unwrap();
+
+        server.advance_domain(None, 1).unwrap();
 
         worker.step_while(|| server.is_any_outdated());
 
@@ -110,9 +121,21 @@ fn pull_children() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute("parent/child", scope).unwrap();
-            server.create_attribute("name", scope).unwrap();
-            server.create_attribute("age", scope).unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("parent/child", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("name", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("age", Raw, scope)
+                .unwrap();
 
             server
                 .test_single(
@@ -127,10 +150,9 @@ fn pull_children() {
                 });
         });
 
-        server.transact(
-            Transact {
-                tx: Some(0),
-                tx_data: vec![
+        server
+            .transact(
+                vec![
                     TxData(1, 100, "name".to_string(), String("Alice".to_string())),
                     TxData(1, 100, "parent/child".to_string(), Eid(300)),
                     TxData(1, 200, "name".to_string(), String("Bob".to_string())),
@@ -140,10 +162,12 @@ fn pull_children() {
                     TxData(1, 400, "name".to_string(), String("Dipper".to_string())),
                     TxData(1, 400, "age".to_string(), Number(12)),
                 ],
-            },
-            0,
-            0,
-        );
+                0,
+                0,
+            )
+            .unwrap();
+
+        server.advance_domain(None, 1).unwrap();
 
         worker.step_while(|| server.is_any_outdated());
 
@@ -201,66 +225,6 @@ fn pull_children() {
     .unwrap();
 }
 
-// #[test]
-// fn pull_maps() {
-//     timely::execute(Configuration::Thread, |worker| {
-//         let mut server = Server::<u64>::new(Default::default());
-
-//         let (parent, child,) = (1, 2,);
-//         let plan = Plan::PullLevel(PullLevel {
-//             variables: vec![],
-//             plan: Box::new(Plan::MatchA(parent, "parent/child".to_string(), child)),
-//             attributes: vec!["name".to_string(), "age".to_string()],
-//         });
-
-//         let view = Rc::new(RefCell::new(HashMap::<Value,Value>::new()));
-//         let view_handle = Rc::downgrade(&view);
-
-//         worker.dataflow::<u64, _, _>(|scope| {
-//             server.create_attribute("parent/child", scope).unwrap();
-//             server.create_attribute("name", scope).unwrap();
-//             server.create_attribute("age", scope).unwrap();
-
-//             server
-//                 .test_single(scope, Rule { name: "pull_children".to_string(), plan })
-//                 .inspect(move |&(ref data, _t, diff)| {
-//                     if let Some(view_cell) = view_handle.upgrade() {
-
-//                         let mut view_borrow = view_cell.borrow_mut();
-
-//                         if diff > 0 {
-//                             view_borrow.insert(data[2].clone(), data[3].clone());
-//                         } else if diff < 0 {
-//                             view_borrow.remove(data[2]);
-//                         }
-//                     }
-//                 });
-//         });
-
-//         server.transact(
-//             Transact {
-//                 tx: Some(0),
-//                 tx_data: vec![
-//                     TxData(1, 100, "name".to_string(), String("Alice".to_string())),
-//                     TxData(1, 100, "parent/child".to_string(), Eid(300)),
-//                     TxData(1, 200, "name".to_string(), String("Bob".to_string())),
-//                     TxData(1, 200, "parent/child".to_string(), Eid(400)),
-//                     TxData(1, 300, "name".to_string(), String("Mabel".to_string())),
-//                     TxData(1, 300, "age".to_string(), Number(13)),
-//                     TxData(1, 400, "name".to_string(), String("Dipper".to_string())),
-//                     TxData(1, 400, "age".to_string(), Number(12)),
-//                 ],
-//             },
-//             0,
-//             0,
-//         );
-
-//         worker.step_while(|| server.is_any_outdated());
-
-//         println!("{:?}", view);
-//     }).unwrap();
-// }
-
 #[test]
 fn pull() {
     timely::execute(Configuration::Thread, |worker| {
@@ -291,11 +255,31 @@ fn pull() {
         });
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute("name", scope).unwrap();
-            server.create_attribute("join/binding", scope).unwrap();
-            server.create_attribute("pattern/e", scope).unwrap();
-            server.create_attribute("pattern/a", scope).unwrap();
-            server.create_attribute("pattern/v", scope).unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("name", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("join/binding", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("pattern/e", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("pattern/a", Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute("pattern/v", Raw, scope)
+                .unwrap();
 
             server
                 .test_single(
@@ -310,10 +294,9 @@ fn pull() {
                 });
         });
 
-        server.transact(
-            Transact {
-                tx: Some(0),
-                tx_data: vec![
+        server
+            .transact(
+                vec![
                     TxData(1, 100, "name".to_string(), String("rule".to_string())),
                     TxData(1, 100, "join/binding".to_string(), Eid(200)),
                     TxData(1, 100, "join/binding".to_string(), Eid(300)),
@@ -321,10 +304,12 @@ fn pull() {
                     TxData(1, 300, "pattern/e".to_string(), Eid(12345)),
                     TxData(1, 300, "pattern/a".to_string(), Aid("asd".to_string())),
                 ],
-            },
-            0,
-            0,
-        );
+                0,
+                0,
+            )
+            .unwrap();
+
+        server.advance_domain(None, 1).unwrap();
 
         worker.step_while(|| server.is_any_outdated());
 

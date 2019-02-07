@@ -1,13 +1,11 @@
-extern crate declarative_dataflow;
-extern crate timely;
-
 use std::sync::mpsc::channel;
 
 use timely::Configuration;
 
 use declarative_dataflow::plan::{Join, Project};
-use declarative_dataflow::server::{Server, Transact, TxData};
-use declarative_dataflow::{Plan, Rule, Value};
+use declarative_dataflow::server::Server;
+use declarative_dataflow::{AttributeSemantics, Plan, Rule, TxData, Value};
+use Value::{Eid, String};
 
 #[test]
 fn match_ea_after_input() {
@@ -19,34 +17,22 @@ fn match_ea_after_input() {
         let plan = Plan::MatchEA(1, ":name".to_string(), 1);
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":name", scope).unwrap();
+            server
+                .context
+                .internal
+                .create_attribute(":name", AttributeSemantics::Raw, scope)
+                .unwrap();
         });
 
         let tx_data = vec![
-            TxData(
-                1,
-                1,
-                ":name".to_string(),
-                Value::String("Dipper".to_string()),
-            ),
-            TxData(
-                1,
-                1,
-                ":name".to_string(),
-                Value::String("Alias".to_string()),
-            ),
-            TxData(
-                1,
-                2,
-                ":name".to_string(),
-                Value::String("Mabel".to_string()),
-            ),
+            TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
+            TxData(1, 1, ":name".to_string(), String("Alias".to_string())),
+            TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
         ];
-        let tx0 = Transact {
-            tx: Some(0),
-            tx_data,
-        };
-        server.transact(tx0, 0, 0);
+
+        server.transact(tx_data, 0, 0).unwrap();
+
+        server.advance_domain(None, 1).unwrap();
 
         worker.step_while(|| server.is_any_outdated());
 
@@ -64,15 +50,17 @@ fn match_ea_after_input() {
                 });
         });
 
+        server.advance_domain(None, 2).unwrap();
+
         worker.step_while(|| server.is_any_outdated());
 
         assert_eq!(
             results.recv().unwrap(),
-            (vec![Value::String("Alias".to_string())], 1)
+            (vec![String("Alias".to_string())], 1)
         );
         assert_eq!(
             results.recv().unwrap(),
-            (vec![Value::String("Dipper".to_string())], 1)
+            (vec![String("Dipper".to_string())], 1)
         );
     })
     .unwrap();
@@ -85,9 +73,19 @@ fn join_after_input() {
         let (send_results, results) = channel();
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.create_attribute(":transfer/from", scope).unwrap();
-            server.create_attribute(":user/id", scope).unwrap();
+            server
+                .context
+                .internal
+                .create_attribute(":transfer/from", AttributeSemantics::Raw, scope)
+                .unwrap();
+            server
+                .context
+                .internal
+                .create_attribute(":user/id", AttributeSemantics::Raw, scope)
+                .unwrap();
         });
+
+        server.advance_domain(None, 1).unwrap();
 
         worker.step_while(|| server.is_any_outdated());
 
@@ -96,10 +94,12 @@ fn join_after_input() {
                 1,
                 1,
                 ":user/id".to_string(),
-                Value::String("123-456-789".to_string()),
+                String("123-456-789".to_string()),
             )];
-            let tx0 = Transact { tx: None, tx_data };
-            server.transact(tx0, 0, 0);
+
+            server.transact(tx_data, 0, 0).unwrap();
+
+            server.advance_domain(None, 2).unwrap();
 
             worker.step_while(|| server.is_any_outdated());
         }
@@ -109,10 +109,12 @@ fn join_after_input() {
                 1,
                 101,
                 ":transfer/from".to_string(),
-                Value::String("123-456-789".to_string()),
+                String("123-456-789".to_string()),
             )];
-            let tx1 = Transact { tx: None, tx_data };
-            server.transact(tx1, 0, 0);
+
+            server.transact(tx_data, 0, 0).unwrap();
+
+            server.advance_domain(None, 3).unwrap();
 
             worker.step_while(|| server.is_any_outdated());
         }
@@ -141,12 +143,11 @@ fn join_after_input() {
                 });
         });
 
+        server.advance_domain(None, 4).unwrap();
+
         worker.step_while(|| server.is_any_outdated());
 
-        assert_eq!(
-            results.recv().unwrap(),
-            (vec![Value::Eid(101), Value::Eid(1)], 1)
-        );
+        assert_eq!(results.recv().unwrap(), (vec![Eid(101), Eid(1)], 1));
     })
     .unwrap();
 }

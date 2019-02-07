@@ -119,6 +119,20 @@ pub type RelationHandle = TraceKeyHandle<Vec<Value>, u64, isize>;
 // synthesized (i.e. that are not fully defined yet).
 type VariableMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
 
+/// Attribute indices can have various operations applied to them,
+/// based on their semantics.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub enum AttributeSemantics {
+    /// No special semantics enforced. Source is responsible for
+    /// everything.
+    Raw,
+    /// Only a single value per eid is allowed at any given timestamp.
+    CardinalityOne,
+    /// Multiple different values for any given eid are allowed, but
+    /// (e,v) pairs are enforced to be distinct.
+    CardinalityMany,
+}
+
 /// Various indices over a collection of (K, V) pairs, required to
 /// participate in delta-join pipelines.
 pub struct CollectionIndex<K, V, T>

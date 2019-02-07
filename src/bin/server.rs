@@ -556,9 +556,9 @@ fn main() {
                                 }
                             });
                         }
-                        Request::CreateAttribute(CreateAttribute { name }) => {
+                        Request::CreateAttribute(CreateAttribute { name, semantics }) => {
                             worker.dataflow::<u64, _, _>(|scope| {
-                                if let Err(error) = server.context.internal.create_attribute(&name, scope) {
+                                if let Err(error) = server.context.internal.create_attribute(&name, semantics, scope) {
                                     send_errors.send((vec![Token(client)], vec![error])).unwrap();
                                 }
                             });

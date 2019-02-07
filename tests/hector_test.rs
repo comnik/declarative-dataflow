@@ -13,7 +13,7 @@ use declarative_dataflow::binding::{
 };
 use declarative_dataflow::plan::Hector;
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Aid, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Aid, AttributeSemantics, Plan, Rule, TxData, Value};
 use Binding::{Attribute, BinaryPredicate, Constant};
 use Value::{Eid, Number, String};
 
@@ -276,7 +276,7 @@ fn run_hector_cases() {
                     server
                         .context
                         .internal
-                        .create_attribute(dep, scope)
+                        .create_attribute(dep, AttributeSemantics::Raw, scope)
                         .unwrap();
                 }
 

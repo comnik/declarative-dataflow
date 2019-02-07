@@ -12,7 +12,9 @@ use crate::domain::Domain;
 use crate::plan::{ImplContext, Implementable};
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
-use crate::{implement, implement_neu, CollectionIndex, RelationHandle, TraceKeyHandle};
+use crate::{
+    implement, implement_neu, AttributeSemantics, CollectionIndex, RelationHandle, TraceKeyHandle,
+};
 use crate::{Aid, Error, TxData, Value};
 
 /// Server configuration.
@@ -77,6 +79,9 @@ pub struct CreateAttribute {
     /// A globally unique name under which to publish data sent via
     /// this input.
     pub name: String,
+    /// Semantics enforced on this attribute by 3DF (vs those enforced
+    /// by the external source).
+    pub semantics: AttributeSemantics,
 }
 
 /// Possible request types.
@@ -151,7 +156,7 @@ impl ImplContext for Context {
         self.internal.reverse.get_mut(name)
     }
 
-    fn is_underconstrained(&self, name: &str) -> bool {
+    fn is_underconstrained(&self, _name: &str) -> bool {
         // self.underconstrained.contains(name)
         true
     }
@@ -178,33 +183,43 @@ impl<Token: Hash> Server<Token> {
         vec![
             Request::CreateAttribute(CreateAttribute {
                 name: "df.pattern/e".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df.pattern/a".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df.pattern/v".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df.join/binding".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df.union/binding".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df.project/binding".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df.project/symbols".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df/name".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df.name/symbols".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
                 name: "df.name/plan".to_string(),
+                semantics: AttributeSemantics::Raw,
             }),
             // Request::Register(Register {
             //     publish: vec!["df.rules".to_string()],
