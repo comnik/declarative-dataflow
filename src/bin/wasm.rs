@@ -1,21 +1,18 @@
-extern crate declarative_dataflow;
-extern crate timely;
-
 #[macro_use]
 extern crate stdweb;
 
-use timely::communication::allocator::AllocateBuilder;
-use timely::communication::allocator::thread::{ThreadBuilder, Thread};
-
-use timely::worker::Worker;
-use timely::dataflow::operators::{Operator, Probe};
-use timely::dataflow::channels::pact::Pipeline;
-
-use declarative_dataflow::Out;
-use declarative_dataflow::server::{Config, Request, Server, CreateInput};
-
-use std::rc::Rc;
 use std::cell::RefCell;
+use std::rc::Rc;
+
+use timely::communication::allocator::thread::{Thread, ThreadBuilder};
+use timely::communication::allocator::AllocateBuilder;
+
+use timely::dataflow::channels::pact::Pipeline;
+use timely::dataflow::operators::{Operator, Probe};
+use timely::worker::Worker;
+
+use declarative_dataflow::server::{Config, CreateAttribute, Request, Server};
+use declarative_dataflow::ResultDiff;
 
 const WORKER_INDEX: usize = 0;
 
@@ -23,7 +20,7 @@ thread_local!(
     static WORKER: Rc<RefCell<Worker<Thread>>> = {
         let allocator = ThreadBuilder.build();
         let worker = Worker::new(allocator);
-        
+
         Rc::new(RefCell::new(worker))
     };
 
@@ -32,68 +29,106 @@ thread_local!(
             port: 0,
             enable_cli: false,
             enable_history: false,
+            enable_optimizer: false,
+            enable_meta: false,
         };
         let server = Server::<()>::new(config);
 
         Rc::new(RefCell::new(server))
     };
+
+    static NEXT_TX: RefCell<u64> = RefCell::new(0);
 );
 
 #[js_export]
 fn handle(requests: Vec<Request>) {
-
     let mut requests = requests.clone();
-        
-    WORKER.with(move |worker_cell| {
-        SERVER.with(move |server_cell| {
 
-            let mut worker = worker_cell.borrow_mut();
-            let mut server = server_cell.borrow_mut();
+    NEXT_TX.with(move |next_tx| {
+        WORKER.with(move |worker_cell| {
+            SERVER.with(move |server_cell| {
+                *next_tx.borrow_mut() += 1;
 
-            // no notion of owner without multiple workers
-            let owner = 0;
-            
-            for req in requests.drain(..) {
-                match req {
-                    Request::Datom(e, a, v, diff, tx) => server.datom(owner, WORKER_INDEX, e, a, v, diff, tx),
-                    Request::Transact(req) => server.transact(req, owner, WORKER_INDEX),
-                    Request::Register(req) => {
-                        worker.dataflow::<u64, _, _>(|scope| {
-                            server.register(req, scope);
-                        });
-                    }
-                    Request::RegisterSource(req) => { panic!("Not supported") }
-                    Request::CreateInput(CreateInput { name }) => {
-                        worker.dataflow::<u64, _, _>(|scope| {
-                            server.create_input(&name, scope);
-                        });
-                    }
-                    Request::AdvanceInput(name, tx) => server.advance_input(name, tx),
-                    Request::CloseInput(name) => server.close_input(name),
-                    Request::Interest(req) => {
-                        worker.dataflow::<u64, _, _>(|scope| {
-                            let name = req.name.clone();
+                let mut worker = worker_cell.borrow_mut();
+                let mut server = server_cell.borrow_mut();
 
-                            server.interest(&req.name, scope)
-                                .inner
-                                .probe_with(&mut server.probe)
-                                .sink(Pipeline, "wasm_out", move |input| {
-                                    while let Some((_time, data)) = input.next() {
-                                        let out: Vec<Out> = data.iter().cloned()
-                                            .map(|(tuple, t, diff)| Out(tuple, t, diff))
-                                            .collect();
-                                        
-                                        js! {
-                                            const name = @{name.clone()};
-                                            const batch = @{out};
-                                            __UGLY_DIFF_HOOK(name, batch);
-                                        }
+                // no notion of owner without multiple workers
+                let owner = 0;
+
+                for req in requests.drain(..) {
+                    match req {
+                        Request::Transact(req) => {
+                            if let Err(error) = server.transact(req, owner, WORKER_INDEX) {
+                                js! { console.error(@{error.message}) }
+                            }
+                        }
+                        Request::Interest(req) => {
+                            worker.dataflow::<u64, _, _>(|scope| {
+                                let name = req.name.clone();
+
+                                match server.interest(&req.name, scope) {
+                                    Err(error) => {
+                                        js! { console.error(@{error.message}) }
                                     }
-                                });
-                        });
+                                    Ok(trace) => {
+                                        trace
+                                            .import_named(scope, &req.name)
+                                            .as_collection(|tuple, _| tuple.clone())
+                                            .inner
+                                            .probe_with(&mut server.probe)
+                                            .sink(Pipeline, "wasm_out", move |input| {
+                                                while let Some((_time, data)) = input.next() {
+                                                    let out: Vec<ResultDiff> = data
+                                                        .iter()
+                                                        .cloned()
+                                                        .map(|(tuple, t, diff)| {
+                                                            ResultDiff(tuple, t, diff)
+                                                        })
+                                                        .collect();
+
+                                                    js! {
+                                                        const name = @{name.clone()};
+                                                        const batch = @{out};
+                                                        __UGLY_DIFF_HOOK(name, batch);
+                                                    }
+                                                }
+                                            });
+                                    }
+                                }
+                            });
+                        }
+                        Request::Register(req) => {
+                            if let Err(error) = server.register(req) {
+                                js! { console.error(@{error.message}) }
+                            }
+                        }
+                        Request::RegisterSource(_req) => unimplemented!(),
+                        Request::CreateAttribute(CreateAttribute { name, semantics }) => {
+                            worker.dataflow::<u64, _, _>(|scope| {
+                                if let Err(error) = server
+                                    .context
+                                    .internal
+                                    .create_attribute(&name, semantics, scope)
+                                {
+                                    js! { console.error(@{error.message}) }
+                                }
+                            });
+                        }
+                        Request::AdvanceDomain(name, next) => {
+                            if let Err(error) = server.advance_domain(name, next) {
+                                js! { console.error(@{error.message}) }
+                            }
+                        }
+                        Request::CloseInput(name) => {
+                            server.context.internal.close_input(name).unwrap()
+                        }
                     }
                 }
-            }
+
+                if let Err(error) = server.advance_domain(None, *next_tx.borrow()) {
+                    js! { console.error(@{error.message}) }
+                }
+            });
         });
     });
 }

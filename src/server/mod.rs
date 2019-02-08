@@ -44,11 +44,6 @@ impl Default for Config {
     }
 }
 
-/// Transaction data. Conceptually a pair (Datom, diff) but it's kept
-/// intentionally flat to be more directly compatible with Datomic.
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct TxData(pub isize, pub Entity, pub Attribute, pub Value);
-
 /// A request expressing the arrival of inputs to one or more
 /// collections. Optionally a timestamp may be specified.
 #[derive(Serialize, Deserialize, Clone, Debug)]

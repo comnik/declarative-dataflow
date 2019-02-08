@@ -15,6 +15,8 @@ extern crate abomonation;
 #[macro_use]
 extern crate serde_derive;
 extern crate num_rational;
+#[macro_use]
+extern crate stdweb;
 
 pub mod binding;
 pub mod domain;
@@ -98,10 +100,14 @@ pub struct Error {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct TxData(pub isize, pub Eid, pub Aid, pub Value);
 
-/// A (tuple, time, diff) triple, as sent back to clients.
-pub type ResultDiff = (Vec<Value>, u64, isize);
+// /// A (tuple, time, diff) triple, as sent back to clients.
+// pub type ResultDiff = (Vec<Value>, u64, isize);
 
-// js_serializable!(ResultDiff);
+/// A (tuple, time, diff) triple, as sent back to clients.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub struct ResultDiff(pub Vec<Value>, pub u64, pub isize);
+
+js_serializable!(ResultDiff);
 
 /// An entity, attribute, value triple.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]

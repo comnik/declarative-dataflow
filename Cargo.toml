@@ -5,9 +5,11 @@ authors = ["Frank McSherry <fmcsherry@me.com>", "Nikolas Göbel <me@nikolasgoebe
 edition = "2018"
 
 [dependencies]
-jemallocator = "0.1.8"
-timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
-differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
+jemallocator = { version = "0.1.8", optional = true }
+# timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
+# differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
+timely = { path = "../../repos/timely-dataflow/", features = ["bincode"] }
+differential-dataflow = { path = "../../repos/differential-dataflow/" }
 abomonation = "0.7"
 abomonation_derive = "0.3"
 serde = "1"
@@ -27,7 +29,7 @@ stdweb = "0.4.13"
 
 [features]
 uuids = []
-web-socket-server = ["mio", "ws"]
+web-socket-server = ["jemallocator", "mio", "ws"]
 
 [[bin]]
 name = "server"
@@ -35,9 +37,6 @@ required-features = ["web-socket-server"]
 
 [[bin]]
 name = "wasm"
-
-[[bin]]
-name = "server"
 
 [profile.release]
 # opt-level = 3
