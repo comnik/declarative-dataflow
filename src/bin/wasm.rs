@@ -57,8 +57,8 @@ fn handle(requests: Vec<Request>) {
 
                 for req in requests.drain(..) {
                     match req {
-                        Request::Transact(req) => {
-                            if let Err(error) = server.transact(req, owner, WORKER_INDEX) {
+                        Request::Transact(tx_data) => {
+                            if let Err(error) = server.transact(tx_data, owner, WORKER_INDEX) {
                                 js! { console.error(@{error.message}) }
                             }
                         }
@@ -125,9 +125,9 @@ fn handle(requests: Vec<Request>) {
                     }
                 }
 
-                if let Err(error) = server.advance_domain(None, *next_tx.borrow()) {
-                    js! { console.error(@{error.message}) }
-                }
+                // if let Err(error) = server.advance_domain(None, *next_tx.borrow()) {
+                //     js! { console.error(@{error.message}) }
+                // }
             });
         });
     });
@@ -142,6 +142,19 @@ fn step() -> bool {
     });
 
     SERVER.with(|server_cell| server_cell.borrow().is_any_outdated())
+}
+
+/// Steps all dataflows until the probe has caught up with all inputs.
+#[js_export]
+fn reconcile() {
+    SERVER.with(|server_cell| {
+        WORKER.with(move |worker_cell| {
+            let server = server_cell.borrow();
+            let mut worker = worker_cell.borrow_mut();
+
+            worker.step_while(|| server.is_any_outdated());
+        });
+    });
 }
 
 fn main() {
