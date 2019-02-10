@@ -13,7 +13,7 @@ fn main() {
     timely::execute_from_args(std::env::args().skip(2), move |worker| {
         let timer = std::time::Instant::now();
         let graph = GraphMMap::new(&filename);
-        let mut server = Server::<u64>::new(Default::default());
+        let mut server = Server::<u64, u64>::new(Default::default());
 
         // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
         let (a, b, c) = (1, 2, 3);

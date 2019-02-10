@@ -17,7 +17,7 @@ fn main() {
     let filename = std::env::args().nth(1).unwrap();
 
     timely::execute(Configuration::Process(1), move |worker| {
-        let mut server = Server::<u64>::new(Default::default());
+        let mut server = Server::<u64, u64>::new(Default::default());
 
         let e = 1;
         let rules = vec![Rule {

@@ -13,7 +13,7 @@ use Value::{Aid, Bool, Eid, Number, String};
 #[test]
 fn pull_level() {
     timely::execute(Configuration::Thread, |worker| {
-        let mut server = Server::<u64>::new(Default::default());
+        let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         let (e,) = (1,);
@@ -109,7 +109,7 @@ fn pull_level() {
 #[test]
 fn pull_children() {
     timely::execute(Configuration::Thread, |worker| {
-        let mut server = Server::<u64>::new(Default::default());
+        let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         let (parent, child) = (1, 2);
@@ -228,7 +228,7 @@ fn pull_children() {
 #[test]
 fn pull() {
     timely::execute(Configuration::Thread, |worker| {
-        let mut server = Server::<u64>::new(Default::default());
+        let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         let (a, b, c) = (1, 2, 3);

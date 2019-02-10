@@ -20,7 +20,7 @@ use declarative_dataflow::{Plan, Rule, Value};
 
 fn main() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::<u64>::new(Default::default());
+        let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         let (x, y, z) = (0, 1, 2);

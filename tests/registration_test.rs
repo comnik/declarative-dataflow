@@ -10,7 +10,7 @@ use Value::{Eid, String};
 #[test]
 fn match_ea_after_input() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::<u64>::new(Default::default());
+        let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [:find ?v :where [1 :name ?n]]
@@ -69,7 +69,7 @@ fn match_ea_after_input() {
 #[test]
 fn join_after_input() {
     timely::execute(Configuration::Thread, move |worker| {
-        let mut server = Server::<u64>::new(Default::default());
+        let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         worker.dataflow::<u64, _, _>(|scope| {

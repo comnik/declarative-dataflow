@@ -263,7 +263,7 @@ fn run_hector_cases() {
 
     for case in cases.drain(..) {
         timely::execute(Configuration::Thread, move |worker| {
-            let mut server = Server::<u64>::new(Default::default());
+            let mut server = Server::<u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
