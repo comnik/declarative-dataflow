@@ -11,7 +11,7 @@ use crate::Rule;
 use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionIndex, CollectionRelation, Relation, RelationHandle, VariableMap};
 
-pub mod aggregate;
+pub mod aggregate_neu;
 pub mod antijoin;
 pub mod filter;
 pub mod hector;
@@ -21,7 +21,10 @@ pub mod pull;
 pub mod transform;
 pub mod union;
 
+#[cfg(feature = "set-semantics")]
 pub use self::aggregate::{Aggregate, AggregationFn};
+#[cfg(not(feature = "set-semantics"))]
+pub use self::aggregate_neu::{Aggregate, AggregationFn};
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
 pub use self::hector::Hector;

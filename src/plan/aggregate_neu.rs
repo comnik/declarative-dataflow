@@ -116,7 +116,8 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 let value = &tuple[value_offset];
                 let mut v = vec![value.clone()];
 
-                // With-symbols are always the last elements in the value part of each tuple, given they are specified.
+                // With-symbols are always the last elements in the
+                // value part of each tuple, given they are specified.
                 // We append these, s.t. we consolidate correctly.
                 if with_length > 0 {
                     v.extend(tuple.iter().rev().take(with_length).cloned());
@@ -127,43 +128,35 @@ impl<P: Implementable> Implementable for Aggregate<P> {
 
             match aggregation_fn {
                 AggregationFn::MIN => {
-                    let tuples = tuples
-                        .map(prepare_unary)
-                        .group(|_key, vals, output| {
-                            let min = &vals[0].0[0];
-                            output.push((vec![min.clone()], 1));
-                        });
+                    let tuples = tuples.map(prepare_unary).group(|_key, vals, output| {
+                        let min = &vals[0].0[0];
+                        output.push((vec![min.clone()], 1));
+                    });
                     collections.push(tuples);
                 }
                 AggregationFn::MAX => {
-                    let tuples = tuples
-                        .map(prepare_unary)
-                        .group(|_key, vals, output| {
-                            let max = &vals[vals.len() - 1].0[0];
-                            output.push((vec![max.clone()], 1));
-                        });
+                    let tuples = tuples.map(prepare_unary).group(|_key, vals, output| {
+                        let max = &vals[vals.len() - 1].0[0];
+                        output.push((vec![max.clone()], 1));
+                    });
                     collections.push(tuples);
                 }
                 AggregationFn::MEDIAN => {
-                    let tuples = tuples
-                        .map(prepare_unary)
-                        .group(|_key, vals, output| {
-                            let median = &vals[vals.len() / 2].0[0];
-                            output.push((vec![median.clone()], 1));
-                        });
+                    let tuples = tuples.map(prepare_unary).group(|_key, vals, output| {
+                        let median = &vals[vals.len() / 2].0[0];
+                        output.push((vec![median.clone()], 1));
+                    });
                     collections.push(tuples);
                 }
                 AggregationFn::COUNT => {
-                    let tuples = tuples
-                        .map(prepare_unary)
-                        .group(|_key, input, output| {
-                            let mut total_count = 0;
-                            for (_,count) in input.iter() {
-                                total_count += count;
-                            }
-                                
-                            output.push((vec![Value::Number(total_count as i64)], 1))
-                        });
+                    let tuples = tuples.map(prepare_unary).group(|_key, input, output| {
+                        let mut total_count = 0;
+                        for (_, count) in input.iter() {
+                            total_count += count;
+                        }
+
+                        output.push((vec![Value::Number(total_count as i64)], 1))
+                    });
                     collections.push(tuples);
                 }
                 AggregationFn::SUM => {

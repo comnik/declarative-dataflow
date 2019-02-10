@@ -34,8 +34,8 @@ use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::{Arrange, Arranged, TraceAgent};
-use differential_dataflow::operators::group::Threshold;
 use differential_dataflow::operators::iterate::Variable;
+use differential_dataflow::operators::{Consolidate, Threshold};
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
 use differential_dataflow::trace::wrappers::enter::TraceEnter;
 use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt;
@@ -645,7 +645,11 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
                     });
                 }
                 Some(variable) => {
+                    #[cfg(feature = "set-semantics")]
                     variable.set(&execution.tuples().distinct());
+
+                    #[cfg(not(feature = "set-semantics"))]
+                    variable.set(&execution.tuples().consolidate());
                 }
             }
         }
@@ -748,7 +752,7 @@ where
                     });
                 }
                 Some(variable) => {
-                    variable.set(&execution.tuples().distinct());
+                    variable.set(&execution.tuples().consolidate());
                 }
             }
         }

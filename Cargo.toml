@@ -24,6 +24,7 @@ num-rational = { version = "0.2", features = ["std", "serde"] }
 timely_sort = "0.1.6"
 
 [features]
+set-semantics = []
 uuids = []
 
 [[bin]]
