@@ -2,10 +2,14 @@
 
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
+use std::ops::Sub;
 
 use timely::dataflow::{ProbeHandle, Scope};
+use timely::order::TotalOrder;
+use timely::progress::Timestamp;
 
 use differential_dataflow::collection::Collection;
+use differential_dataflow::lattice::Lattice;
 use differential_dataflow::trace::TraceReader;
 
 use crate::domain::Domain;
@@ -105,32 +109,42 @@ pub enum Request {
 
 /// Server context maintaining globally registered arrangements and
 /// input handles.
-pub struct Server<Token: Hash> {
+pub struct Server<T, Token>
+where
+    T: Timestamp + Lattice + TotalOrder,
+    Token: Hash,
+{
     /// Server configuration.
     pub config: Config,
     /// Implementation context.
-    pub context: Context,
+    pub context: Context<T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, Vec<Token>>,
     /// Probe keeping track of overall dataflow progress.
-    pub probe: ProbeHandle<u64>,
+    pub probe: ProbeHandle<T>,
 }
 
 /// Implementation context.
-pub struct Context {
+pub struct Context<T>
+where
+    T: Timestamp + Lattice + TotalOrder,
+{
     /// Representation of named rules.
     pub rules: HashMap<Aid, Rule>,
     /// Set of rules known to be underconstrained.
     pub underconstrained: HashSet<Aid>,
     /// Internal domain of command sequence numbers.
-    pub internal: Domain<u64>,
+    pub internal: Domain<T>,
     /// Named relations.
-    pub arrangements: HashMap<Aid, RelationHandle>,
+    pub arrangements: HashMap<Aid, RelationHandle<T>>,
 }
 
-impl Context {
+impl<T> Context<T>
+where
+    T: Timestamp + Lattice + TotalOrder,
+{
     /// Inserts a new named relation.
-    pub fn register_arrangement(&mut self, name: String, mut trace: RelationHandle) {
+    pub fn register_arrangement(&mut self, name: String, mut trace: RelationHandle<T>) {
         // decline the capability for that trace handle to subset its
         // view of the data
         trace.distinguish_since(&[]);
@@ -139,12 +153,15 @@ impl Context {
     }
 }
 
-impl ImplContext for Context {
+impl<T> ImplContext<T> for Context<T>
+where
+    T: Timestamp + Lattice + TotalOrder,
+{
     fn rule(&self, name: &str) -> Option<&Rule> {
         self.rules.get(name)
     }
 
-    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle> {
+    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle<T>> {
         self.arrangements.get_mut(name)
     }
 
@@ -152,11 +169,11 @@ impl ImplContext for Context {
         self.internal.forward.contains_key(name)
     }
 
-    fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>> {
+    fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, T>> {
         self.internal.forward.get_mut(name)
     }
 
-    fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>> {
+    fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, T>> {
         self.internal.reverse.get_mut(name)
     }
 
@@ -166,14 +183,18 @@ impl ImplContext for Context {
     }
 }
 
-impl<Token: Hash> Server<Token> {
+impl<T, Token> Server<T, Token>
+where
+    T: Timestamp + Lattice + TotalOrder + Default + Sub<u64, Output = T>,
+    Token: Hash,
+{
     /// Creates a new server state from a configuration.
     pub fn new(config: Config) -> Self {
         Server {
             config,
             context: Context {
                 rules: HashMap::new(),
-                internal: Domain::new(0),
+                internal: Domain::new(Default::default()),
                 underconstrained: HashSet::new(),
                 arrangements: HashMap::new(),
             },
@@ -271,11 +292,11 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handles an Interest request.
-    pub fn interest<S: Scope<Timestamp = u64>>(
+    pub fn interest<S: Scope<Timestamp = T>>(
         &mut self,
         name: &str,
         scope: &mut S,
-    ) -> Result<&mut TraceKeyHandle<Vec<Value>, u64, isize>, Error> {
+    ) -> Result<&mut TraceKeyHandle<Vec<Value>, T, isize>, Error> {
         match name {
             "df.timely/operates" => {
                 // use timely::logging::{BatchLogger, TimelyEvent};
@@ -367,7 +388,7 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handle a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = u64>>(
+    pub fn register_source<S: Scope<Timestamp = T>>(
         &mut self,
         req: RegisterSource,
         scope: &mut S,
@@ -395,7 +416,7 @@ impl<Token: Hash> Server<Token> {
     }
 
     /// Handle an AdvanceDomain request.
-    pub fn advance_domain(&mut self, name: Option<String>, next: u64) -> Result<(), Error> {
+    pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
             None => {
                 // If history is not enabled, we want to keep traces advanced
@@ -403,10 +424,10 @@ impl<Token: Hash> Server<Token> {
                 let trace_next = if self.config.enable_history {
                     None
                 } else {
-                    Some(next - 1)
+                    Some(next.clone() - 1)
                 };
 
-                self.context.internal.advance_to(next, trace_next);
+                self.context.internal.advance_to(next, trace_next.clone());
 
                 if let Some(trace_next) = trace_next {
                     // if historical queries don't matter, we should advance
@@ -440,7 +461,7 @@ impl<Token: Hash> Server<Token> {
 
     /// Helper for registering, publishing, and indicating interest in
     /// a single, named query. Used for testing.
-    pub fn test_single<S: Scope<Timestamp = u64>>(
+    pub fn test_single<S: Scope<Timestamp = T>>(
         &mut self,
         scope: &mut S,
         rule: Rule,

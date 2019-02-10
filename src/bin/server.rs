@@ -98,13 +98,13 @@ fn main() {
         };
 
         // setup interpretation context
-        let mut server = Server::<Token>::new(config.clone());
+        let mut server = Server::<u64, Token>::new(config.clone());
 
         // The server might specify a sequence of requests for
         // setting-up built-in arrangements. We serialize those here
         // and pre-load the sequencer with them, such that they will
         // flow through the regular request handling.
-        let builtins = Server::<Token>::builtins();
+        let builtins = Server::<u64, Token>::builtins();
         let preload_command = Command {
             owner: worker.index(),
             client: SYSTEM.0,
@@ -125,7 +125,7 @@ fn main() {
         let (send_cli, recv_cli) = mio::channel::channel();
 
         // setup results channel
-        let (send_results, recv_results) = mio::channel::channel::<(String, Vec<ResultDiff>)>();
+        let (send_results, recv_results) = mio::channel::channel::<(String, Vec<ResultDiff<u64>>)>();
 
         // setup errors channel
         let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<Error>)>();
@@ -302,7 +302,7 @@ fn main() {
                                     info!("NO INTEREST FOR THIS RESULT");
                                 }
                                 Some(tokens) => {
-                                    let serialized = serde_json::to_string::<(String, Vec<ResultDiff>)>(
+                                    let serialized = serde_json::to_string::<(String, Vec<ResultDiff<u64>>)>(
                                         &(query_name, results),
                                     ).expect("failed to serialize outputs");
                                     let msg = ws::Message::text(serialized);

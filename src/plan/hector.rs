@@ -11,7 +11,7 @@ use timely::dataflow::operators::Operator;
 use timely::dataflow::operators::Partition;
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::dataflow::{Scope, ScopeParent};
-use timely::order::Product;
+use timely::order::{Product, TotalOrder};
 use timely::progress::Timestamp;
 use timely::PartialOrder;
 
@@ -192,12 +192,17 @@ impl Implementable for Hector {
         self.bindings.clone()
     }
 
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
+    fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S> {
+    ) -> CollectionRelation<'b, S>
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
         if self.bindings.is_empty() {
             panic!("No bindings passed.");
         } else if self.variables.is_empty() {
@@ -230,7 +235,7 @@ impl Implementable for Hector {
             // other's data in naughty ways, we need to run them all
             // inside a scope with lexicographic times.
 
-            let joined = nested.scoped::<AltNeu<Product<u64,u64>>, _, _>("AltNeu", |inner| {
+            let joined = nested.scoped::<AltNeu<Product<T,u64>>, _, _>("AltNeu", |inner| {
 
                 let scope = inner.clone();
 
@@ -332,7 +337,7 @@ impl Implementable for Hector {
                                 match AsBinding::binds(&prefix_symbols, *target) {
                                     Some(_) => { /* already bound */ continue },
                                     None => {
-                                        let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<u64, u64>>>, Prefix=Vec<Value>, Extension=_>>> = vec![];
+                                        let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<T, u64>>>, Prefix=Vec<Value>, Extension=_>>> = vec![];
 
                                         for (other_idx, other) in self.bindings.iter().enumerate() {
 
@@ -387,9 +392,9 @@ impl Implementable for Hector {
                                                                         other.source_attribute.clone(),
                                                                         imported.enter_at(
                                                                             &scope,
-                                                                            move |_,_,t| AltNeu { time: *t, neu: neu1 },
-                                                                            move |_,_,t| AltNeu { time: *t, neu: neu2 },
-                                                                            move |_,_,t| AltNeu { time: *t, neu: neu3 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
                                                                         )
                                                                     );
                                                                 }
@@ -420,9 +425,9 @@ impl Implementable for Hector {
                                                                         other.source_attribute.clone(),
                                                                         imported.enter_at(
                                                                             &scope,
-                                                                            move |_,_,t| AltNeu { time: *t, neu: neu1 },
-                                                                            move |_,_,t| AltNeu { time: *t, neu: neu2 },
-                                                                            move |_,_,t| AltNeu { time: *t, neu: neu3 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
+                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
                                                                         )
                                                                     );
                                                                 }

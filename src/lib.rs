@@ -28,7 +28,7 @@ use std::hash::Hash;
 
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::dataflow::*;
-use timely::order::Product;
+use timely::order::{Product, TotalOrder};
 use timely::progress::timestamp::Refines;
 use timely::progress::Timestamp;
 
@@ -96,7 +96,7 @@ pub struct Error {
 pub struct TxData(pub isize, pub Eid, pub Aid, pub Value);
 
 /// A (tuple, time, diff) triple, as sent back to clients.
-pub type ResultDiff = (Vec<Value>, u64, isize);
+pub type ResultDiff<T> = (Vec<Value>, T, isize);
 
 /// An entity, attribute, value triple.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -108,12 +108,8 @@ pub type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>
 /// A trace of (K, V) pairs indexed by key.
 pub type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
 
-// @TODO change this to TraceValHandle<Eid, Value> eventually
-/// A handle to an arranged attribute.
-pub type AttributeHandle = TraceValHandle<Value, Value, u64, isize>;
-
 /// A handle to an arranged relation.
-pub type RelationHandle = TraceKeyHandle<Vec<Value>, u64, isize>;
+pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, T, isize>;
 
 // A map for keeping track of collections that are being actively
 // synthesized (i.e. that are not fully defined yet).
@@ -548,10 +544,11 @@ where
 
 /// Returns a deduplicates list of all rules used in the definition of
 /// the specified names. Includes the specified names.
-pub fn collect_dependencies<I: ImplContext>(
-    context: &I,
-    names: &[&str],
-) -> Result<Vec<Rule>, Error> {
+pub fn collect_dependencies<T, I>(context: &I, names: &[&str]) -> Result<Vec<Rule>, Error>
+where
+    T: Timestamp + Lattice + TotalOrder,
+    I: ImplContext<T>,
+{
     let mut seen = HashSet::new();
     let mut rules = Vec::new();
     let mut queue = VecDeque::new();
@@ -607,11 +604,16 @@ pub fn collect_dependencies<I: ImplContext>(
 }
 
 /// Takes a query plan and turns it into a differential dataflow.
-pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
+pub fn implement<T, I, S>(
     name: &str,
     scope: &mut S,
     context: &mut I,
-) -> Result<HashMap<String, RelationHandle>, Error> {
+) -> Result<HashMap<String, RelationHandle<T>>, Error>
+where
+    T: Timestamp + Lattice + TotalOrder + Default,
+    I: ImplContext<T>,
+    S: Scope<Timestamp = T>,
+{
     scope.iterative::<u64, _, _>(|nested| {
         let publish = vec![name];
         let mut rules = collect_dependencies(&*context, &publish[..])?;
@@ -640,8 +642,10 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
         // Step 1: Create new recursive variables for each rule.
         for rule in rules.iter() {
             if context.is_underconstrained(&rule.name) {
-                local_arrangements
-                    .insert(rule.name.clone(), Variable::new(nested, Product::new(0, 1)));
+                local_arrangements.insert(
+                    rule.name.clone(),
+                    Variable::new(nested, Product::new(Default::default(), 1)),
+                );
             }
         }
 
@@ -693,14 +697,15 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
 }
 
 /// @TODO
-pub fn implement_neu<S, I>(
+pub fn implement_neu<T, I, S>(
     name: &str,
     scope: &mut S,
     context: &mut I,
-) -> Result<HashMap<String, RelationHandle>, Error>
+) -> Result<HashMap<String, RelationHandle<T>>, Error>
 where
-    S: Scope<Timestamp = u64>,
-    I: ImplContext,
+    T: Timestamp + Lattice + TotalOrder + Default,
+    I: ImplContext<T>,
+    S: Scope<Timestamp = T>,
 {
     scope.iterative::<u64, _, _>(move |nested| {
         let publish = vec![name];
@@ -738,8 +743,10 @@ where
         // Step 1: Create new recursive variables for each rule.
         for name in publish.iter() {
             if context.is_underconstrained(name) {
-                local_arrangements
-                    .insert(name.to_string(), Variable::new(nested, Product::new(0, 1)));
+                local_arrangements.insert(
+                    name.to_string(),
+                    Variable::new(nested, Product::new(Default::default(), 1)),
+                );
             }
         }
 

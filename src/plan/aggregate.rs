@@ -62,7 +62,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         self.plan.into_bindings()
     }
 
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
+    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext<u64>>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,

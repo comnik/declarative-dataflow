@@ -2,7 +2,10 @@
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
+use timely::order::TotalOrder;
+use timely::progress::Timestamp;
 
+use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Join;
 use differential_dataflow::operators::Threshold;
 
@@ -30,12 +33,17 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
         )
     }
 
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
+    fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S> {
+    ) -> CollectionRelation<'b, S>
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
         let left = self
             .left_plan
             .implement(nested, local_arrangements, context);

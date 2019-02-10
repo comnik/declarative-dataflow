@@ -1,13 +1,15 @@
 //! Operator and utilities to source data from csv files.
 
-extern crate timely;
-
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
+use timely::order::TotalOrder;
+use timely::progress::Timestamp;
+
+use differential_dataflow::lattice::Lattice;
 
 use crate::sources::Sourceable;
 use crate::{Eid, Value};
@@ -25,11 +27,15 @@ pub struct CsvFile {
 }
 
 impl Sourceable for CsvFile {
-    fn source<G: Scope<Timestamp = u64>>(
+    fn source<T, S>(
         &self,
-        scope: &G,
-        _names: Vec<String>,
-    ) -> Stream<G, (usize, ((Value, Value), u64, isize))> {
+        scope: &S,
+        names: Vec<String>,
+    ) -> Stream<S, (usize, ((Value, Value), T, isize))>
+    where
+        T: Timestamp + Lattice + TotalOrder + Default,
+        S: Scope<Timestamp = T>,
+    {
         let filename = self.path.clone();
 
         generic::operator::source(scope, &format!("File({})", filename), |capability, info| {
@@ -94,7 +100,7 @@ impl Sourceable for CsvFile {
                                     ),
                                 };
 
-                                session.give((name_idx, ((eid.clone(), v), 0, 1)));
+                                session.give((name_idx, ((eid.clone(), v), Default::default(), 1)));
                             }
 
                             num_datums_read += 1;

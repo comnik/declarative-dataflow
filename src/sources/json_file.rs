@@ -1,15 +1,16 @@
 //! Operator and utilities to source data from plain files containing
 //! arbitrary json structures.
 
-extern crate serde_json;
-extern crate timely;
-
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
 
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
+use timely::order::TotalOrder;
+use timely::progress::Timestamp;
+
+use differential_dataflow::lattice::Lattice;
 
 // use sources::json_file::flate2::read::GzDecoder;
 
@@ -24,11 +25,15 @@ pub struct JsonFile {
 }
 
 impl Sourceable for JsonFile {
-    fn source<G: Scope>(
+    fn source<T, S>(
         &self,
-        scope: &G,
+        scope: &S,
         names: Vec<String>,
-    ) -> Stream<G, (usize, ((Value, Value), u64, isize))> {
+    ) -> Stream<S, (usize, ((Value, Value), T, isize))>
+    where
+        T: Timestamp + Lattice + TotalOrder + Default,
+        S: Scope<Timestamp = T>,
+    {
         let filename = self.path.clone();
 
         generic::operator::source(
@@ -90,7 +95,11 @@ impl Sourceable for JsonFile {
 
                                             session.give((
                                                 name_idx,
-                                                ((Value::Eid(object_index as Eid), v), 0, 1),
+                                                (
+                                                    (Value::Eid(object_index as Eid), v),
+                                                    Default::default(),
+                                                    1,
+                                                ),
                                             ));
                                         }
                                     }

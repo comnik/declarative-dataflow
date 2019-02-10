@@ -3,7 +3,10 @@
 use timely::dataflow::operators::Concatenate;
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
+use timely::order::TotalOrder;
+use timely::progress::Timestamp;
 
+use differential_dataflow::lattice::Lattice;
 use differential_dataflow::AsCollection;
 
 use crate::plan::{Dependencies, ImplContext, Implementable};
@@ -71,12 +74,17 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         Dependencies::none()
     }
 
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
+    fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S> {
+    ) -> CollectionRelation<'b, S>
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
         use timely::order::Product;
 
         use differential_dataflow::operators::arrange::{Arrange, Arranged, TraceAgent};
@@ -111,9 +119,9 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                 TraceAgent<
                     Value,
                     Vec<Value>,
-                    Product<u64, u64>,
+                    Product<T, u64>,
                     isize,
-                    OrdValSpine<Value, Vec<Value>, Product<u64, u64>, isize>,
+                    OrdValSpine<Value, Vec<Value>, Product<T, u64>, isize>,
                 >,
             > = paths.map(|t| (t.last().unwrap().clone(), t)).arrange();
 
@@ -158,12 +166,17 @@ impl<P: Implementable> Implementable for Pull<P> {
         Dependencies::none()
     }
 
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
+    fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S> {
+    ) -> CollectionRelation<'b, S>
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
         let mut scope = nested.clone();
         let streams = self.paths.iter().map(|path| {
             path.implement(&mut scope, local_arrangements, context)

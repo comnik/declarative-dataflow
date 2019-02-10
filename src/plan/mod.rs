@@ -6,6 +6,10 @@ use std::sync::atomic::{self, AtomicUsize};
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
+use timely::order::TotalOrder;
+use timely::progress::Timestamp;
+
+use differential_dataflow::lattice::Lattice;
 
 use crate::binding::{AttributeBinding, Binding, ConstantBinding};
 use crate::Rule;
@@ -50,13 +54,16 @@ pub fn gensym() -> Var {
 
 /// A thing that can provide global state required during the
 /// implementation of plans.
-pub trait ImplContext {
+pub trait ImplContext<T>
+where
+    T: Timestamp + Lattice + TotalOrder,
+{
     /// Returns the set of constraints associated with a rule.
     fn rule(&self, name: &str) -> Option<&Rule>;
 
     /// Returns a mutable reference to a (non-base) relation, if one
     /// is registered under the given name.
-    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle>;
+    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle<T>>;
 
     /// Checks whether an attribute of that name exists.
     fn has_attribute(&self, name: &str) -> bool;
@@ -64,12 +71,12 @@ pub trait ImplContext {
     /// Returns a mutable reference to an attribute (a base relation)
     /// arranged from eid -> value, if one is registered under the
     /// given name.
-    fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
+    fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, T>>;
 
     /// Returns a mutable reference to an attribute (a base relation)
     /// arranged from value -> eid, if one is registered under the
     /// given name.
-    fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>>;
+    fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, T>>;
 
     /// Returns the current opinion as to whether this rule is
     /// underconstrained. Underconstrained rules cannot be safely
@@ -119,7 +126,7 @@ impl Dependencies {
 
     /// Merges two dependency descriptions into one, representing
     /// their union.
-    pub fn merge(mut left: Dependencies, mut right: Dependencies) -> Dependencies {
+    pub fn merge(left: Dependencies, right: Dependencies) -> Dependencies {
         Dependencies {
             names: left.names.union(&right.names).cloned().collect(),
             attributes: left.attributes.union(&right.attributes).cloned().collect(),
@@ -146,12 +153,16 @@ pub trait Implementable {
     }
 
     /// Implements the type as a simple relation.
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
+    fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>;
+    ) -> CollectionRelation<'b, S>
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>;
 }
 
 /// Possible query plan types.
@@ -321,12 +332,17 @@ impl Implementable for Plan {
         }
     }
 
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
+    fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S> {
+    ) -> CollectionRelation<'b, S>
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
         match *self {
             Plan::Project(ref projection) => {
                 projection.implement(nested, local_arrangements, context)
