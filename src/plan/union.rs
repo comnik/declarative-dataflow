@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use differential_dataflow::operators::Threshold;
 
 use crate::binding::Binding;
-use crate::plan::{ImplContext, Implementable};
+use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
@@ -21,11 +21,11 @@ pub struct Union<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Union<P> {
-    fn dependencies(&self) -> Vec<String> {
-        let mut dependencies = Vec::new();
+    fn dependencies(&self) -> Dependencies {
+        let mut dependencies = Dependencies::none();
 
         for plan in self.plans.iter() {
-            dependencies.append(&mut plan.dependencies());
+            dependencies = Dependencies::merge(dependencies, plan.dependencies());
         }
 
         dependencies

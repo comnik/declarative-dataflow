@@ -148,6 +148,10 @@ impl ImplContext for Context {
         self.arrangements.get_mut(name)
     }
 
+    fn has_attribute(&self, name: &str) -> bool {
+        self.internal.forward.contains_key(name)
+    }
+
     fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, u64>> {
         self.internal.forward.get_mut(name)
     }

@@ -24,7 +24,7 @@ use differential_dataflow::{AsCollection, Collection, Data, Hashable};
 
 use crate::binding::{AsBinding, BinaryPredicate, Binding};
 use crate::binding::{BinaryPredicateBinding, ConstantBinding};
-use crate::plan::{ImplContext, Implementable};
+use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
 use crate::{CollectionRelation, LiveIndex, Value, Var, VariableMap};
 
@@ -184,8 +184,8 @@ impl IndexNode<Value> for Vec<Value> {
 }
 
 impl Implementable for Hector {
-    fn dependencies(&self) -> Vec<String> {
-        Vec::new()
+    fn dependencies(&self) -> Dependencies {
+        Dependencies::none()
     }
 
     fn into_bindings(&self) -> Vec<Binding> {

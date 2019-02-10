@@ -4,7 +4,7 @@ use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
 use crate::binding::Binding;
-use crate::plan::{ImplContext, Implementable};
+use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
 /// Permitted functions.
@@ -37,7 +37,7 @@ pub struct Transform<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Transform<P> {
-    fn dependencies(&self) -> Vec<String> {
+    fn dependencies(&self) -> Dependencies {
         self.plan.dependencies()
     }
 

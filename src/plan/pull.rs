@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 
 use differential_dataflow::AsCollection;
 
-use crate::plan::{ImplContext, Implementable};
+use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{Aid, CollectionRelation, Relation, Value, Var, VariableMap};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
@@ -67,8 +67,8 @@ fn interleave(values: &[Value], constants: &[Aid]) -> Vec<Value> {
 }
 
 impl<P: Implementable> Implementable for PullLevel<P> {
-    fn dependencies(&self) -> Vec<String> {
-        Vec::new()
+    fn dependencies(&self) -> Dependencies {
+        Dependencies::none()
     }
 
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
@@ -154,8 +154,8 @@ impl<P: Implementable> Implementable for PullLevel<P> {
 }
 
 impl<P: Implementable> Implementable for Pull<P> {
-    fn dependencies(&self) -> Vec<String> {
-        Vec::new()
+    fn dependencies(&self) -> Dependencies {
+        Dependencies::none()
     }
 
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(

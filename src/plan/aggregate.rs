@@ -8,7 +8,7 @@ use differential_dataflow::operators::Join as JoinMap;
 use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
 
 use crate::binding::Binding;
-use crate::plan::{ImplContext, Implementable};
+use crate::plan::{ImplContext, Implementable, Dependencies};
 use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};
@@ -54,7 +54,7 @@ pub struct Aggregate<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
-    fn dependencies(&self) -> Vec<String> {
+    fn dependencies(&self) -> Dependencies {
         self.plan.dependencies()
     }
 

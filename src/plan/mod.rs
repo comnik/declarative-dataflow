@@ -1,5 +1,6 @@
 //! Types and traits for implementing query plans.
 
+use std::collections::HashSet;
 use std::ops::Deref;
 use std::sync::atomic::{self, AtomicUsize};
 
@@ -57,6 +58,9 @@ pub trait ImplContext {
     /// is registered under the given name.
     fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle>;
 
+    /// Checks whether an attribute of that name exists.
+    fn has_attribute(&self, name: &str) -> bool;
+
     /// Returns a mutable reference to an attribute (a base relation)
     /// arranged from eid -> value, if one is registered under the
     /// given name.
@@ -74,12 +78,61 @@ pub trait ImplContext {
     fn is_underconstrained(&self, name: &str) -> bool;
 }
 
+/// Description of everything a plan needs prior to synthesis.
+pub struct Dependencies {
+    /// NameExpr's used by this plan.
+    pub names: HashSet<String>,
+    /// Attributes queries in Match* expressions.
+    pub attributes: HashSet<Aid>,
+}
+
+impl Dependencies {
+    /// A description representing a dependency on nothing.
+    pub fn none() -> Dependencies {
+        Dependencies {
+            names: HashSet::new(),
+            attributes: HashSet::new(),
+        }
+    }
+
+    /// A description representing a dependency on a single name.
+    pub fn name(name: &str) -> Dependencies {
+        let mut names = HashSet::new();
+        names.insert(name.to_string());
+
+        Dependencies {
+            names,
+            attributes: HashSet::new(),
+        }
+    }
+
+    /// A description representing a dependency on a single attribute.
+    pub fn attribute(aid: &str) -> Dependencies {
+        let mut attributes = HashSet::new();
+        attributes.insert(aid.to_string());
+
+        Dependencies {
+            names: HashSet::new(),
+            attributes,
+        }
+    }
+
+    /// Merges two dependency descriptions into one, representing
+    /// their union.
+    pub fn merge(mut left: Dependencies, mut right: Dependencies) -> Dependencies {
+        Dependencies {
+            names: left.names.union(&right.names).cloned().collect(),
+            attributes: left.attributes.union(&right.attributes).cloned().collect(),
+        }
+    }
+}
+
 /// A type that can be implemented as a simple relation.
 pub trait Implementable {
     /// Returns names of any other implementable things that need to
     /// be available before implementing this one. Attributes are not
     /// mentioned explicitley as dependencies.
-    fn dependencies(&self) -> Vec<String>;
+    fn dependencies(&self) -> Dependencies;
 
     /// Transforms an implementable into an equivalent set of bindings
     /// that can be unified by Hector.
@@ -160,7 +213,7 @@ impl Plan {
 }
 
 impl Implementable for Plan {
-    fn dependencies(&self) -> Vec<String> {
+    fn dependencies(&self) -> Dependencies {
         // @TODO provide a general fold for plans
         match *self {
             Plan::Project(ref projection) => projection.dependencies(),
@@ -172,10 +225,10 @@ impl Implementable for Plan {
             Plan::Negate(ref plan) => plan.dependencies(),
             Plan::Filter(ref filter) => filter.dependencies(),
             Plan::Transform(ref transform) => transform.dependencies(),
-            Plan::MatchA(_, _, _) => Vec::new(),
-            Plan::MatchEA(_, _, _) => Vec::new(),
-            Plan::MatchAV(_, _, _) => Vec::new(),
-            Plan::NameExpr(_, ref name) => vec![name.to_string()],
+            Plan::MatchA(_, ref a, _) => Dependencies::attribute(a),
+            Plan::MatchEA(_, ref a, _) => Dependencies::attribute(a),
+            Plan::MatchAV(_, ref a, _) => Dependencies::attribute(a),
+            Plan::NameExpr(_, ref name) => Dependencies::name(name),
             Plan::Pull(ref pull) => pull.dependencies(),
             Plan::PullLevel(ref path) => path.dependencies(),
         }

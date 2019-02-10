@@ -4,7 +4,7 @@ use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 
 use crate::binding::Binding;
-use crate::plan::{next_id, ImplContext, Implementable};
+use crate::plan::{next_id, Dependencies, ImplContext, Implementable};
 use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionRelation, Relation, VariableMap};
 
@@ -20,7 +20,7 @@ pub struct Project<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Project<P> {
-    fn dependencies(&self) -> Vec<String> {
+    fn dependencies(&self) -> Dependencies {
         self.plan.dependencies()
     }
 

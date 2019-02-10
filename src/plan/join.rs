@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use differential_dataflow::operators::JoinCore;
 
 use crate::binding::Binding;
-use crate::plan::{next_id, ImplContext, Implementable};
+use crate::plan::{next_id, Dependencies, ImplContext, Implementable};
 use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionRelation, Relation, VariableMap};
 
@@ -24,16 +24,11 @@ pub struct Join<P1: Implementable, P2: Implementable> {
 }
 
 impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
-    fn dependencies(&self) -> Vec<String> {
-        let mut left_dependencies = self.left_plan.dependencies();
-        let mut right_dependencies = self.right_plan.dependencies();
-
-        let mut dependencies =
-            Vec::with_capacity(left_dependencies.len() + right_dependencies.len());
-        dependencies.append(&mut left_dependencies);
-        dependencies.append(&mut right_dependencies);
-
-        dependencies
+    fn dependencies(&self) -> Dependencies {
+        Dependencies::merge(
+            self.left_plan.dependencies(),
+            self.right_plan.dependencies(),
+        )
     }
 
     fn into_bindings(&self) -> Vec<Binding> {

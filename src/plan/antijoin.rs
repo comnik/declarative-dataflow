@@ -6,7 +6,7 @@ use timely::dataflow::Scope;
 use differential_dataflow::operators::Join;
 use differential_dataflow::operators::Threshold;
 
-use crate::plan::{ImplContext, Implementable};
+use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
@@ -23,16 +23,11 @@ pub struct Antijoin<P1: Implementable, P2: Implementable> {
 }
 
 impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
-    fn dependencies(&self) -> Vec<String> {
-        let mut left_dependencies = self.left_plan.dependencies();
-        let mut right_dependencies = self.right_plan.dependencies();
-
-        let mut dependencies =
-            Vec::with_capacity(left_dependencies.len() + right_dependencies.len());
-        dependencies.append(&mut left_dependencies);
-        dependencies.append(&mut right_dependencies);
-
-        dependencies
+    fn dependencies(&self) -> Dependencies {
+        Dependencies::merge(
+            self.left_plan.dependencies(),
+            self.right_plan.dependencies(),
+        )
     }
 
     fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(

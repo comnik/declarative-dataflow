@@ -548,28 +548,62 @@ where
 
 /// Returns a deduplicates list of all rules used in the definition of
 /// the specified names. Includes the specified names.
-pub fn collect_dependencies<I: ImplContext>(context: &I, names: &[&str]) -> Vec<Rule> {
+pub fn collect_dependencies<I: ImplContext>(
+    context: &I,
+    names: &[&str],
+) -> Result<Vec<Rule>, Error> {
     let mut seen = HashSet::new();
     let mut rules = Vec::new();
     let mut queue = VecDeque::new();
 
     for name in names {
-        seen.insert(name.to_string());
-        queue.push_back(context.rule(name).expect("unknown rule").clone());
+        match context.rule(name) {
+            None => {
+                return Err(Error {
+                    category: "df.error.category/not-found",
+                    message: format!("Unknown rule {}.", name),
+                });
+            }
+            Some(rule) => {
+                seen.insert(name.to_string());
+                queue.push_back(rule.clone());
+            }
+        }
     }
 
     while let Some(next) = queue.pop_front() {
-        for dep_name in next.plan.dependencies().iter() {
+        let dependencies = next.plan.dependencies();
+        for dep_name in dependencies.names.iter() {
             if !seen.contains(dep_name) {
-                seen.insert(dep_name.to_string());
-                queue.push_back(context.rule(dep_name).expect("unknown dependency").clone());
+                match context.rule(dep_name) {
+                    None => {
+                        return Err(Error {
+                            category: "df.error.category/not-found",
+                            message: format!("Unknown rule {}.", dep_name),
+                        });
+                    }
+                    Some(rule) => {
+                        seen.insert(dep_name.to_string());
+                        queue.push_back(rule.clone());
+                    }
+                }
+            }
+        }
+
+        // Ensure all required attributes exist.
+        for aid in dependencies.attributes.iter() {
+            if !context.has_attribute(aid) {
+                return Err(Error {
+                    category: "df.error.category/not-found",
+                    message: format!("Rule depends on unknown attribute {}.", aid),
+                });
             }
         }
 
         rules.push(next);
     }
 
-    rules
+    Ok(rules)
 }
 
 /// Takes a query plan and turns it into a differential dataflow.
@@ -580,7 +614,7 @@ pub fn implement<S: Scope<Timestamp = u64>, I: ImplContext>(
 ) -> Result<HashMap<String, RelationHandle>, Error> {
     scope.iterative::<u64, _, _>(|nested| {
         let publish = vec![name];
-        let mut rules = collect_dependencies(&*context, &publish[..]);
+        let mut rules = collect_dependencies(&*context, &publish[..])?;
 
         let mut local_arrangements = VariableMap::new();
         let mut result_map = HashMap::new();
@@ -670,7 +704,7 @@ where
 {
     scope.iterative::<u64, _, _>(move |nested| {
         let publish = vec![name];
-        let mut rules = collect_dependencies(&*context, &publish[..]);
+        let mut rules = collect_dependencies(&*context, &publish[..])?;
 
         let mut local_arrangements = VariableMap::new();
         let mut result_map = HashMap::new();
