@@ -16,6 +16,9 @@ use crate::Rule;
 use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionIndex, CollectionRelation, Relation, RelationHandle, VariableMap};
 
+#[cfg(feature = "set-semantics")]
+pub mod aggregate;
+#[cfg(not(feature = "set-semantics"))]
 pub mod aggregate_neu;
 pub mod antijoin;
 pub mod filter;

@@ -2,13 +2,16 @@
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
+use timely::order::TotalOrder;
+use timely::progress::Timestamp;
 
 use differential_dataflow::difference::DiffPair;
+use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Join as JoinMap;
 use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
 
 use crate::binding::Binding;
-use crate::plan::{ImplContext, Implementable, Dependencies};
+use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};
@@ -62,12 +65,17 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         self.plan.into_bindings()
     }
 
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext<u64>>(
+    fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S> {
+    ) -> CollectionRelation<'b, S>
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
         let relation = self.plan.implement(nested, local_arrangements, context);
 
         // We split the incoming tuples into their (key, value) parts.
