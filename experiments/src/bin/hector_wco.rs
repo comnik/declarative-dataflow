@@ -3,7 +3,7 @@ use graph_map::GraphMMap;
 use declarative_dataflow::binding::{AttributeBinding, Binding};
 use declarative_dataflow::plan::Hector;
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Plan, Rule, TxData, Value};
+use declarative_dataflow::{Plan, Rule, TxData, Value, AttributeSemantics};
 
 fn main() {
     let filename = std::env::args().nth(1).unwrap();
@@ -42,7 +42,7 @@ fn main() {
             server
                 .context
                 .internal
-                .create_attribute("edge", scope)
+                .create_attribute("edge", AttributeSemantics::Raw, scope)
                 .unwrap();
 
             server

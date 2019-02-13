@@ -1,7 +1,7 @@
 //! WCO expression plan, integrating the following work:
 //! https://github.com/frankmcsherry/differential-dataflow/tree/master/dogsdogsdogs
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::hash::Hash;
 use std::rc::Rc;
 
@@ -9,8 +9,8 @@ use timely::dataflow::channels::pact::{Exchange, Pipeline};
 use timely::dataflow::operators::Concatenate;
 use timely::dataflow::operators::Operator;
 use timely::dataflow::operators::Partition;
-use timely::dataflow::scopes::child::{Child, Iterative};
-use timely::dataflow::{Scope, ScopeParent};
+use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::Scope;
 use timely::order::{Product, TotalOrder};
 use timely::progress::Timestamp;
 use timely::PartialOrder;
@@ -26,7 +26,10 @@ use crate::binding::{AsBinding, BinaryPredicate, Binding};
 use crate::binding::{BinaryPredicateBinding, ConstantBinding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
-use crate::{CollectionRelation, LiveIndex, Value, Var, VariableMap};
+use crate::{CollectionRelation, LiveIndex, VariableMap};
+use crate::{Value, Var};
+
+type Extender<'a, S, P, V> = Box<(dyn PrefixExtender<S, Prefix = P, Extension = V> + 'a)>;
 
 /// A type capable of extending a stream of prefixes. Implementors of
 /// `PrefixExtension` provide types and methods for extending a
@@ -57,36 +60,25 @@ trait PrefixExtender<G: Scope> {
 
 trait IntoExtender<'a, S, V>
 where
-    S: Scope + ScopeParent + 'a,
-    S::Timestamp: Lattice + Data + Timestamp,
-    // K: Data + Hash,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice,
     V: Data + Hash,
 {
     fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
         prefix_symbols: &B,
-    ) -> Vec<
-        Box<
-            (dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V>
-                 + 'a),
-        >,
-    >;
+    ) -> Vec<Extender<'a, S, P, V>>;
 }
 
 impl<'a, S> IntoExtender<'a, S, Value> for ConstantBinding
 where
-    S: Scope + ScopeParent + 'a,
-    S::Timestamp: Lattice + Data + Timestamp,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice,
 {
     fn into_extender<P: Data + IndexNode<Value>, B: AsBinding + std::fmt::Debug>(
         &self,
         _prefix_symbols: &B,
-    ) -> Vec<
-        Box<
-            (dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = Value>
-                 + 'a),
-        >,
-    > {
+    ) -> Vec<Extender<'a, S, P, Value>> {
         vec![Box::new(ConstantExtender {
             phantom: std::marker::PhantomData,
             value: self.value.clone(),
@@ -96,19 +88,14 @@ where
 
 impl<'a, S, V> IntoExtender<'a, S, V> for BinaryPredicateBinding
 where
-    S: Scope + ScopeParent + 'a,
-    S::Timestamp: Lattice + Data + Timestamp,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice,
     V: Data + Hash,
 {
     fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
         prefix_symbols: &B,
-    ) -> Vec<
-        Box<
-            (dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V>
-                 + 'a),
-        >,
-    > {
+    ) -> Vec<Extender<'a, S, P, V>> {
         match direction(prefix_symbols, self.symbols) {
             Err(_msg) => {
                 // We won't panic here, this just means the predicate's symbols
@@ -247,12 +234,8 @@ impl Implementable for Hector {
                 // We cache aggressively, to avoid importing and
                 // wrapping things more than once.
 
-                let mut forward_import = HashMap::new();
-                let mut forward_alt = HashMap::new();
-                let mut forward_neu = HashMap::new();
-                let mut reverse_import = HashMap::new();
-                let mut reverse_alt = HashMap::new();
-                let mut reverse_neu = HashMap::new();
+                let mut forward_cache = HashMap::new();
+                let mut reverse_cache = HashMap::new();
 
                 // For each AttributeBinding (only AttributeBindings
                 // actually experience change), we construct a delta query
@@ -288,30 +271,28 @@ impl Implementable for Hector {
                                         Direction::Forward(_) => {
                                             prefix_symbols.push(delta_binding.symbols.1);
 
-                                            // @TODO use wrapper cache here as well
-                                            forward_import.entry(&delta_binding.source_attribute)
+                                            forward_cache.entry(delta_binding.source_attribute.to_string())
                                                 .or_insert_with(|| {
                                                     context.forward_index(&delta_binding.source_attribute).unwrap()
                                                         .import(&scope.parent.parent)
-                                                        .enter(&scope.parent)
                                                 })
                                                 .propose_trace
                                                 .filter(move |e,_v| *e == match_v)
+                                                .enter(&scope.parent)
                                                 .enter(&scope)
                                                 .as_collection(|e,v| vec![e.clone(), v.clone()])
                                         }
                                         Direction::Reverse(_) => {
                                             prefix_symbols.push(delta_binding.symbols.0);
 
-                                            // @TODO use wrapper cache here as well
-                                            reverse_import.entry(&delta_binding.source_attribute)
+                                            reverse_cache.entry(delta_binding.source_attribute.to_string())
                                                 .or_insert_with(|| {
                                                     context.reverse_index(&delta_binding.source_attribute).unwrap()
                                                         .import(&scope.parent.parent)
-                                                        .enter(&scope.parent)
                                                 })
                                                 .propose_trace
                                                 .filter(move |v,_e| *v == match_v)
+                                                .enter(&scope.parent)
                                                 .enter(&scope)
                                                 .as_collection(|v,e| vec![v.clone(), e.clone()])
                                         }
@@ -321,14 +302,13 @@ impl Implementable for Hector {
                                 prefix_symbols.push(delta_binding.symbols.0);
                                 prefix_symbols.push(delta_binding.symbols.1);
 
-                                // @TODO use wrapper cache here as well
-                                forward_import.entry(&delta_binding.source_attribute)
+                                forward_cache.entry(delta_binding.source_attribute.to_string())
                                     .or_insert_with(|| {
                                         context.forward_index(&delta_binding.source_attribute).unwrap()
                                             .import(&scope.parent.parent)
-                                            .enter(&scope.parent)
                                     })
                                     .validate_trace
+                                    .enter(&scope.parent)
                                     .enter(&scope)
                                     .as_collection(|(e,v),()| vec![e.clone(), v.clone()])
                             };
@@ -337,9 +317,27 @@ impl Implementable for Hector {
                                 match AsBinding::binds(&prefix_symbols, *target) {
                                     Some(_) => { /* already bound */ continue },
                                     None => {
-                                        let mut extenders: Vec<Box<dyn PrefixExtender<Child<'_, Iterative<'b, S, u64>, AltNeu<Product<T, u64>>>, Prefix=Vec<Value>, Extension=_>>> = vec![];
+                                        let mut extenders: Vec<Extender<'_, _, Vec<Value>, _>> = vec![];
 
-                                        for (other_idx, other) in self.bindings.iter().enumerate() {
+                                        // Handling AntijoinBinding's requires dealing with recursion,
+                                        // because they wrap another binding. We don't actually want to wrap
+                                        // all of the below inside of a recursive function, because passing
+                                        // all these nested scopes and caches around leads to a world of lifetimes pain.
+                                        //
+                                        // Therefore we make our own little queue of bindings and process them iteratively.
+
+                                        let mut bindings: VecDeque<(usize, Binding)> = VecDeque::new();
+
+                                        for (idx, binding) in self.bindings.iter().cloned().enumerate() {
+                                            if let Binding::Not(antijoin_binding) = binding {
+                                                bindings.push_back((idx, (*antijoin_binding.binding).clone()));
+                                                bindings.push_back((idx, Binding::Not(antijoin_binding)));
+                                            } else {
+                                                bindings.push_back((idx, binding));
+                                            }
+                                        }
+
+                                        while let Some((other_idx, other)) = bindings.pop_front() {
 
                                             // We need to distinguish between conflicting relations
                                             // that appear before the current one in the sequence (< idx),
@@ -351,13 +349,21 @@ impl Implementable for Hector {
                                             // Ignore any binding not talking about the target symbol.
                                             if other.binds(*target).is_none() { continue; }
 
+                                            let is_neu = other_idx >= idx;
+
                                             match other {
-                                                Binding::Not(other) => {
-                                                    unimplemented!();
-                                                    // extenders.push(Box::new(AntijoinExtender {
-                                                    //     phantom: std::marker::PhantomData,
-                                                    //     extender: other.binding.into_extender(),
-                                                    // }));
+                                                Binding::Not(_other) => {
+                                                    // Due to the way we enqueued the bindings above, we can now
+                                                    // rely on the internal exteneder being available as the last
+                                                    // extender on the stack.
+                                                    let internal_extender = extenders.pop().expect("No internal extender available on stack.");
+
+                                                    extenders.push(
+                                                        Box::new(AntijoinExtender {
+                                                            phantom: std::marker::PhantomData,
+                                                            extender: internal_extender,
+                                                        })
+                                                    );
                                                 }
                                                 Binding::Constant(other) => {
                                                     extenders.append(&mut other.into_extender(&prefix_symbols));
@@ -366,80 +372,58 @@ impl Implementable for Hector {
                                                     extenders.append(&mut other.into_extender(&prefix_symbols));
                                                 }
                                                 Binding::Attribute(other) => {
-                                                    let (is_neu, forward_cache, reverse_cache) = if other_idx < idx {
-                                                        (false, &mut forward_alt, &mut reverse_alt)
-                                                    } else {
-                                                        (true, &mut forward_neu, &mut reverse_neu)
-                                                    };
-
                                                     match direction(&prefix_symbols, other.symbols) {
                                                         Err(msg) => panic!(msg),
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
-                                                                if !forward_cache.contains_key(&other.source_attribute) {
-                                                                    let imported = forward_import.entry(&other.source_attribute)
-                                                                        .or_insert_with(|| {
-                                                                            context.forward_index(&other.source_attribute).unwrap()
-                                                                                .import(&scope.parent.parent)
-                                                                                .enter(&scope.parent)
-                                                                        });
+                                                                let imported = forward_cache.entry(other.source_attribute.to_string())
+                                                                    .or_insert_with(|| {
+                                                                        context.forward_index(&other.source_attribute).unwrap()
+                                                                            .import(&scope.parent.parent)
+                                                                    });
 
-                                                                    let neu1 = is_neu;
-                                                                    let neu2 = is_neu;
-                                                                    let neu3 = is_neu;
-
-                                                                    forward_cache.insert(
-                                                                        other.source_attribute.clone(),
-                                                                        imported.enter_at(
-                                                                            &scope,
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
-                                                                        )
+                                                                let (neu1, neu2, neu3) = (is_neu, is_neu, is_neu);
+                                                                let forward = imported
+                                                                    .enter(&scope.parent)
+                                                                    .enter_at(
+                                                                        &scope,
+                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
+                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
+                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
                                                                     );
-                                                                }
 
-                                                                let forward = forward_cache.get(&other.source_attribute)
-                                                                    .expect("Source attribute not found in forward cache.");
-
-                                                                extenders.push(Box::new(CollectionExtender {
-                                                                    phantom: std::marker::PhantomData,
-                                                                    indices: forward.clone(),
-                                                                    key_selector: Rc::new(move |tuple: &Vec<Value>| tuple.index(offset)),
-                                                                }));
+                                                                extenders.push(
+                                                                    Box::new(CollectionExtender {
+                                                                        phantom: std::marker::PhantomData,
+                                                                        indices: forward,
+                                                                        key_selector: Rc::new(move |prefix: &Vec<Value>| prefix.index(offset)),
+                                                                    })
+                                                                );
                                                             },
                                                             Direction::Reverse(offset) => {
-                                                                if !reverse_cache.contains_key(&other.source_attribute) {
-                                                                    let imported = reverse_import.entry(&other.source_attribute)
-                                                                        .or_insert_with(|| {
-                                                                            context.reverse_index(&other.source_attribute).unwrap()
-                                                                                .import(&scope.parent.parent)
-                                                                                .enter(&scope.parent)
-                                                                        });
+                                                                let imported = reverse_cache.entry(other.source_attribute.to_string())
+                                                                    .or_insert_with(|| {
+                                                                        context.reverse_index(&other.source_attribute).unwrap()
+                                                                            .import(&scope.parent.parent)
+                                                                    });
 
-                                                                    let neu1 = is_neu;
-                                                                    let neu2 = is_neu;
-                                                                    let neu3 = is_neu;
-
-                                                                    reverse_cache.insert(
-                                                                        other.source_attribute.clone(),
-                                                                        imported.enter_at(
-                                                                            &scope,
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
-                                                                            move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
-                                                                        )
+                                                                let (neu1, neu2, neu3) = (is_neu, is_neu, is_neu);
+                                                                let reverse = imported
+                                                                    .enter(&scope.parent)
+                                                                    .enter_at(
+                                                                        &scope,
+                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
+                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
+                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
                                                                     );
-                                                                }
 
-                                                                let reverse = reverse_cache.get(&other.source_attribute)
-                                                                    .expect("Source attribute not found in reverse cache.");
-
-                                                                extenders.push(Box::new(CollectionExtender {
-                                                                    phantom: std::marker::PhantomData,
-                                                                    indices: reverse.clone(),
-                                                                    key_selector: Rc::new(move |tuple: &Vec<Value>| tuple.index(offset)),
-                                                                }));
+                                                                extenders.push(
+                                                                    Box::new(CollectionExtender {
+                                                                        phantom: std::marker::PhantomData,
+                                                                        indices: reverse,
+                                                                        key_selector: Rc::new(move |prefix: &Vec<Value>| prefix.index(offset)),
+                                                                    })
+                                                                );
                                                             },
                                                         }
                                                     }
@@ -494,38 +478,18 @@ impl Implementable for Hector {
 // GENERIC IMPLEMENTATION
 //
 
-trait ProposeExtensionMethod<'a, S: Scope + ScopeParent, P: Data + Ord> {
-    fn propose_using<PE: PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P>>(
-        &self,
-        extender: &mut PE,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, PE::Extension)>;
-
+trait ProposeExtensionMethod<'a, S: Scope, P: Data + Ord> {
     fn extend<E: Data + Ord>(
         &self,
-        extenders: &mut [Box<
-            (dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = E>
-                 + 'a),
-        >],
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, E)>;
+        extenders: &mut [Extender<'a, S, P, E>],
+    ) -> Collection<S, (P, E)>;
 }
 
-impl<'a, S: Scope + ScopeParent, P: Data + Ord> ProposeExtensionMethod<'a, S, P>
-    for Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>
-{
-    fn propose_using<PE: PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P>>(
-        &self,
-        extender: &mut PE,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, PE::Extension)> {
-        extender.propose(self)
-    }
-
+impl<'a, S: Scope, P: Data + Ord> ProposeExtensionMethod<'a, S, P> for Collection<S, P> {
     fn extend<E: Data + Ord>(
         &self,
-        extenders: &mut [Box<
-            (dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = E>
-                 + 'a),
-        >],
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, E)> {
+        extenders: &mut [Extender<'a, S, P, E>],
+    ) -> Collection<S, (P, E)> {
         if extenders.len() == 1 {
             extenders[0].propose(&self.clone())
         } else {
@@ -563,9 +527,9 @@ where
     value: V,
 }
 
-impl<'a, S, V, P> PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>> for ConstantExtender<P, V>
+impl<'a, S, V, P> PrefixExtender<S> for ConstantExtender<P, V>
 where
-    S: Scope + ScopeParent,
+    S: Scope,
     S::Timestamp: Lattice + Data,
     V: Data + Hash,
     P: Data,
@@ -575,9 +539,9 @@ where
 
     fn count(
         &mut self,
-        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
+        prefixes: &Collection<S, (P, usize, usize)>,
         index: usize,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)> {
+    ) -> Collection<S, (P, usize, usize)> {
         prefixes.map(move |(prefix, old_count, old_index)| {
             if 1 < old_count {
                 (prefix.clone(), 1, index)
@@ -587,18 +551,12 @@ where
         })
     }
 
-    fn propose(
-        &mut self,
-        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+    fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
         let value = self.value.clone();
         prefixes.map(move |prefix| (prefix.clone(), value.clone()))
     }
 
-    fn validate(
-        &mut self,
-        extensions: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+    fn validate(&mut self, extensions: &Collection<S, (P, V)>) -> Collection<S, (P, V)> {
         let target = self.value.clone();
         extensions.filter(move |(_prefix, extension)| *extension == target)
     }
@@ -613,10 +571,9 @@ where
     direction: Direction,
 }
 
-impl<'a, S, V, P> PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>>
-    for BinaryPredicateExtender<P, V>
+impl<'a, S, V, P> PrefixExtender<S> for BinaryPredicateExtender<P, V>
 where
-    S: Scope + ScopeParent,
+    S: Scope,
     S::Timestamp: Lattice + Data,
     V: Data + Hash,
     P: Data + IndexNode<V>,
@@ -626,24 +583,18 @@ where
 
     fn count(
         &mut self,
-        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
+        prefixes: &Collection<S, (P, usize, usize)>,
         _index: usize,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)> {
+    ) -> Collection<S, (P, usize, usize)> {
         // @TODO return an option here to avoid cloning the collection?
         prefixes.map(|prefix| prefix)
     }
 
-    fn propose(
-        &mut self,
-        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+    fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
         prefixes.map(|_prefix| panic!("BinaryPredicateExtender should never be asked to propose."))
     }
 
-    fn validate(
-        &mut self,
-        extensions: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+    fn validate(&mut self, extensions: &Collection<S, (P, V)>) -> Collection<S, (P, V)> {
         use self::BinaryPredicate::{EQ, GT, GTE, LT, LTE, NEQ};
         match self.direction {
             Direction::Reverse(offset) => {
@@ -682,44 +633,43 @@ where
     }
 }
 
-struct CollectionExtender<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate>
+struct CollectionExtender<S, K, V, P, F, TrCount, TrPropose, TrValidate>
 where
-    S: Scope + ScopeParent,
+    S: Scope,
     S::Timestamp: Lattice + Data,
     K: Data,
     V: Data,
     F: Fn(&P) -> K,
-    TrCount: TraceReader<K, (), AltNeu<S::Timestamp>, isize> + Clone + 'static,
-    TrPropose: TraceReader<K, V, AltNeu<S::Timestamp>, isize> + Clone + 'static,
-    TrValidate: TraceReader<(K, V), (), AltNeu<S::Timestamp>, isize> + Clone + 'static,
+    TrCount: TraceReader<K, (), S::Timestamp, isize> + Clone + 'static,
+    TrPropose: TraceReader<K, V, S::Timestamp, isize> + Clone + 'static,
+    TrValidate: TraceReader<(K, V), (), S::Timestamp, isize> + Clone + 'static,
 {
     phantom: std::marker::PhantomData<P>,
-    indices: LiveIndex<Child<'a, S, AltNeu<S::Timestamp>>, K, V, TrCount, TrPropose, TrValidate>,
+    indices: LiveIndex<S, K, V, TrCount, TrPropose, TrValidate>,
     key_selector: Rc<F>,
 }
 
-impl<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate>
-    PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>>
-    for CollectionExtender<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate>
+impl<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate> PrefixExtender<S>
+    for CollectionExtender<S, K, V, P, F, TrCount, TrPropose, TrValidate>
 where
-    S: Scope + ScopeParent,
+    S: Scope,
     S::Timestamp: Lattice + Data,
     K: Data + Hash,
     V: Data + Hash,
     P: Data,
     F: Fn(&P) -> K + 'static,
-    TrCount: TraceReader<K, (), AltNeu<S::Timestamp>, isize> + Clone + 'static,
-    TrPropose: TraceReader<K, V, AltNeu<S::Timestamp>, isize> + Clone + 'static,
-    TrValidate: TraceReader<(K, V), (), AltNeu<S::Timestamp>, isize> + Clone + 'static,
+    TrCount: TraceReader<K, (), S::Timestamp, isize> + Clone + 'static,
+    TrPropose: TraceReader<K, V, S::Timestamp, isize> + Clone + 'static,
+    TrValidate: TraceReader<(K, V), (), S::Timestamp, isize> + Clone + 'static,
 {
     type Prefix = P;
     type Extension = V;
 
     fn count(
         &mut self,
-        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
+        prefixes: &Collection<S, (P, usize, usize)>,
         index: usize,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)> {
+    ) -> Collection<S, (P, usize, usize)> {
         // This method takes a stream of `(prefix, time, diff)`
         // changes, and we want to produce the corresponding stream of
         // `((prefix, count), time, diff)` changes, just by looking up
@@ -736,11 +686,9 @@ where
         let logic1 = self.key_selector.clone();
         let logic2 = self.key_selector.clone();
 
-        let exchange = Exchange::new(
-            move |update: &((P, usize, usize), AltNeu<S::Timestamp>, isize)| {
-                logic1(&(update.0).0).hashed().as_u64()
-            },
-        );
+        let exchange = Exchange::new(move |update: &((P, usize, usize), S::Timestamp, isize)| {
+            logic1(&(update.0).0).hashed().as_u64()
+        });
 
         let mut buffer1 = Vec::new();
         let mut buffer2 = Vec::new();
@@ -840,10 +788,7 @@ where
             .as_collection()
     }
 
-    fn propose(
-        &mut self,
-        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+    fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
         let propose = &self.indices.propose_trace;
         let mut propose_trace = Some(propose.trace.clone());
 
@@ -854,7 +799,7 @@ where
         let mut buffer1 = Vec::new();
         let mut buffer2 = Vec::new();
 
-        let exchange = Exchange::new(move |update: &(P, AltNeu<S::Timestamp>, isize)| {
+        let exchange = Exchange::new(move |update: &(P, S::Timestamp, isize)| {
             logic1(&update.0).hashed().as_u64()
         });
 
@@ -950,10 +895,7 @@ where
             .as_collection()
     }
 
-    fn validate(
-        &mut self,
-        extensions: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+    fn validate(&mut self, extensions: &Collection<S, (P, V)>) -> Collection<S, (P, V)> {
         // This method takes a stream of `(prefix, time, diff)` changes, and we want to produce the corresponding
         // stream of `((prefix, count), time, diff)` changes, just by looking up `count` in `count_trace`. We are
         // just doing a stream of changes and a stream of look-ups, no consolidation or any funny business like
@@ -969,7 +911,7 @@ where
         let mut buffer1 = Vec::new();
         let mut buffer2 = Vec::new();
 
-        let exchange = Exchange::new(move |update: &((P, V), AltNeu<S::Timestamp>, isize)| {
+        let exchange = Exchange::new(move |update: &((P, V), S::Timestamp, isize)| {
             (logic1(&(update.0).0).clone(), ((update.0).1).clone())
                 .hashed()
                 .as_u64()
@@ -1069,19 +1011,17 @@ where
 
 struct AntijoinExtender<'a, S, V, P>
 where
-    S: Scope + ScopeParent,
+    S: Scope,
     S::Timestamp: Lattice + Data,
     V: Data,
 {
     phantom: std::marker::PhantomData<P>,
-    extender:
-        Box<dyn PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>, Prefix = P, Extension = V>>,
+    extender: Extender<'a, S, P, V>,
 }
 
-impl<'a, S, V, P> PrefixExtender<Child<'a, S, AltNeu<S::Timestamp>>>
-    for AntijoinExtender<'a, S, V, P>
+impl<'a, S, V, P> PrefixExtender<S> for AntijoinExtender<'a, S, V, P>
 where
-    S: Scope + ScopeParent,
+    S: Scope,
     S::Timestamp: Lattice + Data,
     V: Data + Hash,
     P: Data,
@@ -1091,24 +1031,18 @@ where
 
     fn count(
         &mut self,
-        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)>,
+        prefixes: &Collection<S, (P, usize, usize)>,
         _index: usize,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, usize, usize)> {
+    ) -> Collection<S, (P, usize, usize)> {
         // @TODO return an option here to avoid cloning the collection?
         prefixes.map(|prefix| prefix)
     }
 
-    fn propose(
-        &mut self,
-        prefixes: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, P>,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+    fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
         prefixes.map(|_prefix| panic!("AntijoinExtender should never be asked to propose."))
     }
 
-    fn validate(
-        &mut self,
-        extensions: &Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)>,
-    ) -> Collection<Child<'a, S, AltNeu<S::Timestamp>>, (P, V)> {
+    fn validate(&mut self, extensions: &Collection<S, (P, V)>) -> Collection<S, (P, V)> {
         extensions.concat(&self.extender.validate(extensions).negate())
     }
 }
