@@ -45,7 +45,7 @@ trait PrefixExtender<G: Scope> {
         &mut self,
         prefixes: &Collection<G, (Self::Prefix, usize, usize)>,
         index: usize,
-    ) -> Collection<G, (Self::Prefix, usize, usize)>;
+    ) -> Option<Collection<G, (Self::Prefix, usize, usize)>>;
     /// Extends each prefix with corresponding extensions.
     fn propose(
         &mut self,
@@ -495,7 +495,9 @@ impl<'a, S: Scope, P: Data + Ord> ProposeExtensionMethod<'a, S, P> for Collectio
         } else {
             let mut counts = self.map(|p| (p, 1 << 31, 0));
             for (index, extender) in extenders.iter_mut().enumerate() {
-                counts = extender.count(&counts, index);
+                if let Some(new_counts) = extender.count(&counts, index) {
+                    counts = new_counts;
+                }
             }
 
             let parts = counts
@@ -541,14 +543,14 @@ where
         &mut self,
         prefixes: &Collection<S, (P, usize, usize)>,
         index: usize,
-    ) -> Collection<S, (P, usize, usize)> {
-        prefixes.map(move |(prefix, old_count, old_index)| {
+    ) -> Option<Collection<S, (P, usize, usize)>> {
+        Some(prefixes.map(move |(prefix, old_count, old_index)| {
             if 1 < old_count {
                 (prefix.clone(), 1, index)
             } else {
                 (prefix.clone(), old_count, old_index)
             }
-        })
+        }))
     }
 
     fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
@@ -585,9 +587,8 @@ where
         &mut self,
         prefixes: &Collection<S, (P, usize, usize)>,
         _index: usize,
-    ) -> Collection<S, (P, usize, usize)> {
-        // @TODO return an option here to avoid cloning the collection?
-        prefixes.map(|prefix| prefix)
+    ) -> Option<Collection<S, (P, usize, usize)>> {
+        None
     }
 
     fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
@@ -669,7 +670,7 @@ where
         &mut self,
         prefixes: &Collection<S, (P, usize, usize)>,
         index: usize,
-    ) -> Collection<S, (P, usize, usize)> {
+    ) -> Option<Collection<S, (P, usize, usize)>> {
         // This method takes a stream of `(prefix, time, diff)`
         // changes, and we want to produce the corresponding stream of
         // `((prefix, count), time, diff)` changes, just by looking up
@@ -694,98 +695,101 @@ where
         let mut buffer2 = Vec::new();
 
         // TODO: This should be a custom operator with no connection from the second input to the output.
-        prefixes
-            .inner
-            .binary_frontier(&counts.stream, exchange, Pipeline, "Count", move |_, _| {
-                move |input1, input2, output| {
-                    // drain the first input, stashing requests.
-                    input1.for_each(|capability, data| {
-                        data.swap(&mut buffer1);
-                        stash
-                            .entry(capability.retain())
-                            .or_insert_with(Vec::new)
-                            .extend(buffer1.drain(..))
-                    });
+        Some(
+            prefixes
+                .inner
+                .binary_frontier(&counts.stream, exchange, Pipeline, "Count", move |_, _| {
+                    move |input1, input2, output| {
+                        // drain the first input, stashing requests.
+                        input1.for_each(|capability, data| {
+                            data.swap(&mut buffer1);
+                            stash
+                                .entry(capability.retain())
+                                .or_insert_with(Vec::new)
+                                .extend(buffer1.drain(..))
+                        });
 
-                    // advance the `distinguish_since` frontier to allow all merges.
-                    input2.for_each(|_, batches| {
-                        batches.swap(&mut buffer2);
-                        for batch in buffer2.drain(..) {
-                            if let Some(ref mut trace) = counts_trace {
-                                trace.distinguish_since(batch.upper());
+                        // advance the `distinguish_since` frontier to allow all merges.
+                        input2.for_each(|_, batches| {
+                            batches.swap(&mut buffer2);
+                            for batch in buffer2.drain(..) {
+                                if let Some(ref mut trace) = counts_trace {
+                                    trace.distinguish_since(batch.upper());
+                                }
                             }
-                        }
-                    });
+                        });
 
-                    if let Some(ref mut trace) = counts_trace {
-                        for (capability, prefixes) in stash.iter_mut() {
-                            // defer requests at incomplete times.
-                            // NOTE: not all updates may be at complete times, but if this test fails then none of them are.
-                            if !input2.frontier.less_equal(capability.time()) {
-                                let mut session = output.session(capability);
+                        if let Some(ref mut trace) = counts_trace {
+                            for (capability, prefixes) in stash.iter_mut() {
+                                // defer requests at incomplete times.
+                                // NOTE: not all updates may be at complete times, but if this test fails then none of them are.
+                                if !input2.frontier.less_equal(capability.time()) {
+                                    let mut session = output.session(capability);
 
-                                // sort requests for in-order cursor traversal. could consolidate?
-                                prefixes.sort_by(|x, y| logic2(&(x.0).0).cmp(&logic2(&(y.0).0)));
+                                    // sort requests for in-order cursor traversal. could consolidate?
+                                    prefixes
+                                        .sort_by(|x, y| logic2(&(x.0).0).cmp(&logic2(&(y.0).0)));
 
-                                let (mut cursor, storage) = trace.cursor();
+                                    let (mut cursor, storage) = trace.cursor();
 
-                                for &mut (
-                                    (ref prefix, old_count, old_index),
-                                    ref time,
-                                    ref mut diff,
-                                ) in prefixes.iter_mut()
-                                {
-                                    if !input2.frontier.less_equal(time) {
-                                        let key = logic2(prefix);
-                                        cursor.seek_key(&storage, &key);
-                                        if cursor.get_key(&storage) == Some(&key) {
-                                            let mut count = 0;
-                                            cursor.map_times(&storage, |t, d| {
-                                                if t.less_equal(time) {
-                                                    count += d;
-                                                }
-                                            });
-                                            // assert!(count >= 0);
-                                            let count = count as usize;
-                                            if count > 0 {
-                                                if count < old_count {
-                                                    session.give((
-                                                        (prefix.clone(), count, index),
-                                                        time.clone(),
-                                                        *diff,
-                                                    ));
-                                                } else {
-                                                    session.give((
-                                                        (prefix.clone(), old_count, old_index),
-                                                        time.clone(),
-                                                        *diff,
-                                                    ));
+                                    for &mut (
+                                        (ref prefix, old_count, old_index),
+                                        ref time,
+                                        ref mut diff,
+                                    ) in prefixes.iter_mut()
+                                    {
+                                        if !input2.frontier.less_equal(time) {
+                                            let key = logic2(prefix);
+                                            cursor.seek_key(&storage, &key);
+                                            if cursor.get_key(&storage) == Some(&key) {
+                                                let mut count = 0;
+                                                cursor.map_times(&storage, |t, d| {
+                                                    if t.less_equal(time) {
+                                                        count += d;
+                                                    }
+                                                });
+                                                // assert!(count >= 0);
+                                                let count = count as usize;
+                                                if count > 0 {
+                                                    if count < old_count {
+                                                        session.give((
+                                                            (prefix.clone(), count, index),
+                                                            time.clone(),
+                                                            *diff,
+                                                        ));
+                                                    } else {
+                                                        session.give((
+                                                            (prefix.clone(), old_count, old_index),
+                                                            time.clone(),
+                                                            *diff,
+                                                        ));
+                                                    }
                                                 }
                                             }
+                                            *diff = 0;
                                         }
-                                        *diff = 0;
                                     }
-                                }
 
-                                prefixes.retain(|ptd| ptd.2 != 0);
+                                    prefixes.retain(|ptd| ptd.2 != 0);
+                                }
                             }
                         }
-                    }
 
-                    // drop fully processed capabilities.
-                    stash.retain(|_, prefixes| !prefixes.is_empty());
+                        // drop fully processed capabilities.
+                        stash.retain(|_, prefixes| !prefixes.is_empty());
 
-                    // advance the consolidation frontier (TODO: wierd lexicographic times!)
-                    if let Some(trace) = counts_trace.as_mut() {
-                        trace.advance_by(&input1.frontier().frontier());
-                    }
+                        // advance the consolidation frontier (TODO: wierd lexicographic times!)
+                        if let Some(trace) = counts_trace.as_mut() {
+                            trace.advance_by(&input1.frontier().frontier());
+                        }
 
-                    if input1.frontier().is_empty() && stash.is_empty() {
-                        counts_trace = None;
+                        if input1.frontier().is_empty() && stash.is_empty() {
+                            counts_trace = None;
+                        }
                     }
-                }
-            })
-            .as_collection()
+                })
+                .as_collection(),
+        )
     }
 
     fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
@@ -1033,9 +1037,8 @@ where
         &mut self,
         prefixes: &Collection<S, (P, usize, usize)>,
         _index: usize,
-    ) -> Collection<S, (P, usize, usize)> {
-        // @TODO return an option here to avoid cloning the collection?
-        prefixes.map(|prefix| prefix)
+    ) -> Option<Collection<S, (P, usize, usize)>> {
+        None
     }
 
     fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
