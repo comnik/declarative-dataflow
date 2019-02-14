@@ -181,17 +181,19 @@ where
                     .map(|(_idx, tuple)| tuple),
             };
 
-            let tuples = datoms
-                .as_collection()
-                // Ensure that redundant (e,v) pairs don't cause
-                // misleading proposals during joining.
-                .distinct();
+            let tuples = datoms.as_collection();
+            // @TODO
+            // Ensure that redundant (e,v) pairs don't cause
+            // misleading proposals during joining.
+            // .distinct();
 
             let forward = CollectionIndex::index(&name, &tuples);
             let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
 
             self.forward.insert(name.to_string(), forward);
             self.reverse.insert(name.to_string(), reverse);
+
+            info!("Created source {}", name);
 
             Ok(())
         }
