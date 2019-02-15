@@ -64,8 +64,12 @@ fn run_aggregation_cases() {
                 ],
             ],
             expectations: vec![
-                vec![(vec![Number(5)], 0, 1)],
+                vec![(vec![Number(6)], 0, 1)],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![(vec![Number(5)], 0, 1)],
+            // ],
         },
         Case {
             description: "[:find ?e (count ?amount) :where [?e :amount ?amount]]",
@@ -93,9 +97,16 @@ fn run_aggregation_cases() {
             expectations: vec![
                 vec![
                     (vec![Eid(1), Number(4)], 0, 1),
-                    (vec![Eid(2), Number(1)], 0, 1),
+                    (vec![Eid(2), Number(2)], 0, 1),
                 ],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![
+            //         (vec![Eid(1), Number(4)], 0, 1),
+            //         (vec![Eid(2), Number(1)], 0, 1),
+            //     ],
+            // ],
         },
         Case {
             description: "[:find (max ?amount) :where [?e :amount ?amount]]",
@@ -244,8 +255,12 @@ fn run_aggregation_cases() {
                 ],
             ],
             expectations: vec![
-                vec![(vec![Number(27)], 0, 1)],
+                vec![(vec![Number(37)], 0, 1)],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![(vec![Number(27)], 0, 1)],
+            // ],
         },
         Case {
             description: "[:find ?e (sum ?amount) :where [?e :amount ?amount]]",
@@ -273,9 +288,16 @@ fn run_aggregation_cases() {
             expectations: vec![
                 vec![
                     (vec![Eid(1), Number(17)], 0, 1),
-                    (vec![Eid(2), Number(10)], 0, 1),
+                    (vec![Eid(2), Number(20)], 0, 1),
                 ],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![
+            //         (vec![Eid(1), Number(17)], 0, 1),
+            //         (vec![Eid(2), Number(10)], 0, 1),
+            //     ],
+            // ],
         },
         Case {
             description: "[:find (avg ?amount) :where [?e :amount ?amount]]",
@@ -304,8 +326,12 @@ fn run_aggregation_cases() {
                 ],
             ],
             expectations: vec![
-                vec![(vec![Rational32(Ratio::new(27, 5))], 0, 1)],
+                vec![(vec![Rational32(Ratio::new(37, 6))], 0, 1)],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![(vec![Rational32(Ratio::new(27, 5))], 0, 1)],
+            // ],
         },
         Case {
             description: "[:find ?e (avg ?amount) :where [?e :amount ?amount]]",
@@ -333,9 +359,16 @@ fn run_aggregation_cases() {
             expectations: vec![
                 vec![
                     (vec![Eid(1), Rational32(Ratio::new(17, 4))], 0, 1),
-                    (vec![Eid(2), Rational32(Ratio::new(10, 1))], 0, 1),
+                    (vec![Eid(2), Rational32(Ratio::new(20, 2))], 0, 1),
                 ],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![
+            //         (vec![Eid(1), Rational32(Ratio::new(17, 4))], 0, 1),
+            //         (vec![Eid(2), Rational32(Ratio::new(10, 1))], 0, 1),
+            //     ],
+            // ],
         },
         Case {
             description: "[:find (variance ?amount) :where [?e :amount ?amount]]",
@@ -364,8 +397,12 @@ fn run_aggregation_cases() {
                 ],
             ],
             expectations: vec![
-                vec![(vec![Rational32(Ratio::new(176, 25))], 0, 1)],
+                vec![(vec![Rational32(Ratio::new(317, 36))], 0, 1)],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![(vec![Rational32(Ratio::new(176, 25))], 0, 1)],
+            // ],
         },
         Case {
             description: "[:find ?e (variance ?amount) :where [?e :amount ?amount]]",
@@ -504,9 +541,15 @@ fn run_aggregation_cases() {
             ],
             expectations: vec![
                 vec![
-                    (vec![Number(10), Number(4), Number(36), Rational32(Ratio::new(14, 1))], 0, 1),
+                    (vec![Number(10), Number(4), Number(172), Rational32(Ratio::new(349, 29))], 0, 1),
                 ],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![
+            //         (vec![Number(10), Number(4), Number(36), Rational32(Ratio::new(14, 1))], 0, 1),
+            //     ],
+            // ],
         },
         Case {
             description:
@@ -559,10 +602,17 @@ fn run_aggregation_cases() {
             ],
             expectations: vec![
                 vec![
-                    (vec![Eid(1), Number(2), Number(10), Number(6), Number(5), Number(4), Number(15), Number(10), Number(5)], 0, 1),
-                    (vec![Eid(2), Number(2), Number(4), Number(4), Number(2), Number(5), Number(42), Number(42), Number(2)], 0, 1),
+                    (vec![Eid(1), Number(2), Number(10), Number(6), Number(25), Number(4), Number(15), Number(10), Number(25)], 0, 1),
+                    (vec![Eid(2), Number(2), Number(4), Number(4), Number(4), Number(5), Number(42), Number(42), Number(4)], 0, 1),
                 ],
             ],
+            // set-semantics
+            // expectations: vec![
+            //     vec![
+            //         (vec![Eid(1), Number(2), Number(10), Number(6), Number(5), Number(4), Number(15), Number(10), Number(5)], 0, 1),
+            //         (vec![Eid(2), Number(2), Number(4), Number(4), Number(2), Number(5), Number(42), Number(42), Number(2)], 0, 1),
+            //     ],
+            // ],
         },
         Case {
             description:
