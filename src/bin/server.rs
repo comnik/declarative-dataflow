@@ -128,7 +128,7 @@ fn main() {
         let (send_results, recv_results) = mio::channel::channel::<(String, Vec<ResultDiff<u64>>)>();
 
         // setup errors channel
-        let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<Error>)>();
+        let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<(Error, u64)>)>();
 
         // setup server socket
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
@@ -224,7 +224,7 @@ fn main() {
                                         message: serde_error.to_string(),
                                     };
 
-                                    send_errors.send((vec![], vec![error])).unwrap();
+                                    send_errors.send((vec![], vec![(error, next_tx - 1)])).unwrap();
                                 }
                                 Ok(requests) => {
                                     sequencer.push(Command {
@@ -336,15 +336,15 @@ fn main() {
                         while let Ok((tokens, mut errors)) = recv_errors.try_recv() {
                             error!("[WORKER {}] {:?}", worker.index(), errors);
 
-                            let serializable = errors.drain(..).map(|error| {
+                            let serializable = errors.drain(..).map(|(error, time)| {
                                 let mut serializable = serde_json::Map::new();
                                 serializable.insert("df.error/category".to_string(), serde_json::Value::String(error.category.to_string()));
                                 serializable.insert("df.error/message".to_string(), serde_json::Value::String(error.message.to_string()));
 
-                                serializable
+                                (serializable, time)
                             }).collect();
 
-                            let serialized = serde_json::to_string::<(String, Vec<serde_json::Map<_,_>>)>(
+                            let serialized = serde_json::to_string::<(String, Vec<(serde_json::Map<_,_>, u64)>)>(
                                 &("df.error".to_string(), serializable)
                             ).expect("failed to serialize errors");
                             let msg = ws::Message::text(serialized);
@@ -404,7 +404,7 @@ fn main() {
                                                                 message: serde_error.to_string(),
                                                             };
 
-                                                            send_errors.send((vec![token], vec![error])).unwrap();
+                                                            send_errors.send((vec![token], vec![(error, next_tx - 1)])).unwrap();
                                                         }
                                                         Ok(requests) => {
                                                             let command = Command {
@@ -481,6 +481,7 @@ fn main() {
 
                 let owner = command.owner;
                 let client = command.client;
+                let time = server.context.internal.time().clone();
 
                 for req in command.requests.drain(..) {
 
@@ -489,7 +490,7 @@ fn main() {
                     match req {
                         Request::Transact(req) => {
                             if let Err(error) = server.transact(req, owner, worker.index()) {
-                                send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                             }
                         }
                         Request::Interest(req) => {
@@ -513,7 +514,7 @@ fn main() {
 
                                     match server.interest(&req.name, scope) {
                                         Err(error) => {
-                                            send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                            send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                                         }
                                         Ok(trace) => {
                                             trace
@@ -546,38 +547,38 @@ fn main() {
                         }
                         Request::Register(req) => {
                             if let Err(error) = server.register(req) {
-                                send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                             }
                         }
                         Request::RegisterSource(req) => {
                             worker.dataflow::<u64, _, _>(|scope| {
                                 if let Err(error) = server.register_source(req, scope) {
-                                    send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                    send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                                 }
                             });
                         }
                         Request::CreateAttribute(CreateAttribute { name, semantics }) => {
                             worker.dataflow::<u64, _, _>(|scope| {
                                 if let Err(error) = server.context.internal.create_attribute(&name, semantics, scope) {
-                                    send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                    send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                                 }
                             });
                         }
                         Request::AdvanceDomain(name, next) => {
                             if let Err(error) = server.advance_domain(name, next) {
-                                send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                             }
                         }
                         Request::CloseInput(name) => {
                             if let Err(error) = server.context.internal.close_input(name) {
-                                send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                                send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                             }
                         }
                     }
                 }
 
                 if let Err(error) = server.advance_domain(None, next_tx as u64) {
-                    send_errors.send((vec![Token(client)], vec![error])).unwrap();
+                    send_errors.send((vec![Token(client)], vec![(error, time)])).unwrap();
                 }
             }
 
