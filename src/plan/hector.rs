@@ -585,7 +585,7 @@ where
 
     fn count(
         &mut self,
-        prefixes: &Collection<S, (P, usize, usize)>,
+        _prefixes: &Collection<S, (P, usize, usize)>,
         _index: usize,
     ) -> Option<Collection<S, (P, usize, usize)>> {
         None
@@ -1035,7 +1035,7 @@ where
 
     fn count(
         &mut self,
-        prefixes: &Collection<S, (P, usize, usize)>,
+        _prefixes: &Collection<S, (P, usize, usize)>,
         _index: usize,
     ) -> Option<Collection<S, (P, usize, usize)>> {
         None

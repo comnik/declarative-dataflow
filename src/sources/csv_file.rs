@@ -1,9 +1,5 @@
 //! Operator and utilities to source data from csv files.
 
-use std::fs::File;
-use std::io::{BufRead, BufReader};
-use std::path::Path;
-
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
 use timely::order::TotalOrder;
@@ -55,13 +51,12 @@ impl Sourceable for CsvFile {
                 let worker_index = scope.index();
                 let num_workers = scope.peers();
 
-                let path = Path::new(&filename);
-                let file = File::open(&path).unwrap();
-                let mut reader = csv::ReaderBuilder::new()
+                let reader = csv::ReaderBuilder::new()
                     .has_headers(self.has_headers)
                     .delimiter(self.delimiter)
                     .comment(self.comment)
-                    .from_reader(BufReader::new(file));
+                    .from_path(&filename)
+                    .expect("failed to create reader");
 
                 let mut iterator = reader.into_records();
 
@@ -78,15 +73,10 @@ impl Sourceable for CsvFile {
                         );
                         cap = None;
                     } else {
-                        let mut fuel = 256;
+                        // let mut fuel = 256;
                         let mut session = output.session(cap.as_ref().unwrap());
 
                         while let Some(result) = iterator.next() {
-                            fuel -= 1;
-                            if fuel <= 0 {
-                                break;
-                            }
-
                             let record = result.expect("read error");
 
                             if datum_index % num_workers == worker_index {
@@ -118,6 +108,11 @@ impl Sourceable for CsvFile {
                             }
 
                             datum_index += 1;
+
+                            // fuel -= 1;
+                            // if fuel <= 0 {
+                            //     break;
+                            // }
                         }
 
                         if iterator.reader().is_done() {
@@ -127,6 +122,7 @@ impl Sourceable for CsvFile {
                             );
                             cap = None;
                         } else {
+                            // cap.downgrade(..);
                             activator.activate();
                         }
                     }
