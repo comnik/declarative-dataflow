@@ -2,10 +2,8 @@
 
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
-use timely::order::TotalOrder;
-use timely::progress::Timestamp;
 
-use differential_dataflow::lattice::Lattice;
+use chrono::DateTime;
 
 use crate::sources::Sourceable;
 use crate::{Eid, Value};
@@ -23,21 +21,23 @@ pub struct CsvFile {
     pub comment: Option<u8>,
     /// Allow flexible length records?
     pub flexible: bool,
+    /// Special column offset for the entity id.
+    pub eid_offset: usize,
+    /// Special column offset for the timestamp.
+    pub timestamp_offset: usize,
     /// Specifies the column offsets and their value types, that
     /// should be introduced.
     pub schema: Vec<(usize, Value)>,
 }
 
 impl Sourceable for CsvFile {
-    fn source<T, S>(
+    type Timestamp = u64;
+
+    fn source<S: Scope<Timestamp = Self::Timestamp>>(
         &self,
         scope: &S,
         names: Vec<String>,
-    ) -> Stream<S, (usize, ((Value, Value), T, isize))>
-    where
-        T: Timestamp + Lattice + TotalOrder + Default,
-        S: Scope<Timestamp = T>,
-    {
+    ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
         let filename = self.path.clone();
 
         generic::operator::source(
@@ -64,6 +64,8 @@ impl Sourceable for CsvFile {
                 let mut datum_index = 0;
 
                 let schema = self.schema.clone();
+                let eid_offset = self.eid_offset;
+                let timestamp_offset = self.timestamp_offset;
 
                 move |output| {
                     if iterator.reader().is_done() {
@@ -80,7 +82,18 @@ impl Sourceable for CsvFile {
                             let record = result.expect("read error");
 
                             if datum_index % num_workers == worker_index {
-                                let eid = Value::Eid(record[0].parse::<Eid>().expect("not a eid"));
+                                let eid = Value::Eid(
+                                    record[eid_offset].parse::<Eid>().expect("not a eid"),
+                                );
+                                let epoch = DateTime::parse_from_rfc3339(&record[timestamp_offset])
+                                    .expect("not a valid rfc3339 datetime")
+                                    .timestamp();
+
+                                let time: u64 = if epoch >= 0 {
+                                    epoch as u64
+                                } else {
+                                    panic!("invalid epoch");
+                                };
 
                                 for (name_idx, (offset, type_hint)) in schema.iter().enumerate() {
                                     let v = match type_hint {
@@ -98,10 +111,7 @@ impl Sourceable for CsvFile {
                                     ),
                                     };
 
-                                    session.give((
-                                        name_idx,
-                                        ((eid.clone(), v), Default::default(), 1),
-                                    ));
+                                    session.give((name_idx, ((eid.clone(), v), time, 1)));
                                 }
 
                                 num_datums_read += 1;

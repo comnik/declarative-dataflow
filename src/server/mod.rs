@@ -387,34 +387,6 @@ where
         Ok(())
     }
 
-    /// Handle a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = T>>(
-        &mut self,
-        req: RegisterSource,
-        scope: &mut S,
-    ) -> Result<(), Error> {
-        let RegisterSource { mut names, source } = req;
-
-        if names.len() == 1 {
-            let name = names.pop().unwrap();
-            let datoms = source.source(scope, names.clone());
-
-            self.context.internal.create_source(&name, None, &datoms)
-        } else if names.len() > 1 {
-            let datoms = source.source(scope, names.clone());
-
-            for (name_idx, name) in names.iter().enumerate() {
-                self.context
-                    .internal
-                    .create_source(name, Some(name_idx), &datoms)?;
-            }
-
-            Ok(())
-        } else {
-            Ok(())
-        }
-    }
-
     /// Handle an AdvanceDomain request.
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
@@ -481,6 +453,36 @@ where
                 .import_named(scope, &interest_name)
                 .as_collection(|tuple, _| tuple.clone())
                 .probe_with(&mut self.probe),
+        }
+    }
+}
+
+impl<Token: Hash> Server<u64, Token> {
+    /// Handle a RegisterSource request.
+    pub fn register_source<S: Scope<Timestamp = u64>>(
+        &mut self,
+        req: RegisterSource,
+        scope: &mut S,
+    ) -> Result<(), Error> {
+        let RegisterSource { mut names, source } = req;
+
+        if names.len() == 1 {
+            let name = names.pop().unwrap();
+            let datoms = source.source(scope, names.clone());
+
+            self.context.internal.create_source(&name, None, &datoms)
+        } else if names.len() > 1 {
+            let datoms = source.source(scope, names.clone());
+
+            for (name_idx, name) in names.iter().enumerate() {
+                self.context
+                    .internal
+                    .create_source(name, Some(name_idx), &datoms)?;
+            }
+
+            Ok(())
+        } else {
+            Ok(())
         }
     }
 }

@@ -18,16 +18,16 @@ pub use self::json_file::JsonFile;
 
 /// An external data source that can provide Datoms.
 pub trait Sourceable {
+    /// The timestamp type provided by this source.
+    type Timestamp: Timestamp + Lattice + TotalOrder;
+
     /// Creates a timely operator reading from the source and
     /// producing inputs.
-    fn source<T, S>(
+    fn source<S: Scope<Timestamp = Self::Timestamp>>(
         &self,
         scope: &S,
         names: Vec<String>,
-    ) -> Stream<S, (usize, ((Value, Value), T, isize))>
-    where
-        T: Timestamp + Lattice + TotalOrder + Default,
-        S: Scope<Timestamp = T>;
+    ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))>;
 }
 
 /// Supported external data sources.
@@ -41,15 +41,13 @@ pub enum Source {
 }
 
 impl Sourceable for Source {
-    fn source<T, S>(
+    type Timestamp = u64;
+
+    fn source<S: Scope<Timestamp = u64>>(
         &self,
         scope: &S,
         names: Vec<String>,
-    ) -> Stream<S, (usize, ((Value, Value), T, isize))>
-    where
-        T: Timestamp + Lattice + TotalOrder + Default,
-        S: Scope<Timestamp = T>,
-    {
+    ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
         match *self {
             #[cfg(feature = "csv-source")]
             Source::CsvFile(ref source) => source.source(scope, names),

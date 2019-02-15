@@ -7,10 +7,6 @@ use std::path::Path;
 
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
-use timely::order::TotalOrder;
-use timely::progress::Timestamp;
-
-use differential_dataflow::lattice::Lattice;
 
 // use sources::json_file::flate2::read::GzDecoder;
 
@@ -25,15 +21,13 @@ pub struct JsonFile {
 }
 
 impl Sourceable for JsonFile {
-    fn source<T, S>(
+    type Timestamp = u64;
+
+    fn source<S: Scope<Timestamp = Self::Timestamp>>(
         &self,
         scope: &S,
         names: Vec<String>,
-    ) -> Stream<S, (usize, ((Value, Value), T, isize))>
-    where
-        T: Timestamp + Lattice + TotalOrder + Default,
-        S: Scope<Timestamp = T>,
-    {
+    ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
         let filename = self.path.clone();
 
         generic::operator::source(

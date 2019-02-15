@@ -18,7 +18,7 @@ use differential_dataflow::AsCollection;
 use crate::{Aid, Error, TxData, Value};
 use crate::{AttributeSemantics, CollectionIndex};
 
-/// A domain manages attributes (and their inputs) hat share a
+/// A domain manages attributes (and their inputs) that share a
 /// timestamp semantics (e.g. come from the same logical source).
 pub struct Domain<T: Timestamp + Lattice + TotalOrder> {
     /// The current timestamp.
