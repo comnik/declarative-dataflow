@@ -240,11 +240,17 @@ where
     /// be used to indicate whether (and if so how closely) traces
     /// should follow the input frontier. Setting this to None
     /// maintains full trace histories.
-    pub fn advance_to(&mut self, next: T, trace_next: Option<T>) {
-        // Assert that we do not rewind time.
-        assert!(self.now_at.less_equal(&next));
-
-        if !self.now_at.eq(&next) {
+    pub fn advance_to(&mut self, next: T, trace_next: Option<T>) -> Result<(), Error> {
+        if !self.now_at.less_equal(&next) {
+            // We can't rewind time.
+            Err(Error {
+                category: "df.error.category/conflict",
+                message: format!(
+                    "Domain is at {:?}, you attempted to rewind to {:?}.",
+                    &self.now_at, &next
+                ),
+            })
+        } else if !self.now_at.eq(&next) {
             self.now_at = next.clone();
 
             for handle in self.input_sessions.values_mut() {
@@ -271,6 +277,10 @@ where
                     index.advance_by(frontier);
                 }
             }
+
+            Ok(())
+        } else {
+            Ok(())
         }
     }
 
