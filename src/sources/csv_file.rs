@@ -24,7 +24,7 @@ pub struct CsvFile {
     /// Special column offset for the entity id.
     pub eid_offset: usize,
     /// Special column offset for the timestamp.
-    pub timestamp_offset: usize,
+    pub timestamp_offset: Option<usize>,
     /// Specifies the column offsets and their value types, that
     /// should be introduced.
     pub schema: Vec<(usize, Value)>,
@@ -85,14 +85,20 @@ impl Sourceable for CsvFile {
                                 let eid = Value::Eid(
                                     record[eid_offset].parse::<Eid>().expect("not a eid"),
                                 );
-                                let epoch = DateTime::parse_from_rfc3339(&record[timestamp_offset])
-                                    .expect("not a valid rfc3339 datetime")
-                                    .timestamp();
+                                let time: u64 = match timestamp_offset {
+                                    None => Default::default(),
+                                    Some(timestamp_offset) => {
+                                        let epoch =
+                                            DateTime::parse_from_rfc3339(&record[timestamp_offset])
+                                                .expect("not a valid rfc3339 datetime")
+                                                .timestamp();
 
-                                let time: u64 = if epoch >= 0 {
-                                    epoch as u64
-                                } else {
-                                    panic!("invalid epoch");
+                                        if epoch >= 0 {
+                                            epoch as u64
+                                        } else {
+                                            panic!("invalid epoch");
+                                        }
+                                    }
                                 };
 
                                 for (name_idx, (offset, type_hint)) in schema.iter().enumerate() {
