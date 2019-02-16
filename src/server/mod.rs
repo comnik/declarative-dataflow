@@ -107,6 +107,9 @@ pub enum Request {
     Transact(Vec<TxData>),
     /// Expresses interest in a named relation.
     Interest(Interest),
+    /// Expresses interest in a named relation, but directing results
+    /// to be forwarded to a sink.
+    Flow(String, String),
     /// Registers one or more named relations.
     Register(Register),
     /// Registers an external data source.
