@@ -20,6 +20,7 @@ pub mod binding;
 pub mod domain;
 pub mod plan;
 pub mod server;
+pub mod sinks;
 pub mod sources;
 pub mod timestamp;
 

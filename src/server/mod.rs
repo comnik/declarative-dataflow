@@ -9,11 +9,13 @@ use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 
 use differential_dataflow::collection::Collection;
+use differential_dataflow::input::Input;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::trace::TraceReader;
 
 use crate::domain::Domain;
 use crate::plan::{ImplContext, Implementable};
+use crate::sinks::{Sink, Sinkable};
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
 use crate::{
@@ -76,6 +78,16 @@ pub struct RegisterSource {
     pub source: Source,
 }
 
+/// A request with the intent of attaching an external system as a
+/// named sink.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub struct RegisterSink {
+    /// A globally unique name.
+    pub name: String,
+    /// A sink configuration.
+    pub sink: Sink,
+}
+
 /// A request with the intent of creating a new named, globally
 /// available input that can be transacted upon.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -99,6 +111,8 @@ pub enum Request {
     Register(Register),
     /// Registers an external data source.
     RegisterSource(RegisterSource),
+    /// Registers an external data sink.
+    RegisterSink(RegisterSink),
     /// Creates a named input handle that can be `Transact`ed upon.
     CreateAttribute(CreateAttribute),
     /// Advances the specified domain to the specified time.
@@ -399,7 +413,7 @@ where
                     Some(next.clone() - 1)
                 };
 
-                self.context.internal.advance_to(next, trace_next.clone());
+                self.context.internal.advance_to(next, trace_next.clone())?;
 
                 if let Some(trace_next) = trace_next {
                     // if historical queries don't matter, we should advance
@@ -484,5 +498,22 @@ impl<Token: Hash> Server<u64, Token> {
         } else {
             Ok(())
         }
+    }
+
+    /// Handle a RegisterSink request.
+    pub fn register_sink<S: Scope<Timestamp = u64>>(
+        &mut self,
+        req: RegisterSink,
+        scope: &mut S,
+    ) -> Result<(), Error> {
+        let RegisterSink { name, sink } = req;
+
+        let (input, collection) = scope.new_collection();
+
+        sink.sink(&collection.inner)?;
+
+        self.context.internal.sinks.insert(name, input);
+
+        Ok(())
     }
 }

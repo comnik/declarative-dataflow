@@ -557,6 +557,13 @@ fn main() {
                                 }
                             });
                         }
+                        Request::RegisterSink(req) => {
+                            worker.dataflow::<u64, _, _>(|scope| {
+                                if let Err(error) = server.register_sink(req, scope) {
+                                    send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                }
+                            });
+                        }
                         Request::CreateAttribute(CreateAttribute { name, semantics }) => {
                             worker.dataflow::<u64, _, _>(|scope| {
                                 if let Err(error) = server.context.internal.create_attribute(&name, semantics, scope) {
