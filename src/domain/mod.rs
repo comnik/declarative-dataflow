@@ -258,11 +258,6 @@ where
                 handle.flush();
             }
 
-            for handle in self.sinks.values_mut() {
-                handle.advance_to(next.clone());
-                handle.flush();
-            }
-
             if let Some(trace_next) = trace_next {
                 // if historical queries don't matter, we should advance
                 // the index traces to allow them to compact

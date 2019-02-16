@@ -572,6 +572,16 @@ fn main() {
                                                             sink_handle.update_at(tuple, time, diff);
                                                         }
                                                     });
+
+                                                    let frontier = input.frontier().frontier();
+                                                    if frontier.is_empty() {
+                                                        // @TODO
+                                                        // sink_handle.close();
+                                                        sink_handle.flush();
+                                                    } else {
+                                                        sink_handle.advance_to(frontier[0]);
+                                                        sink_handle.flush();
+                                                    }
                                                 });
                                         }
                                     }
