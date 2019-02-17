@@ -209,7 +209,7 @@ impl Implementable for Hector {
                         .as_collection(|(e, v), ()| vec![e.clone(), v.clone()]);
 
                     CollectionRelation {
-                        symbols: vec![],
+                        symbols: vec![binding.symbols.0, binding.symbols.1],
                         tuples,
                     }
                 }
@@ -248,56 +248,74 @@ impl Implementable for Hector {
 
                             let mut prefix_symbols = Vec::with_capacity(self.variables.len());
 
-                            let mut source = if let Some(conflict) = self.bindings.iter()
-                                .find(|x| if let Binding::Constant(ref x) = **x {
-                                    x.binds(delta_binding.symbols.0).is_some()
-                                        || x.binds(delta_binding.symbols.1).is_some()
-                                } else { false })
-                            {
-                                // We check explicitly for constant bindings
-                                // in conflict with the source binding here, in order to avoid
-                                // starting with single-symbol prefixes in the general case.
+                            // We would like to avoid starting with single-symbol
+                            // (or even empty) prefixes, because the dataflow-y nature
+                            // of this implementation means we will always be starting
+                            // from attributes (which correspond to two-symbol prefixes).
+                            // 
+                            // But to get away with that we need to check for single-symbol
+                            // bindings in conflict with the source binding.
 
-                                // @TODO Not just constant bindings can cause issues here!
+                            // @TODO Not just constant bindings can cause issues here!
 
-                                if let Binding::Constant(constant_binding) = conflict {
-
-                                    prefix_symbols.push(constant_binding.symbol);
-
-                                    let match_v = constant_binding.value.clone();
-
-                                    // Guaranteed to intersect with offset zero at this point.
-                                    match direction(&prefix_symbols, delta_binding.symbols).unwrap() {
-                                        Direction::Forward(_) => {
-                                            prefix_symbols.push(delta_binding.symbols.1);
-
-                                            forward_cache.entry(delta_binding.source_attribute.to_string())
-                                                .or_insert_with(|| {
-                                                    context.forward_index(&delta_binding.source_attribute).unwrap()
-                                                        .import(&scope.parent.parent)
-                                                })
-                                                .propose_trace
-                                                .filter(move |e,_v| *e == match_v)
-                                                .enter(&scope.parent)
-                                                .enter(&scope)
-                                                .as_collection(|e,v| vec![e.clone(), v.clone()])
-                                        }
-                                        Direction::Reverse(_) => {
-                                            prefix_symbols.push(delta_binding.symbols.0);
-
-                                            reverse_cache.entry(delta_binding.source_attribute.to_string())
-                                                .or_insert_with(|| {
-                                                    context.reverse_index(&delta_binding.source_attribute).unwrap()
-                                                        .import(&scope.parent.parent)
-                                                })
-                                                .propose_trace
-                                                .filter(move |v,_e| *v == match_v)
-                                                .enter(&scope.parent)
-                                                .enter(&scope)
-                                                .as_collection(|v,e| vec![v.clone(), e.clone()])
+                            let mut source_conflicts: Vec<&Binding> = self.bindings.iter()
+                                .filter(|other| {
+                                    match other {
+                                        Binding::Attribute(_) => false,
+                                        Binding::BinaryPredicate(_) => false,
+                                        _ => {
+                                            other.binds(delta_binding.symbols.0).is_some()
+                                                || other.binds(delta_binding.symbols.1).is_some()
                                         }
                                     }
-                                } else { panic!("Can't happen."); }
+                                })
+                                .collect();
+
+                            let mut source = if !source_conflicts.is_empty() {
+                                // @TODO there can be more than one conflict
+                                // for conflict in source_conflicts.drain(..) {
+                                let conflict = source_conflicts.pop().unwrap();
+                                    match conflict {
+                                        Binding::Constant(constant_binding) => {
+                                            prefix_symbols.push(constant_binding.symbol);
+
+                                            let match_v = constant_binding.value.clone();
+
+                                            // Guaranteed to intersect with offset zero at this point.
+                                            match direction(&prefix_symbols, delta_binding.symbols).unwrap() {
+                                                Direction::Forward(_) => {
+                                                    prefix_symbols.push(delta_binding.symbols.1);
+
+                                                    forward_cache.entry(delta_binding.source_attribute.to_string())
+                                                        .or_insert_with(|| {
+                                                            context.forward_index(&delta_binding.source_attribute).unwrap()
+                                                                .import(&scope.parent.parent)
+                                                        })
+                                                        .propose_trace
+                                                        .filter(move |e,_v| *e == match_v)
+                                                        .enter(&scope.parent)
+                                                        .enter(&scope)
+                                                        .as_collection(|e,v| vec![e.clone(), v.clone()])
+                                                }
+                                                Direction::Reverse(_) => {
+                                                    prefix_symbols.push(delta_binding.symbols.0);
+
+                                                    reverse_cache.entry(delta_binding.source_attribute.to_string())
+                                                        .or_insert_with(|| {
+                                                            context.reverse_index(&delta_binding.source_attribute).unwrap()
+                                                                .import(&scope.parent.parent)
+                                                        })
+                                                        .propose_trace
+                                                        .filter(move |v,_e| *v == match_v)
+                                                        .enter(&scope.parent)
+                                                        .enter(&scope)
+                                                        .as_collection(|v,e| vec![v.clone(), e.clone()])
+                                                }
+                                            }
+                                        }
+                                        _ => panic!("Can't resolve conflicts on {:?} bindings", conflict),
+                                    }
+                                // }
                             } else {
                                 prefix_symbols.push(delta_binding.symbols.0);
                                 prefix_symbols.push(delta_binding.symbols.1);
@@ -469,7 +487,7 @@ impl Implementable for Hector {
             });
 
             CollectionRelation {
-                symbols: vec![],
+                symbols: self.variables.clone(),
                 tuples: joined.distinct(),
             }
         }
@@ -492,7 +510,9 @@ impl<'a, S: Scope, P: Data + Ord> ProposeExtensionMethod<'a, S, P> for Collectio
         &self,
         extenders: &mut [Extender<'a, S, P, E>],
     ) -> Collection<S, (P, E)> {
-        if extenders.len() == 1 {
+        if extenders.is_empty() {
+            panic!("No extenders specified.");
+        } else if extenders.len() == 1 {
             extenders[0].propose(&self.clone())
         } else {
             let mut counts = self.map(|p| (p, 1 << 31, 0));
