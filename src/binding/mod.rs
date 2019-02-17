@@ -28,6 +28,39 @@ pub enum Binding {
     BinaryPredicate(BinaryPredicateBinding),
 }
 
+impl Binding {
+    /// Creates an AttributeBinding.
+    pub fn attribute(e: Var, name: &str, v: Var) -> Binding {
+        Binding::Attribute(AttributeBinding {
+            symbols: (e, v),
+            source_attribute: name.to_string(),
+            default: None,
+        })
+    }
+
+    /// Creates an AttributeBinding with a default value.
+    pub fn optional_attribute(e: Var, name: &str, v: Var, default: Value) -> Binding {
+        Binding::Attribute(AttributeBinding {
+            symbols: (e, v),
+            source_attribute: name.to_string(),
+            default: Some(default),
+        })
+    }
+
+    /// Creates a ConstantBinding.
+    pub fn constant(symbol: Var, value: Value) -> Binding {
+        Binding::Constant(ConstantBinding { symbol, value })
+    }
+
+    /// Creates a BinaryPredicateBinding.
+    pub fn binary_predicate(predicate: BinaryPredicate, x: Var, y: Var) -> Binding {
+        Binding::BinaryPredicate(BinaryPredicateBinding {
+            symbols: (x, y),
+            predicate,
+        })
+    }
+}
+
 impl AsBinding for Binding {
     fn binds(&self, sym: Var) -> Option<usize> {
         match *self {
@@ -46,6 +79,8 @@ pub struct AttributeBinding {
     pub symbols: (Var, Var),
     /// The name of a globally known attribute backing this binding.
     pub source_attribute: Aid,
+    /// Default value of this attribute.
+    pub default: Option<Value>,
 }
 
 impl AsBinding for AttributeBinding {

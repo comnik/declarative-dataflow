@@ -11,7 +11,7 @@ use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 
-use crate::binding::{AttributeBinding, Binding, ConstantBinding};
+use crate::binding::Binding;
 use crate::Rule;
 use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionIndex, CollectionRelation, Relation, RelationHandle, VariableMap};
@@ -260,34 +260,19 @@ impl Implementable for Plan {
             Plan::Negate(ref plan) => plan.into_bindings(),
             Plan::Filter(ref filter) => filter.into_bindings(),
             Plan::Transform(ref transform) => transform.into_bindings(),
-            Plan::MatchA(e, ref a, v) => vec![Binding::Attribute(AttributeBinding {
-                symbols: (e, v),
-                source_attribute: a.to_string(),
-            })],
+            Plan::MatchA(e, ref a, v) => vec![Binding::attribute(e, a, v)],
             Plan::MatchEA(match_e, ref a, v) => {
                 let e = gensym();
                 vec![
-                    Binding::Attribute(AttributeBinding {
-                        symbols: (e, v),
-                        source_attribute: a.to_string(),
-                    }),
-                    Binding::Constant(ConstantBinding {
-                        symbol: e,
-                        value: Value::Eid(match_e),
-                    }),
+                    Binding::attribute(e, a, v),
+                    Binding::constant(e, Value::Eid(match_e)),
                 ]
             }
             Plan::MatchAV(e, ref a, ref match_v) => {
                 let v = gensym();
                 vec![
-                    Binding::Attribute(AttributeBinding {
-                        symbols: (e, v),
-                        source_attribute: a.to_string(),
-                    }),
-                    Binding::Constant(ConstantBinding {
-                        symbol: v,
-                        value: match_v.clone(),
-                    }),
+                    Binding::attribute(e, a, v),
+                    Binding::constant(v, match_v.clone()),
                 ]
             }
             Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
