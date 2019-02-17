@@ -548,44 +548,52 @@ fn main() {
                         Request::Flow(source, sink) => {
                             // @TODO?
                             // We treat sinks as single-use right now.
-                            if let Some(mut sink_handle) = server.context.internal.sinks.remove(&sink) {
+                            match server.context.internal.sinks.remove(&sink) {
+                                None => {
+                                    let error = Error {
+                                        category: "df.error.category/not-found",
+                                        message: format!("Unknown sink {}", sink),
+                                    };
+                                    send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                }
+                                Some(mut sink_handle) => {
+                                    let server_handle = &mut server;
+                                    let send_errors_handle = &send_errors;
 
-                                let server_handle = &mut server;
-                                let send_errors_handle = &send_errors;
+                                    worker.dataflow::<u64, _, _>(move |scope| {
+                                        match server_handle.interest(&source, scope) {
+                                            Err(error) => {
+                                                send_errors_handle.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                            }
+                                            Ok(trace) => {
+                                                // @TODO clone entire batches instead of flattening
+                                                // @TODO Lots of sub-optimal things below. Ideally we
+                                                // only ever want to "send" references to local trace batches. 
+                                                trace
+                                                    .import_named(scope, &source)
+                                                    .as_collection(|tuple,_| tuple.clone())
+                                                    .inner
+                                                    .sink(Pipeline, "Flow", move |input| {
+                                                        input.for_each(|_time, data| {
+                                                            for (tuple, time, diff) in data.to_vec().drain(..) {
+                                                                sink_handle.update_at(tuple, time, diff);
+                                                            }
+                                                        });
 
-                                worker.dataflow::<u64, _, _>(move |scope| {
-                                    match server_handle.interest(&source, scope) {
-                                        Err(error) => {
-                                            send_errors_handle.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
-                                        }
-                                        Ok(trace) => {
-                                            // @TODO clone entire batches instead of flattening
-                                            // @TODO Lots of sub-optimal things below. Ideally we
-                                            // only ever want to "send" references to local trace batches. 
-                                            trace
-                                                .import_named(scope, &source)
-                                                .as_collection(|tuple,_| tuple.clone())
-                                                .inner
-                                                .sink(Pipeline, "Flow", move |input| {
-                                                    input.for_each(|_time, data| {
-                                                        for (tuple, time, diff) in data.to_vec().drain(..) {
-                                                            sink_handle.update_at(tuple, time, diff);
+                                                        let frontier = input.frontier().frontier();
+                                                        if frontier.is_empty() {
+                                                            // @TODO
+                                                            // sink_handle.close();
+                                                            sink_handle.flush();
+                                                        } else {
+                                                            sink_handle.advance_to(frontier[0]);
+                                                            sink_handle.flush();
                                                         }
                                                     });
-
-                                                    let frontier = input.frontier().frontier();
-                                                    if frontier.is_empty() {
-                                                        // @TODO
-                                                        // sink_handle.close();
-                                                        sink_handle.flush();
-                                                    } else {
-                                                        sink_handle.advance_to(frontier[0]);
-                                                        sink_handle.flush();
-                                                    }
-                                                });
+                                            }
                                         }
-                                    }
-                                });
+                                    });
+                                }
                             }
                         }
                         Request::Register(req) => {
