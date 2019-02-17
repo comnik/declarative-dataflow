@@ -38,21 +38,30 @@ impl Sinkable for CsvFile {
                 message: format!("Failed to create writer: {}", error),
             }),
             Ok(mut writer) => {
+                let mut recvd = Vec::new();
+                let mut vector = Vec::new();
+
                 stream.sink(
                     Pipeline,
                     &format!("CsvFile({})", &self.path),
                     move |input| {
-                        // let mut fuel = 256;
-
-                        while let Some((time, data)) = input.next() {
-                            for (tuple, time, diff) in data.iter() {
-                                writer.serialize(tuple).expect("failed to write record");
+                        input.for_each(|_cap, data| {
+                            data.swap(&mut vector);
+                            for (tuple, time, diff) in vector.drain(..) {
+                                recvd.push((time, tuple));
                             }
+                        });
 
-                            // fuel -= 1;
-                            // if fuel <= 0 {
-                            //     break;
-                            // }
+                        recvd.sort_by(|x, y| x.0.cmp(&y.0));
+
+                        // determine how many (which) elements to read from `recvd`.
+                        let count = recvd
+                            .iter()
+                            .filter(|&(ref time, _)| !input.frontier().less_equal(time))
+                            .count();
+
+                        for (_, tuple) in recvd.drain(..count) {
+                            writer.serialize(tuple).expect("failed to write record");
                         }
                     },
                 );
