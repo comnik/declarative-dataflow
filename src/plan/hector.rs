@@ -511,6 +511,7 @@ impl<'a, S: Scope, P: Data + Ord> ProposeExtensionMethod<'a, S, P> for Collectio
         extenders: &mut [Extender<'a, S, P, E>],
     ) -> Collection<S, (P, E)> {
         if extenders.is_empty() {
+            // @TODO don't panic
             panic!("No extenders specified.");
         } else if extenders.len() == 1 {
             extenders[0].propose(&self.clone())

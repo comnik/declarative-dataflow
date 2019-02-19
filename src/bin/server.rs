@@ -516,14 +516,9 @@ fn main() {
                                         Err(error) => {
                                             send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                                         }
-                                        Ok(trace) => {
-                                            trace
-                                                .import_named(scope, &req.name)
-                                            // @TODO clone entire batches instead of flattening
-                                                .as_collection(|tuple,_| tuple.clone())
+                                        Ok(relation) => {
+                                            relation
                                                 .inner
-                                            // .stream
-                                            // .map(|batch| (*batch).clone())
                                                 .unary_notify(
                                                     Exchange::new(move |_| owner as u64),
                                                     "ResultsRecv",
@@ -565,13 +560,10 @@ fn main() {
                                             Err(error) => {
                                                 send_errors_handle.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                                             }
-                                            Ok(trace) => {
-                                                // @TODO clone entire batches instead of flattening
-                                                // @TODO Lots of sub-optimal things below. Ideally we
-                                                // only ever want to "send" references to local trace batches. 
-                                                trace
-                                                    .import_named(scope, &source)
-                                                    .as_collection(|tuple,_| tuple.clone())
+                                            Ok(relation) => {
+                                                // @TODO Ideally we only ever want to "send" references
+                                                // to local trace batches. 
+                                                relation
                                                     .inner
                                                     .sink(Pipeline, "Flow", move |input| {
                                                         input.for_each(|_time, data| {

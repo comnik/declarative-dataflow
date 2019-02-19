@@ -18,9 +18,7 @@ use crate::plan::{ImplContext, Implementable};
 use crate::sinks::{Sink, Sinkable};
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
-use crate::{
-    implement, implement_neu, AttributeSemantics, CollectionIndex, RelationHandle, TraceKeyHandle,
-};
+use crate::{implement, implement_neu, AttributeSemantics, CollectionIndex, RelationHandle};
 use crate::{Aid, Error, TxData, Value};
 
 /// Server configuration.
@@ -313,68 +311,41 @@ where
         &mut self,
         name: &str,
         scope: &mut S,
-    ) -> Result<&mut TraceKeyHandle<Vec<Value>, T, isize>, Error> {
-        match name {
-            "df.timely/operates" => {
-                // use timely::logging::{BatchLogger, TimelyEvent};
-                // use timely::dataflow::operators::capture::EventWriter;
+    ) -> Result<Collection<S, Vec<Value>, isize>, Error> {
+        // We need to do a `contains_key` here to avoid taking
+        // a mut ref on context.
+        if self.context.arrangements.contains_key(name) {
+            // Rule is already implemented.
+            let relation = self
+                .context
+                .global_arrangement(name)
+                .unwrap()
+                .import_named(scope, name)
+                .as_collection(|tuple, _| tuple.clone());
 
-                // let writer = EventWriter::new(stream);
-                // let mut logger = BatchLogger::new(writer);
-                // scope.log_register()
-                //     .insert::<TimelyEvent,_>("timely", move |time, data| logger.publish_batch(time, data));
+            Ok(relation)
+        } else {
+            let mut rel_map = if self.config.enable_optimizer {
+                implement_neu(name, scope, &mut self.context)?
+            } else {
+                implement(name, scope, &mut self.context)?
+            };
 
-                // logging_stream
-                //     .flat_map(|(t,_,x)| {
-                //         if let Operates(event) = x {
-                //             Some((event, t, 1 as isize))
-                //         } else { None }
-                //     })
-                //     .as_collection()
+            // @TODO when do we actually want to register result traces for re-use?
+            // for (name, relation) in rel_map.into_iter() {
+            // let trace = relation.map(|t| (t, ())).arrange_named(name).trace;
+            //     self.context.register_arrangement(name, trace);
+            // }
 
-                unimplemented!();
-            }
-            _ => {
-                // We need to do a `contains_key` here to avoid taking
-                // a mut ref on context.
-                if self.context.arrangements.contains_key(name) {
-                    // Rule is already implemented.
-                    Ok(self.context.global_arrangement(name).unwrap())
-                } else if self.config.enable_optimizer {
-                    let rel_map = implement_neu(name, scope, &mut self.context)?;
-
-                    for (name, trace) in rel_map.into_iter() {
-                        self.context.register_arrangement(name, trace);
-                    }
-
-                    match self.context.global_arrangement(name) {
-                        None => Err(Error {
-                            category: "df.error.category/fault",
-                            message: format!(
-                                "Relation of interest ({}) wasn't actually implemented.",
-                                name
-                            ),
-                        }),
-                        Some(trace) => Ok(trace),
-                    }
-                } else {
-                    let rel_map = implement(name, scope, &mut self.context)?;
-
-                    for (name, trace) in rel_map.into_iter() {
-                        self.context.register_arrangement(name, trace);
-                    }
-
-                    match self.context.global_arrangement(name) {
-                        None => Err(Error {
-                            category: "df.error.category/fault",
-                            message: format!(
-                                "Relation of interest ({}) wasn't actually implemented.",
-                                name
-                            ),
-                        }),
-                        Some(trace) => Ok(trace),
-                    }
-                }
+            match rel_map.remove(name) {
+                None => Err(Error {
+                    category: "df.error.category/fault",
+                    message: format!(
+                        "Relation of interest ({}) wasn't actually implemented.",
+                        name
+                    ),
+                }),
+                Some(relation) => Ok(relation),
             }
         }
     }
@@ -466,10 +437,7 @@ where
 
         match self.interest(&interest_name, scope) {
             Err(error) => panic!("{:?}", error),
-            Ok(trace) => trace
-                .import_named(scope, &interest_name)
-                .as_collection(|tuple, _| tuple.clone())
-                .probe_with(&mut self.probe),
+            Ok(relation) => relation.probe_with(&mut self.probe),
         }
     }
 }

@@ -609,7 +609,7 @@ pub fn implement<T, I, S>(
     name: &str,
     scope: &mut S,
     context: &mut I,
-) -> Result<HashMap<String, RelationHandle<T>>, Error>
+) -> Result<HashMap<String, Collection<S, Vec<Value>, isize>>, Error>
 where
     T: Timestamp + Lattice + TotalOrder + Default,
     I: ImplContext<T>,
@@ -653,9 +653,7 @@ where
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
             if let Some(relation) = local_arrangements.get(name) {
-                let trace = relation.leave().map(|t| (t, ())).arrange_named(name).trace;
-
-                result_map.insert(name.to_string(), trace);
+                result_map.insert(name.to_string(), relation.leave());
             } else {
                 return Err(Error {
                     category: "df.error.category/not-found",
@@ -702,7 +700,7 @@ pub fn implement_neu<T, I, S>(
     name: &str,
     scope: &mut S,
     context: &mut I,
-) -> Result<HashMap<String, RelationHandle<T>>, Error>
+) -> Result<HashMap<String, Collection<S, Vec<Value>, isize>>, Error>
 where
     T: Timestamp + Lattice + TotalOrder + Default,
     I: ImplContext<T>,
@@ -754,9 +752,7 @@ where
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
             if let Some(relation) = local_arrangements.get(name) {
-                let trace = relation.leave().map(|t| (t, ())).arrange_named(name).trace;
-
-                result_map.insert(name.to_string(), trace);
+                result_map.insert(name.to_string(), relation.leave());
             } else {
                 return Err(Error {
                     category: "df.error.category/not-found",
