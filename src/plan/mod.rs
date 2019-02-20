@@ -6,7 +6,7 @@ use std::sync::atomic::{self, AtomicUsize};
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
-use timely::order::{TotalOrder, Product};
+use timely::order::{Product, TotalOrder};
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
@@ -358,12 +358,19 @@ impl Implementable for Plan {
                 let tuples = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
-                        let frontier: Vec<T> = index.validate_trace.advance_frontier().iter().cloned().collect();
+                        let frontier: Vec<T> = index
+                            .validate_trace
+                            .advance_frontier()
+                            .iter()
+                            .cloned()
+                            .collect();
                         index
                             .validate_trace
                             .import_named(&nested.parent, a)
                             // .enter(nested)
-                            .enter_at(nested, move |_, _, time| Product::new(time.advance_by(&frontier), 0))
+                            .enter_at(nested, move |_, _, time| {
+                                Product::new(time.advance_by(&frontier), 0)
+                            })
                             .as_collection(|(e, v), _| vec![e.clone(), v.clone()])
                     }
                 };
@@ -377,15 +384,22 @@ impl Implementable for Plan {
                 let tuples = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
-                        let frontier: Vec<T> = index.propose_trace.advance_frontier().iter().cloned().collect();
+                        let frontier: Vec<T> = index
+                            .propose_trace
+                            .advance_frontier()
+                            .iter()
+                            .cloned()
+                            .collect();
                         index
                             .propose_trace
                             .import_named(&nested.parent, a)
-                        // .enter(nested)
-                            .enter_at(nested, move |_, _, time| Product::new(time.advance_by(&frontier), 0))
+                            // .enter(nested)
+                            .enter_at(nested, move |_, _, time| {
+                                Product::new(time.advance_by(&frontier), 0)
+                            })
                             .filter(move |e, _v| *e == Value::Eid(match_e))
                             .as_collection(|_e, v| vec![v.clone()])
-                    },
+                    }
                 };
 
                 CollectionRelation {
@@ -398,12 +412,19 @@ impl Implementable for Plan {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
                         let match_v = match_v.clone();
-                        let frontier: Vec<T> = index.propose_trace.advance_frontier().iter().cloned().collect();
+                        let frontier: Vec<T> = index
+                            .propose_trace
+                            .advance_frontier()
+                            .iter()
+                            .cloned()
+                            .collect();
                         index
                             .propose_trace
                             .import_named(&nested.parent, a)
-                        // .enter(nested)
-                            .enter_at(nested, move |_, _, time| Product::new(time.advance_by(&frontier), 0))
+                            // .enter(nested)
+                            .enter_at(nested, move |_, _, time| {
+                                Product::new(time.advance_by(&frontier), 0)
+                            })
                             .filter(move |v, _e| *v == match_v)
                             .as_collection(|_v, e| vec![e.clone()])
                     }

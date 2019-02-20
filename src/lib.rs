@@ -190,7 +190,11 @@ where
         propose_trace.distinguish_since(&[]);
         validate_trace.distinguish_since(&[]);
 
-        CollectionIndex { count_trace, propose_trace, validate_trace, }
+        CollectionIndex {
+            count_trace,
+            propose_trace,
+            validate_trace,
+        }
     }
 
     /// Returns a LiveIndex that lives in the specified scope.

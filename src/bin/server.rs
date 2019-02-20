@@ -67,7 +67,11 @@ fn main() {
 
     let mut opts = Options::new();
     opts.optopt("", "port", "server port", "PORT");
-    opts.optflag("", "manual-advance", "forces clients to call AdvanceDomain explicitely");
+    opts.optflag(
+        "",
+        "manual-advance",
+        "forces clients to call AdvanceDomain explicitely",
+    );
     opts.optflag("", "enable-cli", "enable the CLI interface");
     opts.optflag("", "enable-history", "enable historical queries");
     opts.optflag("", "enable-optimizer", "enable WCO queries");
