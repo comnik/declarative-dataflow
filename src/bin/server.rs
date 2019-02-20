@@ -67,6 +67,7 @@ fn main() {
 
     let mut opts = Options::new();
     opts.optopt("", "port", "server port", "PORT");
+    opts.optflag("", "manual-advance", "forces clients to call AdvanceDomain explicitely");
     opts.optflag("", "enable-cli", "enable the CLI interface");
     opts.optflag("", "enable-history", "enable historical queries");
     opts.optflag("", "enable-optimizer", "enable WCO queries");
@@ -89,6 +90,7 @@ fn main() {
 
                 Config {
                     port: starting_port + (worker.index() as u16),
+                    manual_advance: matches.opt_present("manual-advance"),
                     enable_cli: matches.opt_present("enable-cli"),
                     enable_history: matches.opt_present("enable-history"),
                     enable_optimizer: matches.opt_present("enable-optimizer"),
@@ -627,8 +629,10 @@ fn main() {
                     }
                 }
 
-                if let Err(error) = server.advance_domain(None, next_tx as u64) {
-                    send_errors.send((vec![Token(client)], vec![(error, time)])).unwrap();
+                if !config.manual_advance {
+                    if let Err(error) = server.advance_domain(None, next_tx as u64) {
+                        send_errors.send((vec![Token(client)], vec![(error, time)])).unwrap();
+                    }
                 }
             }
 
