@@ -3,7 +3,7 @@
 use timely::dataflow::operators::Concatenate;
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
-use timely::order::TotalOrder;
+use timely::order::{Product, TotalOrder};
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
@@ -85,11 +85,10 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        use timely::order::Product;
-
         use differential_dataflow::operators::arrange::{Arrange, Arranged, TraceAgent};
         use differential_dataflow::operators::JoinCore;
         use differential_dataflow::trace::implementations::ord::OrdValSpine;
+        use differential_dataflow::trace::TraceReader;
 
         let input = self.plan.implement(nested, local_arrangements, context);
 
@@ -128,10 +127,21 @@ impl<P: Implementable> Implementable for PullLevel<P> {
             let streams = self.pull_attributes.iter().map(|a| {
                 let e_v = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(index) => index
-                        .propose_trace
-                        .import_named(&nested.parent, a)
-                        .enter(nested),
+                    Some(index) => {
+                        let frontier: Vec<T> = index
+                            .propose_trace
+                            .advance_frontier()
+                            .iter()
+                            .cloned()
+                            .collect();
+                        index
+                            .propose_trace
+                            .import_named(&nested.parent, a)
+                            // .enter(nested)
+                            .enter_at(nested, move |_, _, time| {
+                                Product::new(time.advance_by(&frontier), 0)
+                            })
+                    }
                 };
 
                 let attribute = Value::Aid(a.clone());

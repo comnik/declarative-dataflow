@@ -200,17 +200,29 @@ impl Implementable for Hector {
 
             match self.bindings.first().unwrap() {
                 Binding::Attribute(binding) => {
-                    let tuples = context
-                        .forward_index(&binding.source_attribute)
-                        .unwrap()
-                        .validate_trace
-                        .import(&nested.parent)
-                        .enter(&nested)
-                        .as_collection(|(e, v), ()| vec![e.clone(), v.clone()]);
+                    match context.forward_index(&binding.source_attribute) {
+                        None => panic!("Unknown attribute {}", &binding.source_attribute),
+                        Some(index) => {
+                            let frontier: Vec<T> = index
+                                .validate_trace
+                                .advance_frontier()
+                                .iter()
+                                .cloned()
+                                .collect();
+                            let tuples = index
+                                .validate_trace
+                                .import(&nested.parent)
+                                // .enter(&nested)
+                                .enter_at(nested, move |_, _, time| {
+                                    Product::new(time.advance_by(&frontier), 0)
+                                })
+                                .as_collection(|(e, v), ()| vec![e.clone(), v.clone()]);
 
-                    CollectionRelation {
-                        symbols: vec![binding.symbols.0, binding.symbols.1],
-                        tuples,
+                            CollectionRelation {
+                                symbols: vec![binding.symbols.0, binding.symbols.1],
+                                tuples,
+                            }
+                        }
                     }
                 }
                 _ => {
@@ -286,28 +298,44 @@ impl Implementable for Hector {
                                                 Direction::Forward(_) => {
                                                     prefix_symbols.push(delta_binding.symbols.1);
 
-                                                    forward_cache.entry(delta_binding.source_attribute.to_string())
+                                                    let index = forward_cache
+                                                        .entry(delta_binding.source_attribute.to_string())
                                                         .or_insert_with(|| {
                                                             context.forward_index(&delta_binding.source_attribute).unwrap()
                                                                 .import(&scope.parent.parent)
-                                                        })
-                                                        .propose_trace
+                                                        });
+                                                    let frontier: Vec<T> = index.propose.trace.advance_frontier().iter().cloned().collect();
+
+                                                    index
+                                                        .propose
                                                         .filter(move |e,_v| *e == match_v)
-                                                        .enter(&scope.parent)
+                                                        // .enter(&scope.parent)
+                                                        .enter_at(&scope.parent, move |_, _, time| {
+                                                            let forwarded = time.advance_by(&frontier);
+                                                            Product::new(forwarded, Default::default())
+                                                        })
                                                         .enter(&scope)
                                                         .as_collection(|e,v| vec![e.clone(), v.clone()])
                                                 }
                                                 Direction::Reverse(_) => {
                                                     prefix_symbols.push(delta_binding.symbols.0);
 
-                                                    reverse_cache.entry(delta_binding.source_attribute.to_string())
+                                                    let index = reverse_cache
+                                                        .entry(delta_binding.source_attribute.to_string())
                                                         .or_insert_with(|| {
                                                             context.reverse_index(&delta_binding.source_attribute).unwrap()
                                                                 .import(&scope.parent.parent)
-                                                        })
-                                                        .propose_trace
+                                                        });
+                                                    let frontier: Vec<T> = index.propose.trace.advance_frontier().iter().cloned().collect();
+
+                                                    index
+                                                        .propose
                                                         .filter(move |v,_e| *v == match_v)
-                                                        .enter(&scope.parent)
+                                                    // .enter(&scope.parent)
+                                                        .enter_at(&scope.parent, move |_, _, time| {
+                                                            let forwarded = time.advance_by(&frontier);
+                                                            Product::new(forwarded, Default::default())
+                                                        })
                                                         .enter(&scope)
                                                         .as_collection(|v,e| vec![v.clone(), e.clone()])
                                                 }
@@ -320,13 +348,21 @@ impl Implementable for Hector {
                                 prefix_symbols.push(delta_binding.symbols.0);
                                 prefix_symbols.push(delta_binding.symbols.1);
 
-                                forward_cache.entry(delta_binding.source_attribute.to_string())
+                                let index = forward_cache
+                                    .entry(delta_binding.source_attribute.to_string())
                                     .or_insert_with(|| {
                                         context.forward_index(&delta_binding.source_attribute).unwrap()
                                             .import(&scope.parent.parent)
+                                    });
+                                let frontier: Vec<T> = index.validate.trace.advance_frontier().iter().cloned().collect();
+
+                                index
+                                    .validate
+                                    // .enter(&scope.parent)
+                                    .enter_at(&scope.parent, move |_, _, time| {
+                                        let forwarded = time.advance_by(&frontier);
+                                        Product::new(forwarded, Default::default())
                                     })
-                                    .validate_trace
-                                    .enter(&scope.parent)
                                     .enter(&scope)
                                     .as_collection(|(e,v),()| vec![e.clone(), v.clone()])
                             };
@@ -394,15 +430,24 @@ impl Implementable for Hector {
                                                         Err(msg) => panic!(msg),
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
-                                                                let imported = forward_cache.entry(other.source_attribute.to_string())
+                                                                let index = forward_cache.entry(other.source_attribute.to_string())
                                                                     .or_insert_with(|| {
                                                                         context.forward_index(&other.source_attribute).unwrap()
                                                                             .import(&scope.parent.parent)
                                                                     });
+                                                                let frontier: Vec<T> = index.propose.trace.advance_frontier().iter().cloned().collect();
 
+                                                                let (frontier1, frontier2, frontier3) = (frontier.clone(), frontier.clone(), frontier);
                                                                 let (neu1, neu2, neu3) = (is_neu, is_neu, is_neu);
-                                                                let forward = imported
-                                                                    .enter(&scope.parent)
+
+                                                                let forward = index
+                                                                // .enter(&scope.parent)
+                                                                    .enter_at(
+                                                                        &scope.parent,
+                                                                        move |_, _, t| Product::new(t.advance_by(&frontier1), 0),
+                                                                        move |_, _, t| Product::new(t.advance_by(&frontier2), 0),
+                                                                        move |_, _, t| Product::new(t.advance_by(&frontier3), 0),
+                                                                    )
                                                                     .enter_at(
                                                                         &scope,
                                                                         move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
@@ -420,15 +465,24 @@ impl Implementable for Hector {
                                                                 );
                                                             },
                                                             Direction::Reverse(offset) => {
-                                                                let imported = reverse_cache.entry(other.source_attribute.to_string())
+                                                                let index = reverse_cache.entry(other.source_attribute.to_string())
                                                                     .or_insert_with(|| {
                                                                         context.reverse_index(&other.source_attribute).unwrap()
                                                                             .import(&scope.parent.parent)
                                                                     });
+                                                                let frontier: Vec<T> = index.propose.trace.advance_frontier().iter().cloned().collect();
 
+                                                                let (frontier1, frontier2, frontier3) = (frontier.clone(), frontier.clone(), frontier);
                                                                 let (neu1, neu2, neu3) = (is_neu, is_neu, is_neu);
-                                                                let reverse = imported
-                                                                    .enter(&scope.parent)
+
+                                                                let reverse = index
+                                                                // .enter(&scope.parent)
+                                                                    .enter_at(
+                                                                        &scope.parent,
+                                                                        move |_, _, t| Product::new(t.advance_by(&frontier1), 0),
+                                                                        move |_, _, t| Product::new(t.advance_by(&frontier2), 0),
+                                                                        move |_, _, t| Product::new(t.advance_by(&frontier3), 0),
+                                                                    )
                                                                     .enter_at(
                                                                         &scope,
                                                                         move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
@@ -704,7 +758,7 @@ where
         // differences by key and save some time, or we could skip
         // that.
 
-        let counts = &self.indices.count_trace;
+        let counts = &self.indices.count;
         let mut counts_trace = Some(counts.trace.clone());
 
         let mut stash = HashMap::new();
@@ -833,7 +887,7 @@ where
     }
 
     fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
-        let propose = &self.indices.propose_trace;
+        let propose = &self.indices.propose;
         let mut propose_trace = Some(propose.trace.clone());
 
         let mut stash = HashMap::new();
@@ -953,7 +1007,7 @@ where
         // just doing a stream of changes and a stream of look-ups, no consolidation or any funny business like
         // that. We *could* organize the input differences by key and save some time, or we could skip that.
 
-        let validate = &self.indices.validate_trace;
+        let validate = &self.indices.validate;
         let mut validate_trace = Some(validate.trace.clone());
 
         let mut stash = HashMap::new();

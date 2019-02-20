@@ -210,9 +210,9 @@ where
         TraceKeyHandle<(K, V), T, isize>,
     > {
         LiveIndex {
-            count_trace: self.count_trace.import(scope),
-            propose_trace: self.propose_trace.import(scope),
-            validate_trace: self.validate_trace.import(scope),
+            count: self.count_trace.import(scope),
+            propose: self.propose_trace.import(scope),
+            validate: self.validate_trace.import(scope),
         }
     }
 
@@ -235,9 +235,9 @@ where
     TrPropose: TraceReader<K, V, G::Timestamp, isize> + Clone,
     TrValidate: TraceReader<(K, V), (), G::Timestamp, isize> + Clone,
 {
-    count_trace: Arranged<G, K, (), isize, TrCount>,
-    propose_trace: Arranged<G, K, V, isize, TrPropose>,
-    validate_trace: Arranged<G, (K, V), (), isize, TrValidate>,
+    count: Arranged<G, K, (), isize, TrCount>,
+    propose: Arranged<G, K, V, isize, TrPropose>,
+    validate: Arranged<G, (K, V), (), isize, TrValidate>,
 }
 
 impl<G, K, V, TrCount, TrPropose, TrValidate> Clone
@@ -253,9 +253,9 @@ where
 {
     fn clone(&self) -> Self {
         LiveIndex {
-            count_trace: self.count_trace.clone(),
-            propose_trace: self.propose_trace.clone(),
-            validate_trace: self.validate_trace.clone(),
+            count: self.count.clone(),
+            propose: self.propose.clone(),
+            validate: self.validate.clone(),
         }
     }
 }
@@ -292,9 +292,9 @@ where
         TInner: Refines<G::Timestamp> + Lattice + Timestamp + Clone + Default + 'static,
     {
         LiveIndex {
-            count_trace: self.count_trace.enter(child),
-            propose_trace: self.propose_trace.enter(child),
-            validate_trace: self.validate_trace.enter(child),
+            count: self.count.enter(child),
+            propose: self.propose.enter(child),
+            validate: self.validate.enter(child),
         }
     }
 
@@ -326,9 +326,9 @@ where
         FValidate: Fn(&(K, V), &(), &G::Timestamp) -> TInner + 'static,
     {
         LiveIndex {
-            count_trace: self.count_trace.enter_at(child, fcount),
-            propose_trace: self.propose_trace.enter_at(child, fpropose),
-            validate_trace: self.validate_trace.enter_at(child, fvalidate),
+            count: self.count.enter_at(child, fcount),
+            propose: self.propose.enter_at(child, fpropose),
+            validate: self.validate.enter_at(child, fvalidate),
         }
     }
 }
