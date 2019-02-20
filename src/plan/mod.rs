@@ -6,10 +6,11 @@ use std::sync::atomic::{self, AtomicUsize};
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
-use timely::order::TotalOrder;
+use timely::order::{TotalOrder, Product};
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
+use differential_dataflow::trace::TraceReader;
 
 use crate::binding::Binding;
 use crate::Rule;
@@ -356,11 +357,15 @@ impl Implementable for Plan {
             Plan::MatchA(sym1, ref a, sym2) => {
                 let tuples = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(index) => index
-                        .validate_trace
-                        .import_named(&nested.parent, a)
-                        .enter(nested)
-                        .as_collection(|(e, v), _| vec![e.clone(), v.clone()]),
+                    Some(index) => {
+                        let frontier: Vec<T> = index.validate_trace.advance_frontier().iter().cloned().collect();
+                        index
+                            .validate_trace
+                            .import_named(&nested.parent, a)
+                            // .enter(nested)
+                            .enter_at(nested, move |_, _, time| Product::new(time.advance_by(&frontier), 0))
+                            .as_collection(|(e, v), _| vec![e.clone(), v.clone()])
+                    }
                 };
 
                 CollectionRelation {
@@ -371,12 +376,16 @@ impl Implementable for Plan {
             Plan::MatchEA(match_e, ref a, sym1) => {
                 let tuples = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(index) => index
-                        .propose_trace
-                        .import_named(&nested.parent, a)
-                        .enter(nested)
-                        .filter(move |e, _v| *e == Value::Eid(match_e))
-                        .as_collection(|_e, v| vec![v.clone()]),
+                    Some(index) => {
+                        let frontier: Vec<T> = index.propose_trace.advance_frontier().iter().cloned().collect();
+                        index
+                            .propose_trace
+                            .import_named(&nested.parent, a)
+                        // .enter(nested)
+                            .enter_at(nested, move |_, _, time| Product::new(time.advance_by(&frontier), 0))
+                            .filter(move |e, _v| *e == Value::Eid(match_e))
+                            .as_collection(|_e, v| vec![v.clone()])
+                    },
                 };
 
                 CollectionRelation {
@@ -389,10 +398,12 @@ impl Implementable for Plan {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
                         let match_v = match_v.clone();
+                        let frontier: Vec<T> = index.propose_trace.advance_frontier().iter().cloned().collect();
                         index
                             .propose_trace
                             .import_named(&nested.parent, a)
-                            .enter(nested)
+                        // .enter(nested)
+                            .enter_at(nested, move |_, _, time| Product::new(time.advance_by(&frontier), 0))
                             .filter(move |v, _e| *v == match_v)
                             .as_collection(|_v, e| vec![e.clone()])
                     }
