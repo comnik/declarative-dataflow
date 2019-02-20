@@ -26,6 +26,8 @@ use crate::{Aid, Error, TxData, Value};
 pub struct Config {
     /// Port at which this server will listen at.
     pub port: u16,
+    /// Do clients have to call AdvanceDomain explicitely?
+    pub manual_advance: bool,
     /// Should inputs via CLI be accepted?
     pub enable_cli: bool,
     /// Should as-of queries be possible?
@@ -40,6 +42,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             port: 6262,
+            manual_advance: false,
             enable_cli: false,
             enable_history: false,
             enable_optimizer: false,
