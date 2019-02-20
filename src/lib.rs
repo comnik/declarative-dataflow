@@ -174,23 +174,23 @@ where
         name: &str,
         collection: &Collection<G, (K, V), isize>,
     ) -> Self {
-        let counts = collection
+        let mut count_trace = collection
             .map(|(k, _v)| (k, ()))
             .arrange_named(&format!("Counts({})", name))
             .trace;
-        let propose = collection
+        let mut propose_trace = collection
             .arrange_named(&format!("Proposals({})", &name))
             .trace;
-        let validate = collection
+        let mut validate_trace = collection
             .map(|t| (t, ()))
             .arrange_named(&format!("Validations({})", &name))
             .trace;
 
-        CollectionIndex {
-            count_trace: counts,
-            propose_trace: propose,
-            validate_trace: validate,
-        }
+        count_trace.distinguish_since(&[]);
+        propose_trace.distinguish_since(&[]);
+        validate_trace.distinguish_since(&[]);
+
+        CollectionIndex { count_trace, propose_trace, validate_trace, }
     }
 
     /// Returns a LiveIndex that lives in the specified scope.
