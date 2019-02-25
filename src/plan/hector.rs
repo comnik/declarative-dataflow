@@ -214,7 +214,9 @@ impl Implementable for Hector {
                                 .import(&nested.parent)
                                 // .enter(&nested)
                                 .enter_at(nested, move |_, _, time| {
-                                    Product::new(time.advance_by(&frontier), 0)
+                                    let mut forwarded = time.clone();
+                                    forwarded.advance_by(&frontier);
+                                    Product::new(forwarded, 0)
                                 })
                                 .as_collection(|(e, v), ()| vec![e.clone(), v.clone()]);
 
@@ -311,7 +313,7 @@ impl Implementable for Hector {
                                                         .filter(move |e,_v| *e == match_v)
                                                         // .enter(&scope.parent)
                                                         .enter_at(&scope.parent, move |_, _, time| {
-                                                            let forwarded = time.advance_by(&frontier);
+                                                            let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
                                                             Product::new(forwarded, Default::default())
                                                         })
                                                         .enter(&scope)
@@ -333,7 +335,7 @@ impl Implementable for Hector {
                                                         .filter(move |v,_e| *v == match_v)
                                                     // .enter(&scope.parent)
                                                         .enter_at(&scope.parent, move |_, _, time| {
-                                                            let forwarded = time.advance_by(&frontier);
+                                                            let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
                                                             Product::new(forwarded, Default::default())
                                                         })
                                                         .enter(&scope)
@@ -360,7 +362,8 @@ impl Implementable for Hector {
                                     .validate
                                     // .enter(&scope.parent)
                                     .enter_at(&scope.parent, move |_, _, time| {
-                                        let forwarded = time.advance_by(&frontier);
+                                        let mut forwarded = time.clone();
+                                        forwarded.advance_by(&frontier);
                                         Product::new(forwarded, Default::default())
                                     })
                                     .enter(&scope)
@@ -444,9 +447,9 @@ impl Implementable for Hector {
                                                                 // .enter(&scope.parent)
                                                                     .enter_at(
                                                                         &scope.parent,
-                                                                        move |_, _, t| Product::new(t.advance_by(&frontier1), 0),
-                                                                        move |_, _, t| Product::new(t.advance_by(&frontier2), 0),
-                                                                        move |_, _, t| Product::new(t.advance_by(&frontier3), 0),
+                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier1); Product::new(forwarded, 0) },
+                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier2); Product::new(forwarded, 0) },
+                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier3); Product::new(forwarded, 0) },
                                                                     )
                                                                     .enter_at(
                                                                         &scope,
@@ -479,9 +482,9 @@ impl Implementable for Hector {
                                                                 // .enter(&scope.parent)
                                                                     .enter_at(
                                                                         &scope.parent,
-                                                                        move |_, _, t| Product::new(t.advance_by(&frontier1), 0),
-                                                                        move |_, _, t| Product::new(t.advance_by(&frontier2), 0),
-                                                                        move |_, _, t| Product::new(t.advance_by(&frontier3), 0),
+                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier1); Product::new(forwarded, 0) },
+                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier2); Product::new(forwarded, 0) },
+                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier3); Product::new(forwarded, 0) },
                                                                     )
                                                                     .enter_at(
                                                                         &scope,

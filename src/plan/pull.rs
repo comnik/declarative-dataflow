@@ -139,7 +139,9 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                             .import_named(&nested.parent, a)
                             // .enter(nested)
                             .enter_at(nested, move |_, _, time| {
-                                Product::new(time.advance_by(&frontier), 0)
+                                let mut forwarded = time.clone();
+                                forwarded.advance_by(&frontier);
+                                Product::new(forwarded, 0)
                             })
                     }
                 };

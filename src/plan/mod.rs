@@ -369,7 +369,9 @@ impl Implementable for Plan {
                             .import_named(&nested.parent, a)
                             // .enter(nested)
                             .enter_at(nested, move |_, _, time| {
-                                Product::new(time.advance_by(&frontier), 0)
+                                let mut forwarded = time.clone();
+                                forwarded.advance_by(&frontier);
+                                Product::new(forwarded, 0)
                             })
                             .as_collection(|(e, v), _| vec![e.clone(), v.clone()])
                     }
@@ -395,7 +397,9 @@ impl Implementable for Plan {
                             .import_named(&nested.parent, a)
                             // .enter(nested)
                             .enter_at(nested, move |_, _, time| {
-                                Product::new(time.advance_by(&frontier), 0)
+                                let mut forwarded = time.clone();
+                                forwarded.advance_by(&frontier);
+                                Product::new(forwarded, 0)
                             })
                             .filter(move |e, _v| *e == Value::Eid(match_e))
                             .as_collection(|_e, v| vec![v.clone()])
@@ -423,7 +427,9 @@ impl Implementable for Plan {
                             .import_named(&nested.parent, a)
                             // .enter(nested)
                             .enter_at(nested, move |_, _, time| {
-                                Product::new(time.advance_by(&frontier), 0)
+                                let mut forwarded = time.clone();
+                                forwarded.advance_by(&frontier);
+                                Product::new(forwarded, 0)
                             })
                             .filter(move |v, _e| *v == match_v)
                             .as_collection(|_v, e| vec![e.clone()])
