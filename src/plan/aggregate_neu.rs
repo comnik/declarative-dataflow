@@ -8,7 +8,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::difference::DiffPair;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Join as JoinMap;
-use differential_dataflow::operators::{Count, Group};
+use differential_dataflow::operators::{Count, Reduce};
 
 use crate::binding::Binding;
 use crate::plan::{Dependencies, ImplContext, Implementable};
@@ -136,28 +136,28 @@ impl<P: Implementable> Implementable for Aggregate<P> {
 
             match aggregation_fn {
                 AggregationFn::MIN => {
-                    let tuples = tuples.map(prepare_unary).group(|_key, vals, output| {
+                    let tuples = tuples.map(prepare_unary).reduce(|_key, vals, output| {
                         let min = &vals[0].0[0];
                         output.push((vec![min.clone()], 1));
                     });
                     collections.push(tuples);
                 }
                 AggregationFn::MAX => {
-                    let tuples = tuples.map(prepare_unary).group(|_key, vals, output| {
+                    let tuples = tuples.map(prepare_unary).reduce(|_key, vals, output| {
                         let max = &vals[vals.len() - 1].0[0];
                         output.push((vec![max.clone()], 1));
                     });
                     collections.push(tuples);
                 }
                 AggregationFn::MEDIAN => {
-                    let tuples = tuples.map(prepare_unary).group(|_key, vals, output| {
+                    let tuples = tuples.map(prepare_unary).reduce(|_key, vals, output| {
                         let median = &vals[vals.len() / 2].0[0];
                         output.push((vec![median.clone()], 1));
                     });
                     collections.push(tuples);
                 }
                 AggregationFn::COUNT => {
-                    let tuples = tuples.map(prepare_unary).group(|_key, input, output| {
+                    let tuples = tuples.map(prepare_unary).reduce(|_key, input, output| {
                         let mut total_count = 0;
                         for (_, count) in input.iter() {
                             total_count += count;

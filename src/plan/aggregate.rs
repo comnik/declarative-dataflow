@@ -8,7 +8,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::difference::DiffPair;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Join as JoinMap;
-use differential_dataflow::operators::{Consolidate, Count, Group, Threshold};
+use differential_dataflow::operators::{Consolidate, Count, Reduce, Threshold};
 
 use crate::binding::Binding;
 use crate::plan::{Dependencies, ImplContext, Implementable};
@@ -137,7 +137,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 AggregationFn::MIN => {
                     let tuples = tuples
                         .map(prepare_unary)
-                        .group(|_key, vals, output| {
+                        .reduce(|_key, vals, output| {
                             let min = &vals[0].0[0];
                             output.push((min.clone(), 1));
                         })
@@ -147,7 +147,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 AggregationFn::MAX => {
                     let tuples = tuples
                         .map(prepare_unary)
-                        .group(|_key, vals, output| {
+                        .reduce(|_key, vals, output| {
                             let max = &vals[vals.len() - 1].0[0];
                             output.push((max.clone(), 1));
                         })
@@ -157,7 +157,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 AggregationFn::MEDIAN => {
                     let tuples = tuples
                         .map(prepare_unary)
-                        .group(|_key, vals, output| {
+                        .reduce(|_key, vals, output| {
                             let median = &vals[vals.len() / 2].0[0];
                             output.push((median.clone(), 1));
                         })
@@ -167,7 +167,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 AggregationFn::COUNT => {
                     let tuples = tuples
                         .map(prepare_unary)
-                        .group(|_key, input, output| output.push((input.len(), 1)))
+                        .reduce(|_key, input, output| output.push((input.len(), 1)))
                         .map(move |(key, count)| (key, vec![Value::Number(count as i64)]));
                     collections.push(tuples);
                 }
