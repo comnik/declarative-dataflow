@@ -6,11 +6,11 @@ use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::Join;
-use differential_dataflow::operators::Threshold;
+use differential_dataflow::operators::{Join, Threshold};
 
+use crate::binding::{AntijoinBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, Var, VariableMap};
+use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
 /// symbols. Throws if the sources are not union-compatible, i.e. bind
@@ -38,18 +38,18 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let left = self
+        let (left, shutdown_left) = self
             .left_plan
             .implement(nested, local_arrangements, context);
-        let right = self
-            .right_plan
-            .implement(nested, local_arrangements, context);
+        let (right, shutdown_right) =
+            self.right_plan
+                .implement(nested, local_arrangements, context);
 
         let symbols = self
             .variables
@@ -74,6 +74,8 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
             )
             .map(|(key, tuple)| key.iter().cloned().chain(tuple.iter().cloned()).collect());
 
-        CollectionRelation { symbols, tuples }
+        let shutdown_handle = ShutdownHandle::merge(shutdown_left, shutdown_right);
+
+        (CollectionRelation { symbols, tuples }, shutdown_handle)
     }
 }

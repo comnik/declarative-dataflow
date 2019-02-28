@@ -131,6 +131,45 @@ impl<T: Timestamp> Drop for ShutdownHandle<T> {
     }
 }
 
+impl<T: Timestamp> ShutdownHandle<T> {
+    /// Returns an empty shutdown handle.
+    pub fn empty() -> Self {
+        ShutdownHandle {
+            shutdown_buttons: Vec::new(),
+        }
+    }
+
+    /// Wraps a single shutdown button into a shutdown handle.
+    pub fn from_button(button: ShutdownButton<CapabilitySet<T>>) -> Self {
+        ShutdownHandle {
+            shutdown_buttons: vec![button],
+        }
+    }
+
+    /// Adds another shutdown button to this handle. This button will
+    /// then also be pressed, whenever the handle is shut down or
+    /// dropped.
+    pub fn add_button(&mut self, button: ShutdownButton<CapabilitySet<T>>) {
+        self.shutdown_buttons.push(button);
+    }
+
+    /// Combines the buttons of another handle into self.
+    pub fn merge_with(&mut self, mut other: Self) {
+        self.shutdown_buttons.append(&mut other.shutdown_buttons);
+    }
+
+    /// Combines two shutdown handles into a single one, which will
+    /// control both.
+    pub fn merge(mut left: Self, mut right: Self) -> Self {
+        let mut shutdown_buttons =
+            Vec::with_capacity(left.shutdown_buttons.len() + right.shutdown_buttons.len());
+        shutdown_buttons.append(&mut left.shutdown_buttons);
+        shutdown_buttons.append(&mut right.shutdown_buttons);
+
+        ShutdownHandle { shutdown_buttons }
+    }
+}
+
 /// Attribute indices can have various operations applied to them,
 /// based on their semantics.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -153,12 +192,12 @@ where
     V: Data,
     T: Lattice + Data,
 {
+    /// A name uniquely identifying this index.
+    pub name: String,
     /// A trace of type (K, ()), used to count extensions for each prefix.
     count_trace: TraceKeyHandle<K, T, isize>,
-
     /// A trace of type (K, V), used to propose extensions for each prefix.
     propose_trace: TraceValHandle<K, V, T, isize>,
-
     /// A trace of type ((K, V), ()), used to validate proposed extensions.
     validate_trace: TraceKeyHandle<(K, V), T, isize>,
 }
@@ -171,6 +210,7 @@ where
 {
     fn clone(&self) -> Self {
         CollectionIndex {
+            name: self.name.clone(),
             count_trace: self.count_trace.clone(),
             propose_trace: self.propose_trace.clone(),
             validate_trace: self.validate_trace.clone(),
@@ -206,6 +246,7 @@ where
         validate_trace.distinguish_since(&[]);
 
         CollectionIndex {
+            name: name.to_string(),
             count_trace,
             propose_trace,
             validate_trace,
@@ -216,19 +257,35 @@ where
     pub fn import<G: Scope<Timestamp = T>>(
         &mut self,
         scope: &G,
-    ) -> LiveIndex<
-        G,
-        K,
-        V,
-        TraceKeyHandle<K, T, isize>,
-        TraceValHandle<K, V, T, isize>,
-        TraceKeyHandle<(K, V), T, isize>,
-    > {
-        LiveIndex {
-            count: self.count_trace.import(scope),
-            propose: self.propose_trace.import(scope),
-            validate: self.validate_trace.import(scope),
-        }
+    ) -> (
+        LiveIndex<
+            G,
+            K,
+            V,
+            TraceKeyHandle<K, T, isize>,
+            TraceValHandle<K, V, T, isize>,
+            TraceKeyHandle<(K, V), T, isize>,
+        >,
+        ShutdownHandle<T>,
+    ) {
+        let (count, shutdown_count) = self
+            .count_trace
+            .import_core(scope, &format!("Counts({})", self.name));
+        let (propose, shutdown_propose) = self
+            .propose_trace
+            .import_core(scope, &format!("Proposals({})", self.name));
+        let (validate, shutdown_validate) = self
+            .validate_trace
+            .import_core(scope, &format!("Validations({})", self.name));
+
+        let index = LiveIndex {
+            count,
+            propose,
+            validate,
+        };
+
+        let shutdown_buttons = vec![shutdown_count, shutdown_propose, shutdown_validate];
+        (index, ShutdownHandle { shutdown_buttons })
     }
 
     /// Advances the traces maintained in this index.
@@ -628,7 +685,13 @@ pub fn implement<T, I, S>(
     name: &str,
     scope: &mut S,
     context: &mut I,
-) -> Result<HashMap<String, Collection<S, Vec<Value>, isize>>, Error>
+) -> Result<
+    (
+        HashMap<String, Collection<S, Vec<Value>, isize>>,
+        ShutdownHandle<T>,
+    ),
+    Error,
+>
 where
     T: Timestamp + Lattice + TotalOrder + Default,
     I: ImplContext<T>,
@@ -683,9 +746,13 @@ where
 
         // Step 3: Define the executions for each rule.
         let mut executions = Vec::with_capacity(rules.len());
+        let mut shutdown_handle = ShutdownHandle::empty();
         for rule in rules.iter() {
             info!("planning {:?}", rule.name);
-            executions.push(rule.plan.implement(nested, &local_arrangements, context));
+            let (relation, shutdown) = rule.plan.implement(nested, &local_arrangements, context);
+
+            executions.push(relation);
+            shutdown_handle = ShutdownHandle::merge(shutdown_handle, shutdown);
         }
 
         // Step 4: Complete named relations in a specific order (sorted by name).
@@ -710,7 +777,7 @@ where
             }
         }
 
-        Ok(result_map)
+        Ok((result_map, shutdown_handle))
     })
 }
 
@@ -719,7 +786,13 @@ pub fn implement_neu<T, I, S>(
     name: &str,
     scope: &mut S,
     context: &mut I,
-) -> Result<HashMap<String, Collection<S, Vec<Value>, isize>>, Error>
+) -> Result<
+    (
+        HashMap<String, Collection<S, Vec<Value>, isize>>,
+        ShutdownHandle<T>,
+    ),
+    Error,
+>
 where
     T: Timestamp + Lattice + TotalOrder + Default,
     I: ImplContext<T>,
@@ -782,6 +855,7 @@ where
 
         // Step 3: Define the executions for each rule.
         let mut executions = Vec::with_capacity(rules.len());
+        let mut shutdown_handle = ShutdownHandle::empty();
         for rule in rules.iter() {
             info!("neu_planning {:?}", rule.name);
 
@@ -793,7 +867,10 @@ where
                 bindings: rule.plan.into_bindings(),
             });
 
-            executions.push(plan.implement(nested, &local_arrangements, context));
+            let (relation, shutdown) = plan.implement(nested, &local_arrangements, context);
+
+            executions.push(relation);
+            shutdown_handle = ShutdownHandle::merge(shutdown_handle, shutdown);
         }
 
         // Step 4: Complete named relations in a specific order (sorted by name).
@@ -814,6 +891,6 @@ where
             }
         }
 
-        Ok(result_map)
+        Ok((result_map, shutdown_handle))
     })
 }

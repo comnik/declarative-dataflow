@@ -10,7 +10,7 @@ use differential_dataflow::lattice::Lattice;
 use differential_dataflow::AsCollection;
 
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{Aid, CollectionRelation, Relation, Value, Var, VariableMap};
+use crate::{Aid, CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
@@ -79,7 +79,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -90,22 +90,24 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         use differential_dataflow::trace::implementations::ord::OrdValSpine;
         use differential_dataflow::trace::TraceReader;
 
-        let input = self.plan.implement(nested, local_arrangements, context);
+        let (input, shutdown_input) = self.plan.implement(nested, local_arrangements, context);
 
         if self.pull_attributes.is_empty() {
             if self.path_attributes.is_empty() {
                 // nothing to pull
-                input
+                (input, shutdown_input)
             } else {
                 let path_attributes = self.path_attributes.clone();
                 let tuples = input
                     .tuples()
                     .map(move |tuple| interleave(&tuple, &path_attributes));
 
-                CollectionRelation {
+                let relation = CollectionRelation {
                     symbols: vec![],
                     tuples,
-                }
+                };
+
+                (relation, shutdown_input)
             }
         } else {
             // Arrange input entities by eid.
@@ -124,25 +126,24 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                 >,
             > = paths.map(|t| (t.last().unwrap().clone(), t)).arrange();
 
+            let mut shutdown_handle = shutdown_input;
             let streams = self.pull_attributes.iter().map(|a| {
                 let e_v = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
-                        let frontier: Vec<T> = index
-                            .propose_trace
-                            .advance_frontier()
-                            .iter()
-                            .cloned()
-                            .collect();
-                        index
-                            .propose_trace
-                            .import_named(&nested.parent, a)
-                            // .enter(nested)
-                            .enter_at(nested, move |_, _, time| {
-                                let mut forwarded = time.clone();
-                                forwarded.advance_by(&frontier);
-                                Product::new(forwarded, 0)
-                            })
+                        let frontier: Vec<T> = index.propose_trace.advance_frontier().to_vec();
+                        let (arranged, shutdown_propose) =
+                            index.propose_trace.import_core(&nested.parent, a);
+
+                        let e_v = arranged.enter_at(nested, move |_, _, time| {
+                            let mut forwarded = time.clone();
+                            forwarded.advance_by(&frontier);
+                            Product::new(forwarded, 0)
+                        });
+
+                        shutdown_handle.add_button(shutdown_propose);
+
+                        e_v
                     }
                 };
 
@@ -165,10 +166,12 @@ impl<P: Implementable> Implementable for PullLevel<P> {
 
             let tuples = nested.concatenate(streams).as_collection();
 
-            CollectionRelation {
+            let relation = CollectionRelation {
                 symbols: vec![], // @TODO
                 tuples,
-            }
+            };
+
+            (relation, shutdown_handle)
         }
     }
 }
@@ -183,24 +186,30 @@ impl<P: Implementable> Implementable for Pull<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
         let mut scope = nested.clone();
+        let mut shutdown_handle = ShutdownHandle::empty();
+
         let streams = self.paths.iter().map(|path| {
-            path.implement(&mut scope, local_arrangements, context)
-                .tuples()
-                .inner
+            let (relation, shutdown) = path.implement(&mut scope, local_arrangements, context);
+
+            shutdown_handle.merge_with(shutdown);
+
+            relation.tuples().inner
         });
 
         let tuples = nested.concatenate(streams).as_collection();
 
-        CollectionRelation {
+        let relation = CollectionRelation {
             symbols: vec![], // @TODO
             tuples,
-        }
+        };
+
+        (relation, shutdown_handle)
     }
 }

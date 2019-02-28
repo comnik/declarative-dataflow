@@ -9,7 +9,7 @@ use differential_dataflow::lattice::Lattice;
 
 pub use crate::binding::{BinaryPredicate as Predicate, BinaryPredicateBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
+use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 #[inline(always)]
 fn lt(a: &Value, b: &Value) -> bool {
@@ -74,19 +74,20 @@ impl<P: Implementable> Implementable for Filter<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let rel = self.plan.implement(nested, local_arrangements, context);
+        let (relation, shutdown_buttons) = self.plan.implement(nested, local_arrangements, context);
 
         let key_offsets: Vec<usize> = self
             .variables
             .iter()
             .map(|sym| {
-                rel.symbols()
+                relation
+                    .symbols()
                     .iter()
                     .position(|&v| *sym == v)
                     .expect("Symbol not found.")
@@ -102,27 +103,29 @@ impl<P: Implementable> Implementable for Filter<P> {
             Predicate::NEQ => neq,
         };
 
-        if let Some(constant) = self.constants[0].clone() {
+        let filtered = if let Some(constant) = self.constants[0].clone() {
             CollectionRelation {
-                symbols: rel.symbols().to_vec(),
-                tuples: rel
+                symbols: relation.symbols().to_vec(),
+                tuples: relation
                     .tuples()
                     .filter(move |tuple| binary_predicate(&constant, &tuple[key_offsets[0]])),
             }
         } else if let Some(constant) = self.constants[1].clone() {
             CollectionRelation {
-                symbols: rel.symbols().to_vec(),
-                tuples: rel
+                symbols: relation.symbols().to_vec(),
+                tuples: relation
                     .tuples()
                     .filter(move |tuple| binary_predicate(&tuple[key_offsets[0]], &constant)),
             }
         } else {
             CollectionRelation {
-                symbols: rel.symbols().to_vec(),
-                tuples: rel.tuples().filter(move |tuple| {
+                symbols: relation.symbols().to_vec(),
+                tuples: relation.tuples().filter(move |tuple| {
                     binary_predicate(&tuple[key_offsets[0]], &tuple[key_offsets[1]])
                 }),
             }
-        }
+        };
+
+        (filtered, shutdown_buttons)
     }
 }

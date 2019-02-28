@@ -12,7 +12,7 @@ use differential_dataflow::operators::{Count, Reduce};
 
 use crate::binding::Binding;
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, Value, Var, VariableMap};
+use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};
 
@@ -70,13 +70,13 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let relation = self.plan.implement(nested, local_arrangements, context);
+        let (relation, shutdown_buttons) = self.plan.implement(nested, local_arrangements, context);
 
         // We split the incoming tuples into their (key, value) parts.
         let tuples = relation.tuples_by_symbols(&self.key_symbols);
@@ -238,7 +238,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
 
         if collections.len() == 1 {
             let output_index = output_offsets[0];
-            CollectionRelation {
+            let relation = CollectionRelation {
                 symbols: self.variables.to_vec(),
                 tuples: collections[0].map(move |(key, val)| {
                     let mut k = key.clone();
@@ -246,7 +246,9 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                     k.insert(output_index, v);
                     k
                 }),
-            }
+            };
+
+            (relation, shutdown_buttons)
         } else {
             // @TODO replace this with a join application
             let left = collections.remove(0);
@@ -258,7 +260,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 })
             });
 
-            CollectionRelation {
+            let relation = CollectionRelation {
                 symbols: self.variables.to_vec(),
                 tuples: tuples.map(move |(key, vals)| {
                     let mut v = key.clone();
@@ -267,7 +269,9 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                     }
                     v
                 }),
-            }
+            };
+
+            (relation, shutdown_buttons)
         }
     }
 }

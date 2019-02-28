@@ -18,7 +18,9 @@ use crate::plan::{ImplContext, Implementable};
 use crate::sinks::{Sink, Sinkable};
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
-use crate::{implement, implement_neu, AttributeSemantics, CollectionIndex, RelationHandle};
+use crate::{
+    implement, implement_neu, AttributeSemantics, CollectionIndex, RelationHandle, ShutdownHandle,
+};
 use crate::{Aid, Error, TxData, Value};
 
 /// Server configuration.
@@ -138,6 +140,8 @@ where
     pub context: Context<T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, Vec<Token>>,
+    /// Mapping from query names to their shutdown handles.
+    pub shutdown_handles: HashMap<String, ShutdownHandle<T>>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
 }
@@ -217,6 +221,7 @@ where
                 arrangements: HashMap::new(),
             },
             interests: HashMap::new(),
+            shutdown_handles: HashMap::new(),
             probe: ProbeHandle::new(),
         }
     }
@@ -328,7 +333,7 @@ where
 
             Ok(relation)
         } else {
-            let mut rel_map = if self.config.enable_optimizer {
+            let (mut rel_map, shutdown_handle) = if self.config.enable_optimizer {
                 implement_neu(name, scope, &mut self.context)?
             } else {
                 implement(name, scope, &mut self.context)?
@@ -348,7 +353,12 @@ where
                         name
                     ),
                 }),
-                Some(relation) => Ok(relation),
+                Some(relation) => {
+                    self.shutdown_handles
+                        .insert(name.to_string(), shutdown_handle);
+
+                    Ok(relation)
+                }
             }
         }
     }

@@ -36,6 +36,8 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
 
 #[test]
 fn run_hector_cases() {
+    env_logger::init();
+
     let mut cases: Vec<Case> =
         vec![
         Case {

@@ -10,7 +10,7 @@ use differential_dataflow::operators::Threshold;
 
 use crate::binding::Binding;
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, Var, VariableMap};
+use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -49,7 +49,7 @@ impl<P: Implementable> Implementable for Union<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -59,8 +59,14 @@ impl<P: Implementable> Implementable for Union<P> {
         use timely::dataflow::operators::Concatenate;
 
         let mut scope = nested.clone();
+        let mut shutdown_handle = ShutdownHandle::empty();
+
         let streams = self.plans.iter().map(|plan| {
-            plan.implement(&mut scope, local_arrangements, context)
+            let (relation, shutdown) = plan.implement(&mut scope, local_arrangements, context);
+
+            shutdown_handle.merge_with(shutdown);
+
+            relation
                 .tuples_by_symbols(&self.variables)
                 .map(|(key, _vals)| key)
                 .inner
@@ -68,9 +74,11 @@ impl<P: Implementable> Implementable for Union<P> {
 
         let concat = nested.concatenate(streams).as_collection();
 
-        CollectionRelation {
+        let concatenated = CollectionRelation {
             symbols: self.variables.to_vec(),
             tuples: concat.distinct(),
-        }
+        };
+
+        (concatenated, shutdown_handle)
     }
 }

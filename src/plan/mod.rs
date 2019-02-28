@@ -15,7 +15,9 @@ use differential_dataflow::trace::TraceReader;
 use crate::binding::Binding;
 use crate::Rule;
 use crate::{Aid, Eid, Value, Var};
-use crate::{CollectionIndex, CollectionRelation, Relation, RelationHandle, VariableMap};
+use crate::{
+    CollectionIndex, CollectionRelation, Relation, RelationHandle, ShutdownHandle, VariableMap,
+};
 
 #[cfg(feature = "set-semantics")]
 pub mod aggregate;
@@ -162,7 +164,7 @@ pub trait Implementable {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -326,7 +328,7 @@ impl Implementable for Plan {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -344,111 +346,114 @@ impl Implementable for Plan {
             Plan::Hector(ref hector) => hector.implement(nested, local_arrangements, context),
             Plan::Antijoin(ref antijoin) => antijoin.implement(nested, local_arrangements, context),
             Plan::Negate(ref plan) => {
-                let rel = plan.implement(nested, local_arrangements, context);
-                CollectionRelation {
-                    symbols: rel.symbols().to_vec(),
-                    tuples: rel.tuples().negate(),
-                }
+                let (relation, shutdown) = plan.implement(nested, local_arrangements, context);
+                let negated = CollectionRelation {
+                    symbols: relation.symbols().to_vec(),
+                    tuples: relation.tuples().negate(),
+                };
+
+                (negated, shutdown)
             }
             Plan::Filter(ref filter) => filter.implement(nested, local_arrangements, context),
             Plan::Transform(ref transform) => {
                 transform.implement(nested, local_arrangements, context)
             }
             Plan::MatchA(sym1, ref a, sym2) => {
-                let tuples = match context.forward_index(a) {
+                let (tuples, shutdown_validate) = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
-                        let frontier: Vec<T> = index
-                            .validate_trace
-                            .advance_frontier()
-                            .iter()
-                            .cloned()
-                            .collect();
-                        index
-                            .validate_trace
-                            .import_named(&nested.parent, a)
-                            // .enter(nested)
+                        let frontier: Vec<T> = index.validate_trace.advance_frontier().to_vec();
+                        let (validate, shutdown_validate) =
+                            index.validate_trace.import_core(&nested.parent, a);
+
+                        let tuples = validate
                             .enter_at(nested, move |_, _, time| {
                                 let mut forwarded = time.clone();
                                 forwarded.advance_by(&frontier);
                                 Product::new(forwarded, 0)
                             })
-                            .as_collection(|(e, v), _| vec![e.clone(), v.clone()])
+                            .as_collection(|(e, v), _| vec![e.clone(), v.clone()]);
+
+                        (tuples, shutdown_validate)
                     }
                 };
 
-                CollectionRelation {
+                let relation = CollectionRelation {
                     symbols: vec![sym1, sym2],
                     tuples,
-                }
+                };
+
+                (relation, ShutdownHandle::from_button(shutdown_validate))
             }
             Plan::MatchEA(match_e, ref a, sym1) => {
-                let tuples = match context.forward_index(a) {
+                let (tuples, shutdown_propose) = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
-                        let frontier: Vec<T> = index
-                            .propose_trace
-                            .advance_frontier()
-                            .iter()
-                            .cloned()
-                            .collect();
-                        index
-                            .propose_trace
-                            .import_named(&nested.parent, a)
-                            // .enter(nested)
+                        let frontier: Vec<T> = index.propose_trace.advance_frontier().to_vec();
+                        let (propose, shutdown_propose) =
+                            index.propose_trace.import_core(&nested.parent, a);
+
+                        let tuples = propose
                             .enter_at(nested, move |_, _, time| {
                                 let mut forwarded = time.clone();
                                 forwarded.advance_by(&frontier);
                                 Product::new(forwarded, 0)
                             })
                             .filter(move |e, _v| *e == Value::Eid(match_e))
-                            .as_collection(|_e, v| vec![v.clone()])
+                            .as_collection(|_e, v| vec![v.clone()]);
+
+                        (tuples, shutdown_propose)
                     }
                 };
 
-                CollectionRelation {
+                let relation = CollectionRelation {
                     symbols: vec![sym1],
                     tuples,
-                }
+                };
+
+                (relation, ShutdownHandle::from_button(shutdown_propose))
             }
             Plan::MatchAV(sym1, ref a, ref match_v) => {
-                let tuples = match context.reverse_index(a) {
+                let (tuples, shutdown_propose) = match context.reverse_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
                         let match_v = match_v.clone();
-                        let frontier: Vec<T> = index
-                            .propose_trace
-                            .advance_frontier()
-                            .iter()
-                            .cloned()
-                            .collect();
-                        index
-                            .propose_trace
-                            .import_named(&nested.parent, a)
-                            // .enter(nested)
+                        let frontier: Vec<T> = index.propose_trace.advance_frontier().to_vec();
+                        let (propose, shutdown_propose) =
+                            index.propose_trace.import_core(&nested.parent, a);
+
+                        let tuples = propose
                             .enter_at(nested, move |_, _, time| {
                                 let mut forwarded = time.clone();
                                 forwarded.advance_by(&frontier);
                                 Product::new(forwarded, 0)
                             })
                             .filter(move |v, _e| *v == match_v)
-                            .as_collection(|_v, e| vec![e.clone()])
+                            .as_collection(|_v, e| vec![e.clone()]);
+
+                        (tuples, shutdown_propose)
                     }
                 };
 
-                CollectionRelation {
+                let relation = CollectionRelation {
                     symbols: vec![sym1],
                     tuples,
-                }
+                };
+
+                (relation, ShutdownHandle::from_button(shutdown_propose))
             }
             Plan::NameExpr(ref syms, ref name) => {
                 if context.is_underconstrained(name) {
                     match local_arrangements.get(name) {
                         None => panic!("{:?} not in relation map", name),
-                        Some(named) => CollectionRelation {
-                            symbols: syms.clone(),
-                            tuples: named.deref().clone(), // @TODO re-use variable directly?
-                        },
+                        Some(named) => {
+                            let relation = CollectionRelation {
+                                symbols: syms.clone(),
+                                tuples: named.deref().clone(), // @TODO re-use variable directly?
+                            };
+
+                            (relation, ShutdownHandle::empty())
+                        }
                     }
                 } else {
                     // If a rule is not underconstrained, we can
@@ -459,14 +464,25 @@ impl Implementable for Plan {
 
                     match context.global_arrangement(name) {
                         None => panic!("{:?} not in query map", name),
-                        Some(named) => CollectionRelation {
-                            symbols: syms.clone(),
-                            tuples: named
-                                .import_named(&nested.parent, name)
-                                .enter(nested)
-                                // @TODO this destroys all the arrangement re-use
-                                .as_collection(|tuple, _| tuple.clone()),
-                        },
+                        Some(named) => {
+                            let frontier: Vec<T> = named.advance_frontier().to_vec();
+                            let (arranged, shutdown_button) =
+                                named.import_core(&nested.parent, name);
+
+                            let relation = CollectionRelation {
+                                symbols: syms.clone(),
+                                tuples: arranged
+                                    .enter_at(nested, move |_, _, time| {
+                                        let mut forwarded = time.clone();
+                                        forwarded.advance_by(&frontier);
+                                        Product::new(forwarded, 0)
+                                    })
+                                    // @TODO this destroys all the arrangement re-use
+                                    .as_collection(|tuple, _| tuple.clone()),
+                            };
+
+                            (relation, ShutdownHandle::from_button(shutdown_button))
+                        }
                     }
                 }
             }

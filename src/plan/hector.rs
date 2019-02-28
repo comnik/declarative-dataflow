@@ -6,9 +6,7 @@ use std::hash::Hash;
 use std::rc::Rc;
 
 use timely::dataflow::channels::pact::{Exchange, Pipeline};
-use timely::dataflow::operators::Concatenate;
-use timely::dataflow::operators::Operator;
-use timely::dataflow::operators::Partition;
+use timely::dataflow::operators::{Concatenate, Operator, Partition};
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 use timely::order::{Product, TotalOrder};
@@ -26,7 +24,7 @@ use crate::binding::{AsBinding, BinaryPredicate, Binding};
 use crate::binding::{BinaryPredicateBinding, ConstantBinding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
-use crate::{CollectionRelation, LiveIndex, VariableMap};
+use crate::{CollectionRelation, LiveIndex, ShutdownHandle, VariableMap};
 use crate::{Value, Var};
 
 type Extender<'a, S, P, V> = Box<(dyn PrefixExtender<S, Prefix = P, Extension = V> + 'a)>;
@@ -184,7 +182,7 @@ impl Implementable for Hector {
         nested: &mut Iterative<'b, S, u64>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -203,16 +201,12 @@ impl Implementable for Hector {
                     match context.forward_index(&binding.source_attribute) {
                         None => panic!("Unknown attribute {}", &binding.source_attribute),
                         Some(index) => {
-                            let frontier: Vec<T> = index
+                            let frontier: Vec<T> = index.validate_trace.advance_frontier().to_vec();
+                            let (validate, shutdown_validate) = index
                                 .validate_trace
-                                .advance_frontier()
-                                .iter()
-                                .cloned()
-                                .collect();
-                            let tuples = index
-                                .validate_trace
-                                .import(&nested.parent)
-                                // .enter(&nested)
+                                .import_core(&nested.parent, &format!("Validate({})", index.name));
+
+                            let tuples = validate
                                 .enter_at(nested, move |_, _, time| {
                                     let mut forwarded = time.clone();
                                     forwarded.advance_by(&frontier);
@@ -220,10 +214,12 @@ impl Implementable for Hector {
                                 })
                                 .as_collection(|(e, v), ()| vec![e.clone(), v.clone()]);
 
-                            CollectionRelation {
+                            let relation = CollectionRelation {
                                 symbols: vec![binding.symbols.0, binding.symbols.1],
                                 tuples,
-                            }
+                            };
+
+                            (relation, ShutdownHandle::from_button(shutdown_validate))
                         }
                     }
                 }
@@ -236,7 +232,7 @@ impl Implementable for Hector {
             // other's data in naughty ways, we need to run them all
             // inside a scope with lexicographic times.
 
-            let joined = nested.scoped::<AltNeu<Product<T,u64>>, _, _>("AltNeu", |inner| {
+            let (joined, shutdown_handle) = nested.scoped::<AltNeu<Product<T,u64>>, _, _>("AltNeu", |inner| {
 
                 let scope = inner.clone();
 
@@ -248,6 +244,7 @@ impl Implementable for Hector {
                 // We cache aggressively, to avoid importing and
                 // wrapping things more than once.
 
+                let mut shutdown_handle = ShutdownHandle::empty();
                 let mut forward_cache = HashMap::new();
                 let mut reverse_cache = HashMap::new();
 
@@ -303,10 +300,15 @@ impl Implementable for Hector {
                                                     let index = forward_cache
                                                         .entry(delta_binding.source_attribute.to_string())
                                                         .or_insert_with(|| {
-                                                            context.forward_index(&delta_binding.source_attribute).unwrap()
-                                                                .import(&scope.parent.parent)
+                                                            let (arranged, shutdown) =
+                                                                context.forward_index(&delta_binding.source_attribute).unwrap()
+                                                                .import(&scope.parent.parent);
+
+                                                            shutdown_handle.merge_with(shutdown);
+
+                                                            arranged
                                                         });
-                                                    let frontier: Vec<T> = index.propose.trace.advance_frontier().iter().cloned().collect();
+                                                    let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
 
                                                     index
                                                         .propose
@@ -325,10 +327,15 @@ impl Implementable for Hector {
                                                     let index = reverse_cache
                                                         .entry(delta_binding.source_attribute.to_string())
                                                         .or_insert_with(|| {
-                                                            context.reverse_index(&delta_binding.source_attribute).unwrap()
-                                                                .import(&scope.parent.parent)
+                                                            let (arranged, shutdown) =
+                                                                context.reverse_index(&delta_binding.source_attribute).unwrap()
+                                                                .import(&scope.parent.parent);
+
+                                                            shutdown_handle.merge_with(shutdown);
+
+                                                            arranged
                                                         });
-                                                    let frontier: Vec<T> = index.propose.trace.advance_frontier().iter().cloned().collect();
+                                                    let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
 
                                                     index
                                                         .propose
@@ -353,10 +360,15 @@ impl Implementable for Hector {
                                 let index = forward_cache
                                     .entry(delta_binding.source_attribute.to_string())
                                     .or_insert_with(|| {
-                                        context.forward_index(&delta_binding.source_attribute).unwrap()
-                                            .import(&scope.parent.parent)
+                                        let (arranged, shutdown) =
+                                            context.forward_index(&delta_binding.source_attribute).unwrap()
+                                            .import(&scope.parent.parent);
+
+                                        shutdown_handle.merge_with(shutdown);
+
+                                        arranged
                                     });
-                                let frontier: Vec<T> = index.validate.trace.advance_frontier().iter().cloned().collect();
+                                let frontier: Vec<T> = index.validate.trace.advance_frontier().to_vec();
 
                                 index
                                     .validate
@@ -435,10 +447,15 @@ impl Implementable for Hector {
                                                             Direction::Forward(offset) => {
                                                                 let index = forward_cache.entry(other.source_attribute.to_string())
                                                                     .or_insert_with(|| {
-                                                                        context.forward_index(&other.source_attribute).unwrap()
-                                                                            .import(&scope.parent.parent)
+                                                                        let (arranged, shutdown) =
+                                                                            context.forward_index(&other.source_attribute).unwrap()
+                                                                            .import(&scope.parent.parent);
+
+                                                                        shutdown_handle.merge_with(shutdown);
+
+                                                                        arranged
                                                                     });
-                                                                let frontier: Vec<T> = index.propose.trace.advance_frontier().iter().cloned().collect();
+                                                                let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
 
                                                                 let (frontier1, frontier2, frontier3) = (frontier.clone(), frontier.clone(), frontier);
                                                                 let (neu1, neu2, neu3) = (is_neu, is_neu, is_neu);
@@ -470,10 +487,15 @@ impl Implementable for Hector {
                                                             Direction::Reverse(offset) => {
                                                                 let index = reverse_cache.entry(other.source_attribute.to_string())
                                                                     .or_insert_with(|| {
-                                                                        context.reverse_index(&other.source_attribute).unwrap()
-                                                                            .import(&scope.parent.parent)
+                                                                        let (arranged, shutdown) =
+                                                                            context.reverse_index(&other.source_attribute).unwrap()
+                                                                            .import(&scope.parent.parent);
+
+                                                                        shutdown_handle.merge_with(shutdown);
+
+                                                                        arranged
                                                                     });
-                                                                let frontier: Vec<T> = index.propose.trace.advance_frontier().iter().cloned().collect();
+                                                                let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
 
                                                                 let (frontier1, frontier2, frontier3) = (frontier.clone(), frontier.clone(), frontier);
                                                                 let (neu1, neu2, neu3) = (is_neu, is_neu, is_neu);
@@ -540,13 +562,15 @@ impl Implementable for Hector {
                         _ => None
                     });
 
-                inner.concatenate(changes).as_collection().leave()
+                (inner.concatenate(changes).as_collection().leave(), shutdown_handle)
             });
 
-            CollectionRelation {
+            let relation = CollectionRelation {
                 symbols: self.variables.clone(),
                 tuples: joined.distinct(),
-            }
+            };
+
+            (relation, shutdown_handle)
         }
     }
 }

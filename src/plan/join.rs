@@ -11,7 +11,7 @@ use differential_dataflow::operators::JoinCore;
 use crate::binding::Binding;
 use crate::plan::{next_id, Dependencies, ImplContext, Implementable};
 use crate::{Aid, Eid, Value, Var};
-use crate::{CollectionRelation, Relation, VariableMap};
+use crate::{CollectionRelation, Relation, ShutdownHandle, VariableMap};
 
 /// A plan stage joining two source relations on the specified
 /// symbols. Throws if any of the join symbols isn't bound by both
@@ -77,18 +77,18 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S>
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let left = self
+        let (left, shutdown_left) = self
             .left_plan
             .implement(nested, local_arrangements, context);
-        let right = self
-            .right_plan
-            .implement(nested, local_arrangements, context);
+        let (right, shutdown_right) =
+            self.right_plan
+                .implement(nested, local_arrangements, context);
 
         let symbols = self
             .variables
@@ -122,6 +122,8 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
             },
         );
 
-        CollectionRelation { symbols, tuples }
+        let shutdown_handle = ShutdownHandle::merge(shutdown_left, shutdown_right);
+
+        (CollectionRelation { symbols, tuples }, shutdown_handle)
     }
 }
