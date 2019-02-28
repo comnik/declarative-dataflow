@@ -20,7 +20,7 @@ extern crate env_logger;
 extern crate abomonation_derive;
 extern crate abomonation;
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io::BufRead;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
@@ -305,7 +305,7 @@ fn main() {
                             match server.interests.get(&query_name) {
                                 None => {
                                     /* @TODO unregister this flow */
-                                    info!("NO INTEREST FOR THIS RESULT");
+                                    warn!("NO INTEREST FOR THIS RESULT");
                                 }
                                 Some(tokens) => {
                                     let serialized = serde_json::to_string::<(String, Vec<ResultDiff<u64>>)>(
@@ -425,6 +425,7 @@ fn main() {
                                                         }
                                                     }
                                                 }
+                                                // @TODO handle ConnEvent::Close
                                                 _ => {
                                                     println!("other");
                                                 }
@@ -500,16 +501,14 @@ fn main() {
                             }
                         }
                         Request::Interest(req) => {
-                            if owner == worker.index() {
-                                // we are the owning worker and thus have to
-                                // keep track of this client's new interest
+                            // All workers keep track of every client's interests, s.t. they
+                            // know when to clean up unused dataflows.
 
-                                let client_token = Token(command.client);
-                                server.interests
-                                    .entry(req.name.clone())
-                                    .or_insert_with(Vec::new)
-                                    .push(client_token);
-                            }
+                            let client_token = Token(command.client);
+                            server.interests
+                                .entry(req.name.clone())
+                                .or_insert_with(HashSet::new)
+                                .insert(client_token);
 
                             if server.context.global_arrangement(&req.name).is_none() {
 
@@ -544,6 +543,19 @@ fn main() {
                                         }
                                     }
                                 });
+                            }
+                        }
+                        Request::Uninterest(name) => {
+                            // All workers keep track of every client's interests, s.t. they
+                            // know when to clean up unused dataflows.
+                            let client_token = Token(command.client);
+                            if let Some(entry) = server.interests.get_mut(&name) {
+                                entry.remove(&client_token);
+
+                                if entry.is_empty() {
+                                    server.interests.remove(&name);
+                                    server.shutdown_handles.remove(&name);
+                                }
                             }
                         }
                         Request::Flow(source, sink) => {

@@ -110,6 +110,10 @@ pub enum Request {
     Transact(Vec<TxData>),
     /// Expresses interest in a named relation.
     Interest(Interest),
+    /// Expresses that the interest in a named relation has
+    /// stopped. Once all interested clients have sent this, the
+    /// dataflow can be cleaned up.
+    Uninterest(String),
     /// Expresses interest in a named relation, but directing results
     /// to be forwarded to a sink.
     Flow(String, String),
@@ -139,7 +143,7 @@ where
     /// Implementation context.
     pub context: Context<T>,
     /// Mapping from query names to interested client tokens.
-    pub interests: HashMap<String, Vec<Token>>,
+    pub interests: HashMap<String, HashSet<Token>>,
     /// Mapping from query names to their shutdown handles.
     pub shutdown_handles: HashMap<String, ShutdownHandle<T>>,
     /// Probe keeping track of overall dataflow progress.
