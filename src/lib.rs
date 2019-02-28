@@ -27,6 +27,7 @@ pub mod timestamp;
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 
+use timely::dataflow::operators::CapabilitySet;
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::dataflow::*;
 use timely::order::{Product, TotalOrder};
@@ -34,7 +35,7 @@ use timely::progress::timestamp::Refines;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::arrange::{Arrange, Arranged, TraceAgent};
+use differential_dataflow::operators::arrange::{Arrange, Arranged, ShutdownButton, TraceAgent};
 use differential_dataflow::operators::iterate::Variable;
 use differential_dataflow::operators::{Consolidate, Threshold};
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
@@ -115,6 +116,20 @@ pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, T, isize>;
 // A map for keeping track of collections that are being actively
 // synthesized (i.e. that are not fully defined yet).
 type VariableMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
+
+/// A wrapper around a vector of ShutdownButton's. Ensures they will
+/// be pressed on dropping the handle.
+pub struct ShutdownHandle<T: Timestamp> {
+    shutdown_buttons: Vec<ShutdownButton<CapabilitySet<T>>>,
+}
+
+impl<T: Timestamp> Drop for ShutdownHandle<T> {
+    fn drop(&mut self) {
+        for mut button in self.shutdown_buttons.drain(..) {
+            button.press();
+        }
+    }
+}
 
 /// Attribute indices can have various operations applied to them,
 /// based on their semantics.
