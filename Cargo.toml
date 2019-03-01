@@ -1,8 +1,15 @@
 [package]
-name = "declarative_dataflow"
+
+name = "declarative-dataflow"
 version = "0.1.0"
-authors = ["Frank McSherry <fmcsherry@me.com>", "Nikolas Göbel <me@nikolasgoebel.com>"]
+authors = ["Nikolas Göbel <me@nikolasgoebel.com>", "Frank McSherry <fmcsherry@me.com>"]
 edition = "2018"
+
+description = "A reactive query engine built on Differential Dataflow."
+
+repository = "https://github.com/comnik/declarative-dataflow.git"
+keywords = ["differential", "dataflow",  "datalog", "graphql", "query"]
+license = "MIT"
 
 [dependencies]
 jemallocator = "0.1.8"
@@ -15,7 +22,6 @@ serde_derive = "1"
 serde_json = "1"
 mio = "0.6.16"
 slab = "0.4.1"
-# ws = { path = "../ws-rs/" }
 ws = { git = "https://github.com/comnik/ws-rs" }
 log = "0.4"
 env_logger = "0.5.6"

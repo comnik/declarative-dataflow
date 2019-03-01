@@ -553,6 +553,7 @@ fn main() {
                                 entry.remove(&client_token);
 
                                 if entry.is_empty() {
+                                    info!("Shutting down {}", name);
                                     server.interests.remove(&name);
                                     server.shutdown_handles.remove(&name);
                                 }
