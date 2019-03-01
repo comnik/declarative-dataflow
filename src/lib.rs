@@ -752,7 +752,7 @@ where
             let (relation, shutdown) = rule.plan.implement(nested, &local_arrangements, context);
 
             executions.push(relation);
-            shutdown_handle = ShutdownHandle::merge(shutdown_handle, shutdown);
+            shutdown_handle.merge_with(shutdown);
         }
 
         // Step 4: Complete named relations in a specific order (sorted by name).
@@ -870,7 +870,7 @@ where
             let (relation, shutdown) = plan.implement(nested, &local_arrangements, context);
 
             executions.push(relation);
-            shutdown_handle = ShutdownHandle::merge(shutdown_handle, shutdown);
+            shutdown_handle.merge_with(shutdown);
         }
 
         // Step 4: Complete named relations in a specific order (sorted by name).
