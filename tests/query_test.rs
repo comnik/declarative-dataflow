@@ -8,7 +8,7 @@ use timely::dataflow::operators::Operator;
 use timely::Configuration;
 
 use declarative_dataflow::binding::Binding;
-use declarative_dataflow::plan::{Implementable, Join, Project};
+use declarative_dataflow::plan::{Hector, Implementable, Join, Project};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::{Aid, AttributeSemantics, Plan, Rule, TxData, Value};
 use Value::{Eid, Number, String};
@@ -131,6 +131,142 @@ fn run_query_cases() {
         // },
     ];
 
+    {
+        // DataScript query/test-joins
+
+        let data = vec![
+            TxData(1, 1, ":name".to_string(), String("Ivan".to_string())),
+            TxData(1, 1, ":age".to_string(), Number(15)),
+            TxData(1, 2, ":name".to_string(), String("Petr".to_string())),
+            TxData(1, 2, ":age".to_string(), Number(37)),
+            TxData(1, 3, ":name".to_string(), String("Ivan".to_string())),
+            TxData(1, 3, ":age".to_string(), Number(37)),
+            TxData(1, 4, ":age".to_string(), Number(15)),
+        ];
+
+        cases.append(&mut vec![
+            Case {
+                description: "[:find ?e :where [?e :name]]",
+                plan: Plan::Project(Project {
+                    variables: vec![0],
+                    plan: Box::new(Plan::Hector(Hector {
+                        variables: vec![0, 1],
+                        bindings: vec![Binding::attribute(0, ":name", 1)],
+                    })),
+                }),
+                transactions: vec![data.clone()],
+                expectations: vec![vec![
+                    (vec![Eid(1)], 0, 1),
+                    (vec![Eid(2)], 0, 1),
+                    (vec![Eid(3)], 0, 1),
+                ]],
+            },
+            // Case {
+            //     description: "[:find ?e ?v :where [?e :name 'Ivan'] [?e :age ?v]]",
+            //     plan: Plan::Project(Project {
+            //         variables: vec![0, 2],
+            //         plan: Box::new(Plan::Hector(Hector {
+            //             variables: vec![0, 1, 2],
+            //             bindings: vec![
+            //                 Binding::attribute(0, ":name", 1),
+            //                 Binding::constant(1, String("Ivan".to_string())),
+            //                 Binding::attribute(1, ":age", 2),
+            //             ],
+            //         }))
+            //     }),
+            //     transactions: vec![data.clone()],
+            //     expectations: vec![vec![
+            //         (vec![Eid(1), Number(15)], 0, 1),
+            //         (vec![Eid(3), Number(37)], 0, 1),
+            //     ]],
+            // },
+            Case {
+                description: "[:find ?e1 ?e2 :where [?e1 :name ?n] [?e2 :name ?n]]",
+                plan: Plan::Project(Project {
+                    variables: vec![0, 2],
+                    plan: Box::new(Plan::Hector(Hector {
+                        variables: vec![0, 1, 2],
+                        bindings: vec![
+                            Binding::attribute(0, ":name", 1),
+                            Binding::attribute(2, ":name", 1),
+                        ],
+                    })),
+                }),
+                transactions: vec![data.clone()],
+                expectations: vec![vec![
+                    (vec![Eid(1), Eid(1)], 0, 1),
+                    (vec![Eid(2), Eid(2)], 0, 1),
+                    (vec![Eid(3), Eid(3)], 0, 1),
+                    (vec![Eid(1), Eid(3)], 0, 1),
+                    (vec![Eid(3), Eid(1)], 0, 1),
+                ]],
+            },
+            // {
+            //     let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
+            //     Case {
+            //         description: "[:find ?e ?e2 ?n :where [?e :name 'Ivan'] [?e :age ?a] [?e2 :age ?a] [?e2 :name ?n]]",
+            //         plan: Plan::Project(Project {
+            //             variables: vec![e, e2, n],
+            //             plan: Box::new(Plan::Hector(Hector {
+            //                 variables: vec![e, c, a, e2, n],
+            //                 bindings: vec![
+            //                     Binding::attribute(e, ":name", c),
+            //                     Binding::constant(c, String("Ivan".to_string())),
+            //                     Binding::attribute(e, ":age", a),
+            //                     Binding::attribute(e2, ":age", a),
+            //                     Binding::attribute(e2, ":name", n),
+            //                 ],
+            //             }))
+            //         }),
+            //         transactions: vec![data.clone()],
+            //         expectations: vec![vec![
+            //             (vec![Eid(1), Eid(1), String("Ivan".to_string())], 0, 1),
+            //             (vec![Eid(3), Eid(3), String("Ivan".to_string())], 0, 1),
+            //             (vec![Eid(3), Eid(2), String("Petr".to_string())], 0, 1),
+            //         ]],
+            //     }
+            // },
+        ]);
+    }
+
+    {
+        // DataScript query/q-many
+
+        let data = vec![
+            TxData(1, 1, ":name".to_string(), String("Ivan".to_string())),
+            TxData(1, 1, ":aka".to_string(), String("ivolga".to_string())),
+            TxData(1, 1, ":aka".to_string(), String("pi".to_string())),
+            TxData(1, 2, ":name".to_string(), String("Petr".to_string())),
+            TxData(1, 2, ":aka".to_string(), String("porosenok".to_string())),
+            TxData(1, 2, ":aka".to_string(), String("pi".to_string())),
+        ];
+
+        let (e1, x, e2, n1, n2) = (0, 1, 2, 3, 4);
+
+        cases.push(Case {
+            description: "[:find ?n1 ?n2 :where [?e1 :aka ?x] [?e2 :aka ?x] [?e1 :name ?n1] [?e2 :name ?n2]]",
+            plan: Plan::Project(Project {
+                variables: vec![n1, n2],
+                plan: Box::new(Plan::Hector(Hector {
+                    variables: vec![e1, n1, x, e2, n2],
+                    bindings: vec![
+                        Binding::attribute(e1, ":aka", x),
+                        Binding::attribute(e2, ":aka", x),
+                        Binding::attribute(e1, ":name", n1),
+                        Binding::attribute(e2, ":name", n2),
+                    ],
+                })),
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![String("Ivan".to_string()), String("Ivan".to_string())], 0, 1),
+                (vec![String("Petr".to_string()), String("Petr".to_string())], 0, 1),
+                (vec![String("Ivan".to_string()), String("Petr".to_string())], 0, 1),
+                (vec![String("Petr".to_string()), String("Ivan".to_string())], 0, 1),
+            ]],
+        });
+    }
+
     for case in cases.drain(..) {
         timely::execute(Configuration::Thread, move |worker| {
             let mut server = Server::<u64, u64>::new(Default::default());
@@ -138,8 +274,14 @@ fn run_query_cases() {
 
             dbg!(case.description);
 
-            let deps = dependencies(&case);
+            let mut deps = dependencies(&case);
             let plan = case.plan.clone();
+
+            for tx in case.transactions.iter() {
+                for datum in tx {
+                    deps.insert(datum.2.clone());
+                }
+            }
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
@@ -154,7 +296,7 @@ fn run_query_cases() {
                     .test_single(
                         scope,
                         Rule {
-                            name: "hector".to_string(),
+                            name: "query".to_string(),
                             plan,
                         },
                     )

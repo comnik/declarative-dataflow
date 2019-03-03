@@ -80,7 +80,7 @@ impl<P: Implementable> Implementable for Filter<P> {
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let (relation, shutdown_buttons) = self.plan.implement(nested, local_arrangements, context);
+        let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
 
         let key_offsets: Vec<usize> = self
             .variables
@@ -126,6 +126,6 @@ impl<P: Implementable> Implementable for Filter<P> {
             }
         };
 
-        (filtered, shutdown_buttons)
+        (filtered, shutdown_handle)
     }
 }

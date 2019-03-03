@@ -58,7 +58,7 @@ impl<P: Implementable> Implementable for Project<P> {
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let (relation, shutdown_buttons) = self.plan.implement(nested, local_arrangements, context);
+        let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
         let tuples = relation
             .tuples_by_symbols(&self.variables)
             .map(|(key, _tuple)| key);
@@ -68,6 +68,6 @@ impl<P: Implementable> Implementable for Project<P> {
             tuples,
         };
 
-        (projected, shutdown_buttons)
+        (projected, shutdown_handle)
     }
 }

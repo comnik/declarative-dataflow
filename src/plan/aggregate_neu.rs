@@ -31,7 +31,7 @@ pub enum AggregationFn {
     SUM,
     /// Average
     AVG,
-    ///Varianve
+    /// Variance
     VARIANCE,
     // /// Standard deviation
     // STDDEV,
@@ -76,7 +76,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let (relation, shutdown_buttons) = self.plan.implement(nested, local_arrangements, context);
+        let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
 
         // We split the incoming tuples into their (key, value) parts.
         let tuples = relation.tuples_by_symbols(&self.key_symbols);
@@ -248,7 +248,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 }),
             };
 
-            (relation, shutdown_buttons)
+            (relation, shutdown_handle)
         } else {
             // @TODO replace this with a join application
             let left = collections.remove(0);
@@ -271,7 +271,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 }),
             };
 
-            (relation, shutdown_buttons)
+            (relation, shutdown_handle)
         }
     }
 }
