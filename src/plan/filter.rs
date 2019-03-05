@@ -57,8 +57,8 @@ impl<P: Implementable> Implementable for Filter<P> {
     }
 
     fn into_bindings(&self) -> Vec<Binding> {
-        let mut bindings = self.plan.into_bindings();
-        let variables = self.variables.clone();
+        // let mut bindings = self.plan.into_bindings();
+        // let variables = self.variables.clone();
 
         unimplemented!();
         // bindings.push(Binding::BinaryPredicate(BinaryPredicateBinding {

@@ -36,7 +36,7 @@ impl Sourceable for CsvFile {
     fn source<S: Scope<Timestamp = Self::Timestamp>>(
         &self,
         scope: &S,
-        names: Vec<String>,
+        _names: Vec<String>,
     ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
         let filename = self.path.clone();
 
@@ -78,7 +78,7 @@ impl Sourceable for CsvFile {
                         // let mut fuel = 256;
                         let mut session = output.session(cap.as_ref().unwrap());
 
-                        while let Some(result) = iterator.next() {
+                        for result in iterator {
                             let record = result.expect("read error");
 
                             if datum_index % num_workers == worker_index {

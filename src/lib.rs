@@ -37,7 +37,10 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::{Arrange, Arranged, ShutdownButton, TraceAgent};
 use differential_dataflow::operators::iterate::Variable;
-use differential_dataflow::operators::{Consolidate, Threshold};
+#[cfg(not(feature = "set-semantics"))]
+use differential_dataflow::operators::Consolidate;
+#[cfg(feature = "set-semantics")]
+use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
 use differential_dataflow::trace::wrappers::enter::TraceEnter;
 use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt;
