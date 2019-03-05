@@ -157,34 +157,15 @@ where
     }
 }
 
-/// Orders the variables s.t. each has at least one binding from
-/// itself to a prior symbol. `source_binding` indicates the binding
-/// from which we will source the prefixes in the resulting delta
-/// pipeline. Returns the chosen variable order and the corresponding
-/// binding order.
-///
-/// (adapted from github.com/frankmcsherry/dataflow-join/src/motif.rs)
-pub fn plan_order(
-    variables: &[Var],
-    source_index: usize,
-    bindings: &[Binding],
-) -> (Vec<Var>, Vec<Binding>, Vec<Binding>) {
-    // Determine an order on the attributes. The order may not
-    // introduce a binding until one of its consituents is already
-    // bound by the prefix. These constraints are captured via the
-    // `AsBinding::can_extend` method. The order may otherwise be
-    // arbitrary, for example selecting the most constrained
-    // attribute first. Presently, we just pick attributes arbitrarily.
-    let mut prefix: Vec<Var> = Vec::with_capacity(variables.len());
-
-    // @TODO factor out conflict detection into a separate thing
+/// Bindings can be in conflict with the source binding of a given
+/// delta pipeline. We need to identify them and handle them as
+/// special cases, because we always have to start from prefixes of
+/// size two.
+pub fn source_conflicts(source_index: usize, bindings: &[Binding]) -> Vec<&Binding> {
     let mut conflicts = Vec::new();
 
     match bindings[source_index] {
         Binding::Attribute(ref source) => {
-            prefix.push(source.symbols.0);
-            prefix.push(source.symbols.1);
-
             for (index, binding) in bindings.iter().enumerate() {
                 // @TODO
                 match binding {
@@ -198,15 +179,45 @@ pub fn plan_order(
                         if index == source_index {
                             continue;
                         } else if binding.binds(source.symbols.0).is_some() {
-                            conflicts.push(binding.clone());
+                            conflicts.push(binding);
                         } else if binding.binds(source.symbols.1).is_some() {
-                            conflicts.push(binding.clone());
+                            conflicts.push(binding);
                         }
                     }
                 }
             }
         }
         _ => panic!("Source must be an AttributeBinding."),
+    }
+
+    conflicts
+}
+
+/// Orders the variables s.t. each has at least one binding from
+/// itself to a prior symbol. `source_binding` indicates the binding
+/// from which we will source the prefixes in the resulting delta
+/// pipeline. Returns the chosen variable order and the corresponding
+/// binding order.
+///
+/// (adapted from github.com/frankmcsherry/dataflow-join/src/motif.rs)
+pub fn plan_order(
+    variables: &[Var],
+    source_index: usize,
+    bindings: &[Binding],
+) -> (Vec<Var>, Vec<Binding>) {
+    // Determine an order on the attributes. The order may not
+    // introduce a binding until one of its consituents is already
+    // bound by the prefix. These constraints are captured via the
+    // `AsBinding::can_extend` method. The order may otherwise be
+    // arbitrary, for example selecting the most constrained
+    // attribute first. Presently, we just pick attributes arbitrarily.
+    let mut prefix: Vec<Var> = Vec::with_capacity(variables.len());
+    match bindings[source_index] {
+        Binding::Attribute(ref source) => {
+            prefix.push(source.symbols.0);
+            prefix.push(source.symbols.1);
+        }
+        _ => panic!("Source binding must be an attribute."),
     }
 
     let candidates_for = |bindings: &[Binding], target: Var| {
@@ -281,7 +292,7 @@ pub fn plan_order(
         ordered_bindings.push(candidate);
     }
 
-    (prefix, conflicts, ordered_bindings)
+    (prefix, ordered_bindings)
 }
 
 trait IndexNode<V> {

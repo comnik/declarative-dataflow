@@ -9,7 +9,7 @@ use timely::Configuration;
 
 use declarative_dataflow::binding::BinaryPredicate::LT;
 use declarative_dataflow::binding::{AsBinding, Binding};
-use declarative_dataflow::plan::hector::plan_order;
+use declarative_dataflow::plan::hector::{plan_order, source_conflicts};
 use declarative_dataflow::plan::Hector;
 use declarative_dataflow::server::Server;
 use declarative_dataflow::{Aid, AttributeSemantics, Plan, Rule, TxData, Value};
@@ -94,12 +94,32 @@ fn binding_readiness() {
     );
 }
 
+/// Ensures that conflicts involving the source binding are identified
+/// correctly.
+#[test]
+fn conflicts() {
+    let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
+    let bindings = vec![
+        Binding::attribute(e2, ":age", a),
+        Binding::attribute(e, ":age", a),
+        Binding::attribute(e, ":name", c),
+        Binding::attribute(e2, ":name", n),
+        Binding::constant(c, String("Ivan".to_string())),
+    ];
+
+    {
+        let conflicts = source_conflicts(2, &bindings);
+        assert_eq!(
+            conflicts,
+            vec![&Binding::constant(c, String("Ivan".to_string()))]
+        );
+    }
+}
+
 /// Ensures that a valid variable order is chosen depending on the
 /// current source binding.
 #[test]
 fn ordering() {
-    env_logger::init();
-
     let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
     let variables = vec![c, e2, n, a, e];
     let bindings = vec![
@@ -111,10 +131,9 @@ fn ordering() {
     ];
 
     {
-        let (variable_order, conflicts, binding_order) = plan_order(&variables, 0, &bindings);
+        let (variable_order, binding_order) = plan_order(&variables, 0, &bindings);
 
         assert_eq!(variable_order, vec![e2, a, e, n, c]);
-        assert_eq!(conflicts, vec![]);
         assert_eq!(
             binding_order,
             vec![
@@ -126,10 +145,9 @@ fn ordering() {
         );
     }
     {
-        let (variable_order, conflicts, binding_order) = plan_order(&variables, 1, &bindings);
+        let (variable_order, binding_order) = plan_order(&variables, 1, &bindings);
 
         assert_eq!(variable_order, vec![e, a, c, e2, n]);
-        assert_eq!(conflicts, vec![]);
         assert_eq!(
             binding_order,
             vec![
@@ -141,19 +159,16 @@ fn ordering() {
         );
     }
     {
-        let (variable_order, conflicts, binding_order) = plan_order(&variables, 2, &bindings);
+        let (variable_order, binding_order) = plan_order(&variables, 2, &bindings);
 
         assert_eq!(variable_order, vec![e, c, a, e2, n]);
         assert_eq!(
-            conflicts,
-            vec![Binding::constant(c, String("Ivan".to_string()))]
-        );
-        assert_eq!(
             binding_order,
             vec![
                 Binding::attribute(e, ":age", a),
                 Binding::attribute(e2, ":age", a),
                 Binding::attribute(e2, ":name", n),
+                Binding::constant(c, String("Ivan".to_string())),
             ]
         );
     }
