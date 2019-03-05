@@ -34,38 +34,111 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
     deps
 }
 
+fn run_cases(mut cases: Vec<Case>) {
+    for case in cases.drain(..) {
+        timely::execute(Configuration::Thread, move |worker| {
+            let mut server = Server::<u64, u64>::new(Default::default());
+            let (send_results, results) = channel();
+
+            dbg!(case.description);
+
+            let deps = dependencies(&case);
+            let plan = case.plan.clone();
+
+            worker.dataflow::<u64, _, _>(|scope| {
+                for dep in deps.iter() {
+                    server
+                        .context
+                        .internal
+                        .create_attribute(dep, AttributeSemantics::Raw, scope)
+                        .unwrap();
+                }
+
+                server
+                    .test_single(
+                        scope,
+                        Rule {
+                            name: "hector".to_string(),
+                            plan,
+                        },
+                    )
+                    .inner
+                    .sink(Pipeline, "Results", move |input| {
+                        input.for_each(|_time, data| {
+                            for datum in data.iter() {
+                                send_results.send(datum.clone()).unwrap()
+                            }
+                        });
+                    });
+            });
+
+            let mut transactions = case.transactions.clone();
+            let mut next_tx = 0;
+
+            for (tx_id, tx_data) in transactions.drain(..).enumerate() {
+                next_tx += 1;
+
+                server.transact(tx_data, 0, 0).unwrap();
+                server.advance_domain(None, next_tx).unwrap();
+
+                worker.step_while(|| server.is_any_outdated());
+
+                let mut expected: HashSet<(Vec<Value>, u64, isize)> =
+                    HashSet::from_iter(case.expectations[tx_id].iter().cloned());
+
+                for _i in 0..expected.len() {
+                    match results.recv_timeout(Duration::from_millis(400)) {
+                        Err(_err) => {
+                            panic!("No result.");
+                        }
+                        Ok(result) => {
+                            if !expected.remove(&result) {
+                                panic!("Unknown result {:?}.", result);
+                            }
+                        }
+                    }
+                }
+
+                match results.recv_timeout(Duration::from_millis(400)) {
+                    Err(_err) => {}
+                    Ok(result) => {
+                        panic!("Extraneous result {:?}", result);
+                    }
+                }
+            }
+        })
+        .unwrap();
+    }
+}
+
 #[test]
-fn run_aggregation_cases() {
-    let mut cases = vec![
+fn count() {
+    let (e, amount) = (1, 2);
+    let data = vec![
+        TxData(1, 1, ":amount".to_string(), Number(5)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 1, ":amount".to_string(), Number(2)),
+        TxData(1, 1, ":amount".to_string(), Number(4)),
+        TxData(1, 1, ":amount".to_string(), Number(6)),
+    ];
+
+    run_cases(vec![
         Case {
             description: "[:find (count ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![amount],
+                plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::Project(Project {
-                        variables: vec![amount],
-                        plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    })),
-                    aggregation_fns: vec![AggregationFn::COUNT],
-                    key_symbols: vec![],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![(vec![Number(6)], 0, 1)],
-            ],
+                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                })),
+                aggregation_fns: vec![AggregationFn::COUNT],
+                key_symbols: vec![],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![(vec![Number(6)], 0, 1)]],
             // set-semantics
             // expectations: vec![
             //     vec![(vec![Number(5)], 0, 1)],
@@ -73,33 +146,19 @@ fn run_aggregation_cases() {
         },
         Case {
             description: "[:find ?e (count ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
-                    variables: vec![e, amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    aggregation_fns: vec![AggregationFn::COUNT],
-                    key_symbols: vec![e],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![
-                    (vec![Eid(1), Number(4)], 0, 1),
-                    (vec![Eid(2), Number(2)], 0, 1),
-                ],
-            ],
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![e, amount],
+                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                aggregation_fns: vec![AggregationFn::COUNT],
+                key_symbols: vec![e],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![Eid(1), Number(4)], 0, 1),
+                (vec![Eid(2), Number(2)], 0, 1),
+            ]],
             // set-semantics
             // expectations: vec![
             //     vec![
@@ -108,155 +167,133 @@ fn run_aggregation_cases() {
             //     ],
             // ],
         },
+    ]);
+}
+
+#[test]
+fn max() {
+    let (e, amount) = (1, 2);
+    let data = vec![
+        TxData(1, 1, ":amount".to_string(), Number(5)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 1, ":amount".to_string(), Number(2)),
+        TxData(1, 1, ":amount".to_string(), Number(4)),
+        TxData(1, 1, ":amount".to_string(), Number(6)),
+    ];
+
+    run_cases(vec![
         Case {
             description: "[:find (max ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![amount],
+                plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::Project(Project {
-                        variables: vec![amount],
-                        plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    })),
-                    aggregation_fns: vec![AggregationFn::MAX],
-                    key_symbols: vec![],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![(vec![Number(10)], 0, 1)],
-            ],
+                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                })),
+                aggregation_fns: vec![AggregationFn::MAX],
+                key_symbols: vec![],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![(vec![Number(10)], 0, 1)]],
         },
         Case {
             description: "[:find ?e (max ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
-                    variables: vec![e, amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    aggregation_fns: vec![AggregationFn::MAX],
-                    key_symbols: vec![e],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![
-                    (vec![Eid(1), Number(6)], 0, 1),
-                    (vec![Eid(2), Number(10)], 0, 1),
-                ],
-            ],
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![e, amount],
+                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                aggregation_fns: vec![AggregationFn::MAX],
+                key_symbols: vec![e],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![Eid(1), Number(6)], 0, 1),
+                (vec![Eid(2), Number(10)], 0, 1),
+            ]],
         },
+    ]);
+}
+
+#[test]
+fn min() {
+    let (e, amount) = (1, 2);
+    let data = vec![
+        TxData(1, 1, ":amount".to_string(), Number(5)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 1, ":amount".to_string(), Number(2)),
+        TxData(1, 1, ":amount".to_string(), Number(4)),
+        TxData(1, 1, ":amount".to_string(), Number(6)),
+    ];
+
+    run_cases(vec![
         Case {
             description: "[:find (min ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![amount],
+                plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::Project(Project {
-                        variables: vec![amount],
-                        plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    })),
-                    aggregation_fns: vec![AggregationFn::MIN],
-                    key_symbols: vec![],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![(vec![Number(2)], 0, 1)],
-            ],
+                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                })),
+                aggregation_fns: vec![AggregationFn::MIN],
+                key_symbols: vec![],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![(vec![Number(2)], 0, 1)]],
         },
         Case {
             description: "[:find ?e (min ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
-                    variables: vec![e, amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    aggregation_fns: vec![AggregationFn::MIN],
-                    key_symbols: vec![e],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![
-                    (vec![Eid(1), Number(2)], 0, 1),
-                    (vec![Eid(2), Number(10)], 0, 1),
-                ],
-            ],
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![e, amount],
+                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                aggregation_fns: vec![AggregationFn::MIN],
+                key_symbols: vec![e],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![Eid(1), Number(2)], 0, 1),
+                (vec![Eid(2), Number(10)], 0, 1),
+            ]],
         },
+    ]);
+}
+
+#[test]
+fn sum() {
+    let (e, amount) = (1, 2);
+    let data = vec![
+        TxData(1, 1, ":amount".to_string(), Number(5)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 1, ":amount".to_string(), Number(2)),
+        TxData(1, 1, ":amount".to_string(), Number(4)),
+        TxData(1, 1, ":amount".to_string(), Number(6)),
+    ];
+
+    run_cases(vec![
         Case {
             description: "[:find (sum ?amount) :with ?e :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![amount],
+                plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::Project(Project {
-                        variables: vec![amount],
-                        plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    })),
-                    aggregation_fns: vec![AggregationFn::SUM],
-                    key_symbols: vec![],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![(vec![Number(37)], 0, 1)],
-            ],
+                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                })),
+                aggregation_fns: vec![AggregationFn::SUM],
+                key_symbols: vec![],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![(vec![Number(37)], 0, 1)]],
             // set-semantics
             // expectations: vec![
             //     vec![(vec![Number(27)], 0, 1)],
@@ -264,33 +301,19 @@ fn run_aggregation_cases() {
         },
         Case {
             description: "[:find ?e (sum ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
-                    variables: vec![e, amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    aggregation_fns: vec![AggregationFn::SUM],
-                    key_symbols: vec![e],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![
-                    (vec![Eid(1), Number(17)], 0, 1),
-                    (vec![Eid(2), Number(20)], 0, 1),
-                ],
-            ],
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![e, amount],
+                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                aggregation_fns: vec![AggregationFn::SUM],
+                key_symbols: vec![e],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![Eid(1), Number(17)], 0, 1),
+                (vec![Eid(2), Number(20)], 0, 1),
+            ]],
             // set-semantics
             // expectations: vec![
             //     vec![
@@ -299,35 +322,37 @@ fn run_aggregation_cases() {
             //     ],
             // ],
         },
+    ]);
+}
+
+#[test]
+fn avg() {
+    let (e, amount) = (1, 2);
+    let data = vec![
+        TxData(1, 1, ":amount".to_string(), Number(5)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 1, ":amount".to_string(), Number(2)),
+        TxData(1, 1, ":amount".to_string(), Number(4)),
+        TxData(1, 1, ":amount".to_string(), Number(6)),
+    ];
+
+    run_cases(vec![
         Case {
             description: "[:find (avg ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![amount],
+                plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::Project(Project {
-                        variables: vec![amount],
-                        plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    })),
-                    aggregation_fns: vec![AggregationFn::AVG],
-                    key_symbols: vec![],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![(vec![Rational32(Ratio::new(37, 6))], 0, 1)],
-            ],
+                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                })),
+                aggregation_fns: vec![AggregationFn::AVG],
+                key_symbols: vec![],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![(vec![Rational32(Ratio::new(37, 6))], 0, 1)]],
             // set-semantics
             // expectations: vec![
             //     vec![(vec![Rational32(Ratio::new(27, 5))], 0, 1)],
@@ -335,33 +360,19 @@ fn run_aggregation_cases() {
         },
         Case {
             description: "[:find ?e (avg ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
-                    variables: vec![e, amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    aggregation_fns: vec![AggregationFn::AVG],
-                    key_symbols: vec![e],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![
-                    (vec![Eid(1), Rational32(Ratio::new(17, 4))], 0, 1),
-                    (vec![Eid(2), Rational32(Ratio::new(20, 2))], 0, 1),
-                ],
-            ],
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![e, amount],
+                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                aggregation_fns: vec![AggregationFn::AVG],
+                key_symbols: vec![e],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![Eid(1), Rational32(Ratio::new(17, 4))], 0, 1),
+                (vec![Eid(2), Rational32(Ratio::new(20, 2))], 0, 1),
+            ]],
             // set-semantics
             // expectations: vec![
             //     vec![
@@ -370,35 +381,37 @@ fn run_aggregation_cases() {
             //     ],
             // ],
         },
+    ]);
+}
+
+#[test]
+fn variance() {
+    let (e, amount) = (1, 2);
+    let data = vec![
+        TxData(1, 1, ":amount".to_string(), Number(5)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 1, ":amount".to_string(), Number(2)),
+        TxData(1, 1, ":amount".to_string(), Number(4)),
+        TxData(1, 1, ":amount".to_string(), Number(6)),
+    ];
+
+    run_cases(vec![
         Case {
             description: "[:find (variance ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![amount],
+                plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::Project(Project {
-                        variables: vec![amount],
-                        plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    })),
-                    aggregation_fns: vec![AggregationFn::VARIANCE],
-                    key_symbols: vec![],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![(vec![Rational32(Ratio::new(317, 36))], 0, 1)],
-            ],
+                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                })),
+                aggregation_fns: vec![AggregationFn::VARIANCE],
+                key_symbols: vec![],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![(vec![Rational32(Ratio::new(317, 36))], 0, 1)]],
             // set-semantics
             // expectations: vec![
             //     vec![(vec![Rational32(Ratio::new(176, 25))], 0, 1)],
@@ -406,94 +419,74 @@ fn run_aggregation_cases() {
         },
         Case {
             description: "[:find ?e (variance ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
-                    variables: vec![e, amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    aggregation_fns: vec![AggregationFn::VARIANCE],
-                    key_symbols: vec![e],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![
-                    (vec![Eid(1), Rational32(Ratio::new(35, 16))], 0, 1),
-                    (vec![Eid(2), Rational32(Ratio::new(0, 1))], 0, 1),
-                ],
-            ],
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![e, amount],
+                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                aggregation_fns: vec![AggregationFn::VARIANCE],
+                key_symbols: vec![e],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![Eid(1), Rational32(Ratio::new(35, 16))], 0, 1),
+                (vec![Eid(2), Rational32(Ratio::new(0, 1))], 0, 1),
+            ]],
         },
+    ]);
+}
+
+#[test]
+fn median() {
+    let (e, amount) = (1, 2);
+    let data = vec![
+        TxData(1, 1, ":amount".to_string(), Number(5)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 2, ":amount".to_string(), Number(10)),
+        TxData(1, 1, ":amount".to_string(), Number(2)),
+        TxData(1, 1, ":amount".to_string(), Number(4)),
+        TxData(1, 1, ":amount".to_string(), Number(6)),
+    ];
+
+    run_cases(vec![
         Case {
             description: "[:find (median ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![amount],
+                plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::Project(Project {
-                        variables: vec![amount],
-                        plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    })),
-                    aggregation_fns: vec![AggregationFn::MEDIAN],
-                    key_symbols: vec![],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![(vec![Number(5)], 0, 1)],
-            ],
+                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                })),
+                aggregation_fns: vec![AggregationFn::MEDIAN],
+                key_symbols: vec![],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![(vec![Number(5)], 0, 1)]],
         },
         Case {
             description: "[:find ?e (median ?amount) :where [?e :amount ?amount]]",
-            plan: {
-                let (e, amount) = (1, 2);
-                Plan::Aggregate(Aggregate {
-                    variables: vec![e, amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                    aggregation_fns: vec![AggregationFn::MEDIAN],
-                    key_symbols: vec![e],
-                    aggregation_symbols: vec![amount],
-                    with_symbols: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(4)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                ],
-            ],
-            expectations: vec![
-                vec![
-                    (vec![Eid(1), Number(5)], 0, 1),
-                    (vec![Eid(2), Number(10)], 0, 1),
-                ],
-            ],
+            plan: Plan::Aggregate(Aggregate {
+                variables: vec![e, amount],
+                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                aggregation_fns: vec![AggregationFn::MEDIAN],
+                key_symbols: vec![e],
+                aggregation_symbols: vec![amount],
+                with_symbols: vec![],
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![Eid(1), Number(5)], 0, 1),
+                (vec![Eid(2), Number(10)], 0, 1),
+            ]],
         },
+    ]);
+}
+
+#[test]
+fn multiple_aggregations() {
+    run_cases(vec![
         Case {
             description:
             "[:find (max ?amount) (min ?debt) (sum ?amount) (avg ?debt) \
@@ -652,81 +645,6 @@ fn run_aggregation_cases() {
             expectations: vec![
                 vec![(vec![Number(6)], 0, 1)],
             ],
-        }
-    ];
-
-    for case in cases.drain(..) {
-        timely::execute(Configuration::Thread, move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
-            let (send_results, results) = channel();
-
-            dbg!(case.description);
-
-            let deps = dependencies(&case);
-            let plan = case.plan.clone();
-
-            worker.dataflow::<u64, _, _>(|scope| {
-                for dep in deps.iter() {
-                    server
-                        .context
-                        .internal
-                        .create_attribute(dep, AttributeSemantics::Raw, scope)
-                        .unwrap();
-                }
-
-                server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "hector".to_string(),
-                            plan,
-                        },
-                    )
-                    .inner
-                    .sink(Pipeline, "Results", move |input| {
-                        input.for_each(|_time, data| {
-                            for datum in data.iter() {
-                                send_results.send(datum.clone()).unwrap()
-                            }
-                        });
-                    });
-            });
-
-            let mut transactions = case.transactions.clone();
-            let mut next_tx = 0;
-
-            for (tx_id, tx_data) in transactions.drain(..).enumerate() {
-                next_tx += 1;
-
-                server.transact(tx_data, 0, 0).unwrap();
-                server.advance_domain(None, next_tx).unwrap();
-
-                worker.step_while(|| server.is_any_outdated());
-
-                let mut expected: HashSet<(Vec<Value>, u64, isize)> =
-                    HashSet::from_iter(case.expectations[tx_id].iter().cloned());
-
-                for _i in 0..expected.len() {
-                    match results.recv_timeout(Duration::from_millis(400)) {
-                        Err(_err) => {
-                            panic!("No result.");
-                        }
-                        Ok(result) => {
-                            if !expected.remove(&result) {
-                                panic!("Unknown result {:?}.", result);
-                            }
-                        }
-                    }
-                }
-
-                match results.recv_timeout(Duration::from_millis(400)) {
-                    Err(_err) => {}
-                    Ok(result) => {
-                        panic!("Extraneous result {:?}", result);
-                    }
-                }
-            }
-        })
-        .unwrap();
-    }
+        },
+    ]);
 }
