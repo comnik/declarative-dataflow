@@ -131,7 +131,7 @@ fn ordering() {
     ];
 
     {
-        let (variable_order, binding_order) = plan_order(&variables, 0, &bindings);
+        let (variable_order, binding_order) = plan_order(0, &bindings);
 
         assert_eq!(variable_order, vec![e2, a, e, n, c]);
         assert_eq!(
@@ -145,7 +145,7 @@ fn ordering() {
         );
     }
     {
-        let (variable_order, binding_order) = plan_order(&variables, 1, &bindings);
+        let (variable_order, binding_order) = plan_order(1, &bindings);
 
         assert_eq!(variable_order, vec![e, a, c, e2, n]);
         assert_eq!(
@@ -159,7 +159,7 @@ fn ordering() {
         );
     }
     {
-        let (variable_order, binding_order) = plan_order(&variables, 2, &bindings);
+        let (variable_order, binding_order) = plan_order(2, &bindings);
 
         assert_eq!(variable_order, vec![e, c, a, e2, n]);
         assert_eq!(

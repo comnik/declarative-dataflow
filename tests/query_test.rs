@@ -246,12 +246,9 @@ fn wco_joins() {
     run_cases(vec![
         Case {
             description: "[:find ?e :where [?e :name]]",
-            plan: Plan::Project(Project {
+            plan: Plan::Hector(Hector {
                 variables: vec![0],
-                plan: Box::new(Plan::Hector(Hector {
-                    variables: vec![0, 1],
-                    bindings: vec![Binding::attribute(0, ":name", 1)],
-                })),
+                bindings: vec![Binding::attribute(0, ":name", 1)],
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -262,16 +259,13 @@ fn wco_joins() {
         },
         Case {
             description: "[:find ?e ?v :where [?e :name Ivan] [?e :age ?v]]",
-            plan: Plan::Project(Project {
+            plan: Plan::Hector(Hector {
                 variables: vec![0, 2],
-                plan: Box::new(Plan::Hector(Hector {
-                    variables: vec![0, 1, 2],
-                    bindings: vec![
-                        Binding::attribute(0, ":name", 1),
-                        Binding::constant(1, String("Ivan".to_string())),
-                        Binding::attribute(0, ":age", 2),
-                    ],
-                })),
+                bindings: vec![
+                    Binding::attribute(0, ":name", 1),
+                    Binding::constant(1, String("Ivan".to_string())),
+                    Binding::attribute(0, ":age", 2),
+                ],
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -281,15 +275,12 @@ fn wco_joins() {
         },
         Case {
             description: "[:find ?e1 ?e2 :where [?e1 :name ?n] [?e2 :name ?n]]",
-            plan: Plan::Project(Project {
+            plan: Plan::Hector(Hector {
                 variables: vec![0, 2],
-                plan: Box::new(Plan::Hector(Hector {
-                    variables: vec![0, 1, 2],
-                    bindings: vec![
-                        Binding::attribute(0, ":name", 1),
-                        Binding::attribute(2, ":name", 1),
-                    ],
-                })),
+                bindings: vec![
+                    Binding::attribute(0, ":name", 1),
+                    Binding::attribute(2, ":name", 1),
+                ],
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -304,18 +295,15 @@ fn wco_joins() {
             let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
             Case {
                 description: "[:find ?e ?e2 ?n :where [?e :name Ivan] [?e :age ?a] [?e2 :age ?a] [?e2 :name ?n]]",
-                plan: Plan::Project(Project {
+                plan: Plan::Hector(Hector {
                     variables: vec![e, e2, n],
-                    plan: Box::new(Plan::Hector(Hector {
-                        variables: vec![e, c, a, e2, n],
-                        bindings: vec![
-                            Binding::attribute(e, ":name", c),
-                            Binding::constant(c, String("Ivan".to_string())),
-                            Binding::attribute(e, ":age", a),
-                            Binding::attribute(e2, ":age", a),
-                            Binding::attribute(e2, ":name", n),
-                        ],
-                    }))
+                    bindings: vec![
+                        Binding::attribute(e, ":name", c),
+                        Binding::constant(c, String("Ivan".to_string())),
+                        Binding::attribute(e, ":age", a),
+                        Binding::attribute(e2, ":age", a),
+                        Binding::attribute(e2, ":name", n),
+                    ],
                 }),
                 transactions: vec![data.clone()],
                 expectations: vec![vec![
@@ -344,17 +332,14 @@ fn wco_join_many() {
     run_cases(vec![Case {
         description:
             "[:find ?n1 ?n2 :where [?e1 :aka ?x] [?e2 :aka ?x] [?e1 :name ?n1] [?e2 :name ?n2]]",
-        plan: Plan::Project(Project {
+        plan: Plan::Hector(Hector {
             variables: vec![n1, n2],
-            plan: Box::new(Plan::Hector(Hector {
-                variables: vec![e1, n1, x, e2, n2],
-                bindings: vec![
-                    Binding::attribute(e1, ":aka", x),
-                    Binding::attribute(e2, ":aka", x),
-                    Binding::attribute(e1, ":name", n1),
-                    Binding::attribute(e2, ":name", n2),
-                ],
-            })),
+            bindings: vec![
+                Binding::attribute(e1, ":aka", x),
+                Binding::attribute(e2, ":aka", x),
+                Binding::attribute(e1, ":name", n1),
+                Binding::attribute(e2, ":name", n2),
+            ],
         }),
         transactions: vec![data.clone()],
         expectations: vec![vec![

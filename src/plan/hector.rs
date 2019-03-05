@@ -167,7 +167,7 @@ pub fn source_conflicts(source_index: usize, bindings: &[Binding]) -> Vec<&Bindi
     match bindings[source_index] {
         Binding::Attribute(ref source) => {
             for (index, binding) in bindings.iter().enumerate() {
-                // @TODO
+                // @TODO Not just constant bindings can cause issues here!
                 match binding {
                     Binding::Attribute(_) => {
                         continue;
@@ -200,17 +200,21 @@ pub fn source_conflicts(source_index: usize, bindings: &[Binding]) -> Vec<&Bindi
 /// binding order.
 ///
 /// (adapted from github.com/frankmcsherry/dataflow-join/src/motif.rs)
-pub fn plan_order(
-    variables: &[Var],
-    source_index: usize,
-    bindings: &[Binding],
-) -> (Vec<Var>, Vec<Binding>) {
+pub fn plan_order(source_index: usize, bindings: &[Binding]) -> (Vec<Var>, Vec<Binding>) {
+    let mut variables = bindings
+        .iter()
+        .flat_map(AsBinding::variables)
+        .collect::<Vec<Var>>();
+    variables.sort();
+    variables.dedup();
+
     // Determine an order on the attributes. The order may not
     // introduce a binding until one of its consituents is already
     // bound by the prefix. These constraints are captured via the
-    // `AsBinding::can_extend` method. The order may otherwise be
-    // arbitrary, for example selecting the most constrained
-    // attribute first. Presently, we just pick attributes arbitrarily.
+    // `AsBinding::ready_to_extend` method. The order may otherwise be
+    // arbitrary, for example selecting the most constrained attribute
+    // first. Presently, we just pick attributes arbitrarily.
+
     let mut prefix: Vec<Var> = Vec::with_capacity(variables.len());
     match bindings[source_index] {
         Binding::Attribute(ref source) => {
@@ -299,6 +303,18 @@ trait IndexNode<V> {
     fn index(&self, index: usize) -> V;
 }
 
+impl IndexNode<Value> for (Value, Value) {
+    #[inline(always)]
+    fn index(&self, index: usize) -> Value {
+        assert!(index <= 1);
+        if index == 0 {
+            self.0.clone()
+        } else {
+            self.1.clone()
+        }
+    }
+}
+
 impl IndexNode<Value> for Vec<Value> {
     #[inline(always)]
     fn index(&self, index: usize) -> Value {
@@ -344,16 +360,27 @@ impl Implementable for Hector {
                                 .validate_trace
                                 .import_core(&nested.parent, &format!("Validate({})", index.name));
 
+                            let prefix_symbols = binding.variables();
+                            let target_variables = self.variables.clone();
                             let tuples = validate
                                 .enter_at(nested, move |_, _, time| {
                                     let mut forwarded = time.clone();
                                     forwarded.advance_by(&frontier);
                                     Product::new(forwarded, 0)
                                 })
-                                .as_collection(|(e, v), ()| vec![e.clone(), v.clone()]);
+                                .as_collection(move |tuple, ()| {
+                                    target_variables
+                                        .iter()
+                                        .flat_map(|x| {
+                                            Some(tuple.index(
+                                                AsBinding::binds(&prefix_symbols, *x).unwrap(),
+                                            ))
+                                        })
+                                        .collect()
+                                });
 
                             let relation = CollectionRelation {
-                                symbols: vec![binding.symbols.0, binding.symbols.1],
+                                symbols: self.variables.clone(),
                                 tuples,
                             };
 
@@ -389,14 +416,16 @@ impl Implementable for Hector {
                     .flat_map(|(idx, delta_binding)| match delta_binding {
                         Binding::Attribute(delta_binding) => {
 
-                            // @TODO
                             // We need to determine an order on the attributes
                             // that ensures that each is bound by preceeding
                             // attributes. For now, we will take the requested order.
 
-                            let mut prefix_symbols = Vec::with_capacity(self.variables.len());
+                            // @TODO use binding order returned here?
+                            let (variables, _) = plan_order(idx, &self.bindings);
 
-                            debug!("---\nSource {:?}", delta_binding);
+                            let mut prefix_symbols = Vec::with_capacity(variables.len());
+
+                            debug!("Source {:?}", delta_binding);
 
                             // We would like to avoid starting with single-symbol
                             // (or even empty) prefixes, because the dataflow-y nature
@@ -406,20 +435,7 @@ impl Implementable for Hector {
                             // But to get away with that we need to check for single-symbol
                             // bindings in conflict with the source binding.
 
-                            // @TODO Not just constant bindings can cause issues here!
-
-                            let mut source_conflicts: Vec<&Binding> = self.bindings.iter()
-                                .filter(|other| {
-                                    match other {
-                                        Binding::Attribute(_) => false,
-                                        Binding::BinaryPredicate(_) => false,
-                                        _ => {
-                                            other.binds(delta_binding.symbols.0).is_some()
-                                                || other.binds(delta_binding.symbols.1).is_some()
-                                        }
-                                    }
-                                })
-                                .collect();
+                            let mut source_conflicts = source_conflicts(idx, &self.bindings);
 
                             let mut source = if !source_conflicts.is_empty() {
                                 // @TODO there can be more than one conflict
@@ -521,7 +537,7 @@ impl Implementable for Hector {
                                     .as_collection(|(e,v),()| vec![e.clone(), v.clone()])
                             };
 
-                            for target in self.variables.iter() {
+                            for target in variables.iter() {
                                 match AsBinding::binds(&prefix_symbols, *target) {
                                     Some(_) => { /* already bound */ continue },
                                     None => {
@@ -559,16 +575,14 @@ impl Implementable for Hector {
                                             // Ignore any binding not talking about the target symbol.
                                             if other.binds(*target).is_none() { continue; }
 
-                                            // @TODO
-                                            //
                                             // Ignore any binding that isn't ready to extend, either
                                             // because it doesn't even talk about the target symbol, or
                                             // because none of its dependent symbols are bound by the prefix
                                             // yet (relevant for attributes).
-                                            // if !other.can_extend(&prefix_symbols, *target) {
-                                            //     debug!("{:?} can't extend", other);
-                                            //     continue;
-                                            // }
+                                            if !other.can_extend(&prefix_symbols, *target) {
+                                                debug!("{:?} can't extend", other);
+                                                continue;
+                                            }
 
                                             let is_neu = other_idx >= idx;
 
@@ -704,11 +718,11 @@ impl Implementable for Hector {
                                 Some(source.inner)
                             } else {
                                 let target_variables = self.variables.clone();
+
                                 Some(source
                                      .map(move |tuple| {
-                                         // @TODO project here in one fell swoop
                                          target_variables.iter()
-                                             .map(|x| tuple.index(AsBinding::binds(&prefix_symbols, *x).unwrap()))
+                                             .flat_map(|x| Some(tuple.index(AsBinding::binds(&prefix_symbols, *x).unwrap())))
                                              .collect()
                                      })
                                      .inner)

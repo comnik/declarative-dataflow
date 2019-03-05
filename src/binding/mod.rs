@@ -6,6 +6,9 @@ use crate::{Aid, Value, Var};
 
 /// A thing that can act as a binding of values to symbols.
 pub trait AsBinding {
+    /// All variables bound by this binding.
+    fn variables(&self) -> Vec<Var>;
+
     /// Iff the binding has opinions about the given symbol, this will
     /// return the offset, otherwise None.
     fn binds(&self, sym: Var) -> Option<usize>;
@@ -23,14 +26,15 @@ pub trait AsBinding {
     /// Returns true iff the binding is ready to participate in the
     /// extension of a set of prefix symbols to a new symbol.
     fn can_extend(&self, prefix: &AsBinding, target: Var) -> bool {
-        match self.required_to_extend(prefix, target) {
-            None => false,
-            Some(requirement) => requirement.is_none(),
-        }
+        self.ready_to_extend(prefix) == Some(target)
     }
 }
 
 impl AsBinding for Vec<Var> {
+    fn variables(&self) -> Vec<Var> {
+        Vec::new()
+    }
+
     fn binds(&self, sym: Var) -> Option<usize> {
         self.iter().position(|&x| sym == x)
     }
@@ -91,6 +95,15 @@ impl Binding {
 }
 
 impl AsBinding for Binding {
+    fn variables(&self) -> Vec<Var> {
+        match *self {
+            Binding::Attribute(ref binding) => binding.variables(),
+            Binding::Not(ref binding) => binding.variables(),
+            Binding::Constant(ref binding) => binding.variables(),
+            Binding::BinaryPredicate(ref binding) => binding.variables(),
+        }
+    }
+
     fn binds(&self, sym: Var) -> Option<usize> {
         match *self {
             Binding::Attribute(ref binding) => binding.binds(sym),
@@ -131,6 +144,10 @@ pub struct AttributeBinding {
 }
 
 impl AsBinding for AttributeBinding {
+    fn variables(&self) -> Vec<Var> {
+        vec![self.symbols.0, self.symbols.1]
+    }
+
     fn binds(&self, sym: Var) -> Option<usize> {
         if self.symbols.0 == sym {
             Some(0)
@@ -195,6 +212,10 @@ pub struct AntijoinBinding {
 }
 
 impl AsBinding for AntijoinBinding {
+    fn variables(&self) -> Vec<Var> {
+        self.binding.variables()
+    }
+
     fn binds(&self, sym: Var) -> Option<usize> {
         self.binding.binds(sym)
     }
@@ -224,6 +245,10 @@ pub struct ConstantBinding {
 }
 
 impl AsBinding for ConstantBinding {
+    fn variables(&self) -> Vec<Var> {
+        vec![self.symbol]
+    }
+
     fn binds(&self, sym: Var) -> Option<usize> {
         if self.symbol == sym {
             Some(0)
@@ -284,6 +309,10 @@ pub struct BinaryPredicateBinding {
 }
 
 impl AsBinding for BinaryPredicateBinding {
+    fn variables(&self) -> Vec<Var> {
+        vec![self.symbols.0, self.symbols.1]
+    }
+
     fn binds(&self, sym: Var) -> Option<usize> {
         if self.symbols.0 == sym {
             Some(0)
