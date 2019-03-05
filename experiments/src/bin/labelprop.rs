@@ -1,22 +1,18 @@
 #[global_allocator]
 static ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-extern crate declarative_dataflow;
-extern crate differential_dataflow;
-extern crate timely;
-
 use std::sync::mpsc::channel;
 use std::time::Instant;
 
 use timely::Configuration;
 
-use differential_dataflow::operators::group::Count;
-use differential_dataflow::operators::Consolidate;
+use differential_dataflow::operators::{Consolidate, Count};
 
 use declarative_dataflow::plan::{Aggregate, AggregationFn, Join, Union};
 use declarative_dataflow::server::{Register, RegisterSource, Server};
 use declarative_dataflow::sources::{CsvFile, Source};
 use declarative_dataflow::{Plan, Rule, Value};
+use Value::Eid;
 
 fn main() {
     timely::execute(Configuration::Thread, move |worker| {
@@ -54,48 +50,60 @@ fn main() {
         let edge_source = RegisterSource {
             names: vec![":edge".to_string()],
             source: Source::CsvFile(CsvFile {
-                separator: ' ',
+                has_headers: false,
+                delimiter: b' ',
                 path: "/Users/niko/data/labelprop/edges.httpd_df".to_string(),
-                schema: vec![(1, Value::Eid(0))],
+                eid_offset: 0,
+                timestamp_offset: None,
+                flexible: false,
+                comment: None,
+                schema: vec![(1, Eid(0))],
             }),
         };
         let node_source = RegisterSource {
             names: vec![":node".to_string()],
             source: Source::CsvFile(CsvFile {
-                separator: ' ',
+                has_headers: false,
+                delimiter: b' ',
                 path: "/Users/niko/data/labelprop/nodes.httpd_df".to_string(),
-                schema: vec![(1, Value::Eid(0))],
+                eid_offset: 0,
+                timestamp_offset: None,
+                flexible: false,
+                comment: None,
+                schema: vec![(1, Eid(0))],
             }),
         };
 
         worker.dataflow::<u64, _, _>(|scope| {
-            server.register_source(edge_source, scope);
-            server.register_source(node_source, scope);
-
-            server.register(Register {
-                rules,
-                publish: vec!["labelprop".to_string()],
-            });
+            server.register_source(edge_source, scope).unwrap();
+            server.register_source(node_source, scope).unwrap();
 
             server
-                .interest("labelprop", scope)
-                .import(scope)
-                .as_collection(|tuple, _| tuple.clone())
-                .map(|_x| ())
-                .consolidate()
-                .count()
-                .probe_with(&mut server.probe)
-                .inspect(move |x| {
-                    send_results.send((x.0.clone(), x.2)).unwrap();
-                });
+                .register(Register {
+                    rules,
+                    publish: vec!["labelprop".to_string()],
+                })
+                .unwrap();
+
+            match server.interest("labelprop", scope) {
+                Err(error) => panic!(error),
+                Ok(relation) => {
+                    relation
+                        .map(|_x| ())
+                        .consolidate()
+                        .count()
+                        .probe_with(&mut server.probe)
+                        .inspect(move |x| {
+                            send_results.send((x.0.clone(), x.2)).unwrap();
+                        });
+                }
+            }
         });
 
         let timer = Instant::now();
-        while !server.probe.done() {
-            worker.step();
-        }
+        worker.step_while(|| !server.probe.done());
 
-        dbg!(results.recv().unwrap());
+        assert_eq!(results.recv().unwrap(), (((), 9393283), 1));
         // assert_eq!(dbg!(results.recv().unwrap()), (vec![Value::Number(9393283)], 1));
         println!("Finished. {:?}", timer.elapsed());
     })

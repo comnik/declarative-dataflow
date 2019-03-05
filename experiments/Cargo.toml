@@ -10,5 +10,6 @@ timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features =
 differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
 graph_map = "0.1"
 
-[dependencies.declarative_dataflow]
+[dependencies.declarative-dataflow]
 path = ".."
+features = ["csv-source"]

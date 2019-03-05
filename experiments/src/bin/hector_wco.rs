@@ -3,7 +3,8 @@ use graph_map::GraphMMap;
 use declarative_dataflow::binding::{AttributeBinding, Binding};
 use declarative_dataflow::plan::Hector;
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Plan, Rule, TxData, Value, AttributeSemantics};
+use declarative_dataflow::{q, AttributeSemantics, Plan, Rule, TxData, Value};
+use Value::Eid;
 
 fn main() {
     let filename = std::env::args().nth(1).unwrap();

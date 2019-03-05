@@ -78,7 +78,7 @@ impl Sourceable for CsvFile {
                         // let mut fuel = 256;
                         let mut session = output.session(cap.as_ref().unwrap());
 
-                        for result in iterator {
+                        while let Some(result) = iterator.next() {
                             let record = result.expect("read error");
 
                             if datum_index % num_workers == worker_index {
