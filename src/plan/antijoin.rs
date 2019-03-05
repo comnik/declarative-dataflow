@@ -13,8 +13,8 @@ use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
-/// symbols. Throws if the sources are not union-compatible, i.e. bind
-/// all of the same symbols in the same order.
+/// variables. Throws if the sources are not union-compatible, i.e. bind
+/// all of the same variables in the same order.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Antijoin<P1: Implementable, P2: Implementable> {
     /// TODO
@@ -31,6 +31,18 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
             self.left_plan.dependencies(),
             self.right_plan.dependencies(),
         )
+    }
+
+    fn into_bindings(&self) -> Vec<Binding> {
+        unimplemented!();
+        // let mut left_bindings = self.left_plan.into_bindings();
+        // let mut right_bindings = self.right_plan.into_bindings();
+
+        // let mut bindings = Vec::with_capacity(left_bindings.len() + right_bindings.len());
+        // bindings.append(&mut left_bindings);
+        // bindings.append(&mut right_bindings);
+
+        // bindings
     }
 
     fn implement<'b, T, I, S>(
@@ -51,12 +63,12 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
             self.right_plan
                 .implement(nested, local_arrangements, context);
 
-        let symbols = self
+        let variables = self
             .variables
             .iter()
             .cloned()
             .chain(
-                left.symbols()
+                left.variables()
                     .iter()
                     .filter(|x| !self.variables.contains(x))
                     .cloned(),
@@ -64,11 +76,11 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
             .collect();
 
         let tuples = left
-            .tuples_by_symbols(&self.variables)
+            .tuples_by_variables(&self.variables)
             .distinct()
             .antijoin(
                 &right
-                    .tuples_by_symbols(&self.variables)
+                    .tuples_by_variables(&self.variables)
                     .map(|(key, _)| key)
                     .distinct(),
             )
@@ -76,6 +88,6 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
 
         let shutdown_handle = ShutdownHandle::merge(shutdown_left, shutdown_right);
 
-        (CollectionRelation { symbols, tuples }, shutdown_handle)
+        (CollectionRelation { variables, tuples }, shutdown_handle)
     }
 }

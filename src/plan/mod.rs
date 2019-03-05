@@ -207,7 +207,7 @@ pub enum Plan {
 }
 
 impl Plan {
-    /// Returns the symbols bound by this plan.
+    /// Returns the variables bound by this plan.
     pub fn variables(&self) -> Vec<Var> {
         match *self {
             Plan::Project(ref projection) => projection.variables.clone(),
@@ -348,7 +348,7 @@ impl Implementable for Plan {
             Plan::Negate(ref plan) => {
                 let (relation, shutdown) = plan.implement(nested, local_arrangements, context);
                 let negated = CollectionRelation {
-                    symbols: relation.symbols().to_vec(),
+                    variables: relation.variables().to_vec(),
                     tuples: relation.tuples().negate(),
                 };
 
@@ -379,7 +379,7 @@ impl Implementable for Plan {
                 };
 
                 let relation = CollectionRelation {
-                    symbols: vec![sym1, sym2],
+                    variables: vec![sym1, sym2],
                     tuples,
                 };
 
@@ -407,7 +407,7 @@ impl Implementable for Plan {
                 };
 
                 let relation = CollectionRelation {
-                    symbols: vec![sym1],
+                    variables: vec![sym1],
                     tuples,
                 };
 
@@ -436,7 +436,7 @@ impl Implementable for Plan {
                 };
 
                 let relation = CollectionRelation {
-                    symbols: vec![sym1],
+                    variables: vec![sym1],
                     tuples,
                 };
 
@@ -448,7 +448,7 @@ impl Implementable for Plan {
                         None => panic!("{:?} not in relation map", name),
                         Some(named) => {
                             let relation = CollectionRelation {
-                                symbols: syms.clone(),
+                                variables: syms.clone(),
                                 tuples: named.deref().clone(), // @TODO re-use variable directly?
                             };
 
@@ -470,7 +470,7 @@ impl Implementable for Plan {
                                 named.import_core(&nested.parent, name);
 
                             let relation = CollectionRelation {
-                                symbols: syms.clone(),
+                                variables: syms.clone(),
                                 tuples: arranged
                                     .enter_at(nested, move |_, _, time| {
                                         let mut forwarded = time.clone();

@@ -38,7 +38,7 @@ pub enum AggregationFn {
 }
 
 /// [WIP] A plan stage applying the specified aggregation functions to
-/// bindings for the specified symbols. Given multiple aggregations
+/// bindings for the specified variables. Given multiple aggregations
 /// we iterate and n-1 joins are applied to the results.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Aggregate<P: Implementable> {
@@ -48,12 +48,12 @@ pub struct Aggregate<P: Implementable> {
     pub plan: Box<P>,
     /// Logical predicate to apply.
     pub aggregation_fns: Vec<AggregationFn>,
-    /// Relation symbols that determine the grouping.
-    pub key_symbols: Vec<Var>,
-    /// Aggregation symbols
-    pub aggregation_symbols: Vec<Var>,
-    /// With symbols
-    pub with_symbols: Vec<Var>,
+    /// Relation variables that determine the grouping.
+    pub key_variables: Vec<Var>,
+    /// Aggregation variables
+    pub aggregation_variables: Vec<Var>,
+    /// With variables
+    pub with_variables: Vec<Var>,
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
@@ -79,7 +79,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
 
         // We split the incoming tuples into their (key, value) parts.
-        let tuples = relation.tuples_by_symbols(&self.key_symbols);
+        let tuples = relation.tuples_by_variables(&self.key_variables);
 
         // For each aggregation function that is to be applied, we
         // need to determine the index (into the value part of each
@@ -88,12 +88,12 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         let mut value_offsets = Vec::new();
         let mut seen = Vec::new();
 
-        for sym in self.aggregation_symbols.iter() {
-            if !seen.contains(&sym) {
-                seen.push(&sym);
+        for variable in self.aggregation_variables.iter() {
+            if !seen.contains(&variable) {
+                seen.push(&variable);
                 value_offsets.push(seen.len() - 1);
             } else {
-                value_offsets.push(seen.iter().position(|&v| sym == v).unwrap());
+                value_offsets.push(seen.iter().position(|&v| variable == v).unwrap());
             }
         }
 
@@ -104,8 +104,8 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         let mut variables = self.variables.clone();
         let mut output_offsets = Vec::new();
 
-        for sym in self.aggregation_symbols.iter() {
-            let output_index = variables.iter().position(|&v| *sym == v).unwrap();
+        for variable in self.aggregation_variables.iter() {
+            let output_index = variables.iter().position(|&v| *variable == v).unwrap();
             output_offsets.push(output_index);
 
             variables[output_index] = 0;
@@ -117,14 +117,14 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         // resulting collections, s.t. they can be joined afterwards.
         for (i, aggregation_fn) in self.aggregation_fns.iter().enumerate() {
             let value_offset = value_offsets[i];
-            let with_length = self.with_symbols.len();
+            let with_length = self.with_variables.len();
 
             // Access the right value for the given iteration loop and extend possible with-values.
             let prepare_unary = move |(key, tuple): (Vec<Value>, Vec<Value>)| {
                 let value = &tuple[value_offset];
                 let mut v = vec![value.clone()];
 
-                // With-symbols are always the last elements in the
+                // With-variables are always the last elements in the
                 // value part of each tuple, given they are specified.
                 // We append these, s.t. we consolidate correctly.
                 if with_length > 0 {
@@ -239,7 +239,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         if collections.len() == 1 {
             let output_index = output_offsets[0];
             let relation = CollectionRelation {
-                symbols: self.variables.to_vec(),
+                variables: self.variables.to_vec(),
                 tuples: collections[0].map(move |(key, val)| {
                     let mut k = key.clone();
                     let v = val[0].clone();
@@ -261,7 +261,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
             });
 
             let relation = CollectionRelation {
-                symbols: self.variables.to_vec(),
+                variables: self.variables.to_vec(),
                 tuples: tuples.map(move |(key, vals)| {
                     let mut v = key.clone();
                     for (i, val) in vals.iter().enumerate() {

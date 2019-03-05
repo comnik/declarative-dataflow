@@ -14,7 +14,7 @@ use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionRelation, Relation, ShutdownHandle, VariableMap};
 
 /// A plan stage joining two source relations on the specified
-/// symbols. Throws if any of the join symbols isn't bound by both
+/// variables. Throws if any of the join variables isn't bound by both
 /// sources.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Join<P1: Implementable, P2: Implementable> {
@@ -90,27 +90,27 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
             self.right_plan
                 .implement(nested, local_arrangements, context);
 
-        let symbols = self
+        let variables = self
             .variables
             .iter()
             .cloned()
             .chain(
-                left.symbols()
+                left.variables()
                     .iter()
                     .filter(|x| !self.variables.contains(x))
                     .cloned(),
             )
             .chain(
                 right
-                    .symbols()
+                    .variables()
                     .iter()
                     .filter(|x| !self.variables.contains(x))
                     .cloned(),
             )
             .collect();
 
-        let tuples = left.arrange_by_symbols(&self.variables).join_core(
-            &right.arrange_by_symbols(&self.variables),
+        let tuples = left.arrange_by_variables(&self.variables).join_core(
+            &right.arrange_by_variables(&self.variables),
             |key, v1, v2| {
                 Some(
                     key.iter()
@@ -124,6 +124,6 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
 
         let shutdown_handle = ShutdownHandle::merge(shutdown_left, shutdown_right);
 
-        (CollectionRelation { symbols, tuples }, shutdown_handle)
+        (CollectionRelation { variables, tuples }, shutdown_handle)
     }
 }

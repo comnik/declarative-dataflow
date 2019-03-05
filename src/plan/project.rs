@@ -13,8 +13,8 @@ use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionRelation, Relation, ShutdownHandle, VariableMap};
 
 /// A plan stage projecting its source to only the specified sequence
-/// of symbols. Throws on unbound symbols. Frontends are responsible
-/// for ensuring that the source binds all requested symbols.
+/// of variables. Throws on unbound variables. Frontends are responsible
+/// for ensuring that the source binds all requested variables.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Project<P: Implementable> {
     /// TODO
@@ -60,11 +60,11 @@ impl<P: Implementable> Implementable for Project<P> {
     {
         let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
         let tuples = relation
-            .tuples_by_symbols(&self.variables)
+            .tuples_by_variables(&self.variables)
             .map(|(key, _tuple)| key);
 
         let projected = CollectionRelation {
-            symbols: self.variables.to_vec(),
+            variables: self.variables.to_vec(),
             tuples,
         };
 

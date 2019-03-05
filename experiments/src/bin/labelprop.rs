@@ -44,7 +44,7 @@ fn main() {
                 plan: Plan::NameExpr(vec![x, y], "label".to_string()),
                 // plan: Plan::Aggregate(Aggregate {
                 //     variables: vec![x, y],
-                //     key_symbols: vec![],
+                //     key_variables: vec![],
                 //     plan: Box::new(Plan::NameExpr(vec![x, y], "label".to_string())),
                 //     aggregation_fn: AggregationFn::COUNT
                 // })

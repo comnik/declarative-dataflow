@@ -64,7 +64,7 @@ where
 {
     fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
-        prefix_symbols: &B,
+        prefix: &B,
     ) -> Vec<Extender<'a, S, P, V>>;
 }
 
@@ -75,7 +75,7 @@ where
 {
     fn into_extender<P: Data + IndexNode<Value>, B: AsBinding + std::fmt::Debug>(
         &self,
-        _prefix_symbols: &B,
+        _prefix: &B,
     ) -> Vec<Extender<'a, S, P, Value>> {
         vec![Box::new(ConstantExtender {
             phantom: std::marker::PhantomData,
@@ -92,11 +92,11 @@ where
 {
     fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
-        prefix_symbols: &B,
+        prefix: &B,
     ) -> Vec<Extender<'a, S, P, V>> {
-        match direction(prefix_symbols, self.symbols) {
+        match direction(prefix, self.variables) {
             Err(_msg) => {
-                // We won't panic here, this just means the predicate's symbols
+                // We won't panic here, this just means the predicate's variables
                 // aren't sufficiently bound by the prefixes yet.
                 vec![]
             }
@@ -114,11 +114,11 @@ where
 //
 
 /// A plan stage joining two source relations on the specified
-/// symbols. Throws if any of the join symbols isn't bound by both
+/// variables. Throws if any of the join variables isn't bound by both
 /// sources.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Hector {
-    /// Symbols to bind.
+    /// Variables to bind.
     pub variables: Vec<Var>,
     /// Bindings to join.
     pub bindings: Vec<Binding>,
@@ -129,26 +129,26 @@ enum Direction {
     Reverse(usize),
 }
 
-fn direction<P>(prefix_symbols: &P, extender_symbols: (Var, Var)) -> Result<Direction, &'static str>
+fn direction<P>(prefix: &P, extender_variables: (Var, Var)) -> Result<Direction, &'static str>
 where
     P: AsBinding + std::fmt::Debug,
 {
-    match AsBinding::binds(prefix_symbols, extender_symbols.0) {
-        None => match AsBinding::binds(prefix_symbols, extender_symbols.1) {
+    match AsBinding::binds(prefix, extender_variables.0) {
+        None => match AsBinding::binds(prefix, extender_variables.1) {
             None => {
                 error!(
-                    "Neither extender symbol {:?} bound by prefix {:?}.",
-                    extender_symbols, prefix_symbols
+                    "Neither extender variable {:?} bound by prefix {:?}.",
+                    extender_variables, prefix
                 );
-                Err("Neither extender symbol bound by prefix.")
+                Err("Neither extender variable bound by prefix.")
             }
             Some(offset) => Ok(Direction::Reverse(offset)),
         },
         Some(offset) => {
-            match AsBinding::binds(prefix_symbols, extender_symbols.1) {
-                Some(_) => Err("Both extender symbols already bound by prefix."),
+            match AsBinding::binds(prefix, extender_variables.1) {
+                Some(_) => Err("Both extender variables already bound by prefix."),
                 None => {
-                    // Prefix binds the first extender symbol, but not
+                    // Prefix binds the first extender variable, but not
                     // the second. Can use forward index.
                     Ok(Direction::Forward(offset))
                 }
@@ -164,18 +164,17 @@ where
 pub fn source_conflicts(source_index: usize, bindings: &[Binding]) -> Vec<&Binding> {
     match bindings[source_index] {
         Binding::Attribute(ref source) => {
-            let prefix_0 = vec![source.symbols.0];
-            let prefix_1 = vec![source.symbols.1];
+            let prefix_0 = vec![source.variables.0];
+            let prefix_1 = vec![source.variables.1];
 
             bindings
                 .iter()
                 .enumerate()
                 .flat_map(|(index, binding)| {
-                    // @TODO Not just constant bindings can cause issues here!
                     if index == source_index {
                         None
-                    } else if binding.can_extend(&prefix_0, source.symbols.1)
-                        || binding.can_extend(&prefix_1, source.symbols.0)
+                    } else if binding.can_extend(&prefix_0, source.variables.1)
+                        || binding.can_extend(&prefix_1, source.variables.0)
                     {
                         Some(binding)
                     } else {
@@ -189,7 +188,7 @@ pub fn source_conflicts(source_index: usize, bindings: &[Binding]) -> Vec<&Bindi
 }
 
 /// Orders the variables s.t. each has at least one binding from
-/// itself to a prior symbol. `source_binding` indicates the binding
+/// itself to a prior variable. `source_binding` indicates the binding
 /// from which we will source the prefixes in the resulting delta
 /// pipeline. Returns the chosen variable order and the corresponding
 /// binding order.
@@ -213,8 +212,8 @@ pub fn plan_order(source_index: usize, bindings: &[Binding]) -> (Vec<Var>, Vec<B
     let mut prefix: Vec<Var> = Vec::with_capacity(variables.len());
     match bindings[source_index] {
         Binding::Attribute(ref source) => {
-            prefix.push(source.symbols.0);
-            prefix.push(source.symbols.1);
+            prefix.push(source.variables.0);
+            prefix.push(source.variables.1);
         }
         _ => panic!("Source binding must be an attribute."),
     }
@@ -340,7 +339,7 @@ impl Implementable for Hector {
         if self.bindings.is_empty() {
             panic!("No bindings passed.");
         } else if self.variables.is_empty() {
-            panic!("No symbols requested.");
+            panic!("No variables requested.");
         } else if self.bindings.len() == 1 {
             // With only a single binding given, we don't want to do
             // anything fancy (provided the binding is sourceable).
@@ -355,7 +354,7 @@ impl Implementable for Hector {
                                 .validate_trace
                                 .import_core(&nested.parent, &format!("Validate({})", index.name));
 
-                            let prefix_symbols = binding.variables();
+                            let prefix = binding.variables();
                             let target_variables = self.variables.clone();
                             let tuples = validate
                                 .enter_at(nested, move |_, _, time| {
@@ -367,15 +366,15 @@ impl Implementable for Hector {
                                     target_variables
                                         .iter()
                                         .flat_map(|x| {
-                                            Some(tuple.index(
-                                                AsBinding::binds(&prefix_symbols, *x).unwrap(),
-                                            ))
+                                            Some(
+                                                tuple.index(AsBinding::binds(&prefix, *x).unwrap()),
+                                            )
                                         })
                                         .collect()
                                 });
 
                             let relation = CollectionRelation {
-                                symbols: self.variables.clone(),
+                                variables: self.variables.clone(),
                                 tuples,
                             };
 
@@ -418,34 +417,36 @@ impl Implementable for Hector {
                             // @TODO use binding order returned here?
                             let (variables, _) = plan_order(idx, &self.bindings);
 
-                            let mut prefix_symbols = Vec::with_capacity(variables.len());
+                            let mut prefix = Vec::with_capacity(variables.len());
 
                             debug!("Source {:?}", delta_binding);
 
-                            // We would like to avoid starting with single-symbol
+                            // We would like to avoid starting with single-variable
                             // (or even empty) prefixes, because the dataflow-y nature
                             // of this implementation means we will always be starting
-                            // from attributes (which correspond to two-symbol prefixes).
+                            // from attributes (which correspond to two-variable prefixes).
                             // 
-                            // But to get away with that we need to check for single-symbol
+                            // But to get away with that we need to check for single-variable
                             // bindings in conflict with the source binding.
 
                             let mut source_conflicts = source_conflicts(idx, &self.bindings);
 
                             let mut source = if !source_conflicts.is_empty() {
+                                // @TODO Not just constant bindings can cause issues here!
+
                                 // @TODO there can be more than one conflict
                                 // for conflict in source_conflicts.drain(..) {
                                 let conflict = source_conflicts.pop().unwrap();
                                     match conflict {
                                         Binding::Constant(constant_binding) => {
-                                            prefix_symbols.push(constant_binding.symbol);
+                                            prefix.push(constant_binding.variable);
 
                                             let match_v = constant_binding.value.clone();
 
                                             // Guaranteed to intersect with offset zero at this point.
-                                            match direction(&prefix_symbols, delta_binding.symbols).unwrap() {
+                                            match direction(&prefix, delta_binding.variables).unwrap() {
                                                 Direction::Forward(_) => {
-                                                    prefix_symbols.push(delta_binding.symbols.1);
+                                                    prefix.push(delta_binding.variables.1);
 
                                                     let index = forward_cache
                                                         .entry(delta_binding.source_attribute.to_string())
@@ -472,7 +473,7 @@ impl Implementable for Hector {
                                                         .as_collection(|e,v| vec![e.clone(), v.clone()])
                                                 }
                                                 Direction::Reverse(_) => {
-                                                    prefix_symbols.push(delta_binding.symbols.0);
+                                                    prefix.push(delta_binding.variables.0);
 
                                                     let index = reverse_cache
                                                         .entry(delta_binding.source_attribute.to_string())
@@ -504,8 +505,8 @@ impl Implementable for Hector {
                                     }
                                 // }
                             } else {
-                                prefix_symbols.push(delta_binding.symbols.0);
-                                prefix_symbols.push(delta_binding.symbols.1);
+                                prefix.push(delta_binding.variables.0);
+                                prefix.push(delta_binding.variables.1);
 
                                 let index = forward_cache
                                     .entry(delta_binding.source_attribute.to_string())
@@ -533,10 +534,10 @@ impl Implementable for Hector {
                             };
 
                             for target in variables.iter() {
-                                match AsBinding::binds(&prefix_symbols, *target) {
+                                match AsBinding::binds(&prefix, *target) {
                                     Some(_) => { /* already bound */ continue },
                                     None => {
-                                        debug!("Extending {:?} to {:?}", prefix_symbols, target);
+                                        debug!("Extending {:?} to {:?}", prefix, target);
 
                                         let mut extenders: Vec<Extender<'_, _, Vec<Value>, _>> = vec![];
 
@@ -567,14 +568,14 @@ impl Implementable for Hector {
                                             // Ignore the current delta source itself.
                                             if other_idx == idx { continue; }
 
-                                            // Ignore any binding not talking about the target symbol.
+                                            // Ignore any binding not talking about the target variable.
                                             if other.binds(*target).is_none() { continue; }
 
                                             // Ignore any binding that isn't ready to extend, either
-                                            // because it doesn't even talk about the target symbol, or
-                                            // because none of its dependent symbols are bound by the prefix
+                                            // because it doesn't even talk about the target variable, or
+                                            // because none of its dependent variables are bound by the prefix
                                             // yet (relevant for attributes).
-                                            if !other.can_extend(&prefix_symbols, *target) {
+                                            if !other.can_extend(&prefix, *target) {
                                                 debug!("{:?} can't extend", other);
                                                 continue;
                                             }
@@ -598,13 +599,13 @@ impl Implementable for Hector {
                                                     );
                                                 }
                                                 Binding::Constant(other) => {
-                                                    extenders.append(&mut other.into_extender(&prefix_symbols));
+                                                    extenders.append(&mut other.into_extender(&prefix));
                                                 }
                                                 Binding::BinaryPredicate(other) => {
-                                                    extenders.append(&mut other.into_extender(&prefix_symbols));
+                                                    extenders.append(&mut other.into_extender(&prefix));
                                                 }
                                                 Binding::Attribute(other) => {
-                                                    match direction(&prefix_symbols, other.symbols) {
+                                                    match direction(&prefix, other.variables) {
                                                         Err(msg) => panic!(msg),
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
@@ -693,7 +694,7 @@ impl Implementable for Hector {
                                             }
                                         }
 
-                                        prefix_symbols.push(*target);
+                                        prefix.push(*target);
 
                                         // @TODO impl ProposeExtensionMethod for Arranged
                                         source = source
@@ -709,7 +710,7 @@ impl Implementable for Hector {
                                 }
                             }
 
-                            if self.variables == prefix_symbols {
+                            if self.variables == prefix {
                                 Some(source.inner)
                             } else {
                                 let target_variables = self.variables.clone();
@@ -717,7 +718,7 @@ impl Implementable for Hector {
                                 Some(source
                                      .map(move |tuple| {
                                          target_variables.iter()
-                                             .flat_map(|x| Some(tuple.index(AsBinding::binds(&prefix_symbols, *x).unwrap())))
+                                             .flat_map(|x| Some(tuple.index(AsBinding::binds(&prefix, *x).unwrap())))
                                              .collect()
                                      })
                                      .inner)
@@ -730,7 +731,7 @@ impl Implementable for Hector {
             });
 
             let relation = CollectionRelation {
-                symbols: self.variables.clone(),
+                variables: self.variables.clone(),
                 tuples: joined.distinct(),
             };
 

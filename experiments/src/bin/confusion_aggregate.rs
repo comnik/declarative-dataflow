@@ -30,8 +30,8 @@ fn main() {
                     right_plan: Box::new(Plan::MatchA(e, "target".to_string(), target)),
                 })),
                 aggregation_fns: vec![AggregationFn::COUNT],
-                key_symbols: vec![country, target],
-                with_symbols: vec![],
+                key_variables: vec![country, target],
+                with_variables: vec![],
             }),
         }];
 

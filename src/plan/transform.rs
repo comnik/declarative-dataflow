@@ -24,14 +24,14 @@ pub enum Function {
 
 /// A plan stage applying a built-in function to source tuples.
 /// Frontends are responsible for ensuring that the source
-/// binds the argument symbols and that the result is projected onto
-/// the right symbol.
+/// binds the argument variables and that the result is projected onto
+/// the right variable.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Transform<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
-    /// Symbol to which the result of the transformation is bound
-    pub result_sym: Var,
+    /// Variable to which the result of the transformation is bound
+    pub result_variable: Var,
     /// Plan for the data source
     pub plan: Box<P>,
     /// Function to apply
@@ -65,23 +65,23 @@ impl<P: Implementable> Implementable for Transform<P> {
         let key_offsets: Vec<usize> = self
             .variables
             .iter()
-            .map(|sym| {
+            .map(|variable| {
                 relation
-                    .symbols()
+                    .variables()
                     .iter()
-                    .position(|&v| *sym == v)
-                    .expect("Symbol not found.")
+                    .position(|&v| *variable == v)
+                    .expect("Variable not found.")
             })
             .collect();
 
-        let mut symbols = relation.symbols().to_vec();
-        symbols.push(self.result_sym);
+        let mut variables = relation.variables().to_vec();
+        variables.push(self.result_variable);
 
         let constants_local = self.constants.clone();
 
         let transformed = match self.function {
             Function::TRUNCATE => CollectionRelation {
-                symbols,
+                variables,
                 tuples: relation.tuples().map(move |tuple| {
                     let mut t = match tuple[key_offsets[0]] {
                         Value::Instant(inst) => inst as u64,
@@ -109,7 +109,7 @@ impl<P: Implementable> Implementable for Transform<P> {
                 }),
             },
             Function::ADD => CollectionRelation {
-                symbols,
+                variables,
                 tuples: relation.tuples().map(move |tuple| {
                     let mut result = 0;
 
@@ -141,9 +141,9 @@ impl<P: Implementable> Implementable for Transform<P> {
                 }),
             },
             Function::SUBTRACT => CollectionRelation {
-                symbols,
+                variables,
                 tuples: relation.tuples().map(move |tuple| {
-                    // minuend is either symbol or variable, depending on
+                    // minuend is either variable or variable, depending on
                     // position in transform
 
                     let mut result = match constants_local[0].clone() {

@@ -38,7 +38,7 @@ fn neq(a: &Value, b: &Value) -> bool {
 
 /// A plan stage filtering source tuples by the specified
 /// predicate. Frontends are responsible for ensuring that the source
-/// binds the argument symbols.
+/// binds the argument variables.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Filter<P: Implementable> {
     /// TODO
@@ -62,7 +62,7 @@ impl<P: Implementable> Implementable for Filter<P> {
 
         unimplemented!();
         // bindings.push(Binding::BinaryPredicate(BinaryPredicateBinding {
-        //     symbols: (variables[0], variables[1]),
+        //     variables: (variables[0], variables[1]),
         //     predicate: self.predicate.clone(),
         // }));
 
@@ -85,12 +85,12 @@ impl<P: Implementable> Implementable for Filter<P> {
         let key_offsets: Vec<usize> = self
             .variables
             .iter()
-            .map(|sym| {
+            .map(|variable| {
                 relation
-                    .symbols()
+                    .variables()
                     .iter()
-                    .position(|&v| *sym == v)
-                    .expect("Symbol not found.")
+                    .position(|&v| *variable == v)
+                    .expect("Variable not found.")
             })
             .collect();
 
@@ -105,21 +105,21 @@ impl<P: Implementable> Implementable for Filter<P> {
 
         let filtered = if let Some(constant) = self.constants[0].clone() {
             CollectionRelation {
-                symbols: relation.symbols().to_vec(),
+                variables: relation.variables().to_vec(),
                 tuples: relation
                     .tuples()
                     .filter(move |tuple| binary_predicate(&constant, &tuple[key_offsets[0]])),
             }
         } else if let Some(constant) = self.constants[1].clone() {
             CollectionRelation {
-                symbols: relation.symbols().to_vec(),
+                variables: relation.variables().to_vec(),
                 tuples: relation
                     .tuples()
                     .filter(move |tuple| binary_predicate(&tuple[key_offsets[0]], &constant)),
             }
         } else {
             CollectionRelation {
-                symbols: relation.symbols().to_vec(),
+                variables: relation.variables().to_vec(),
                 tuples: relation.tuples().filter(move |tuple| {
                     binary_predicate(&tuple[key_offsets[0]], &tuple[key_offsets[1]])
                 }),

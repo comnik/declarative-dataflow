@@ -405,7 +405,7 @@ where
     }
 }
 
-/// A symbol used in a query.
+/// A variable used in a query.
 type Var = u32;
 
 /// A named relation.
@@ -417,39 +417,42 @@ pub struct Rule {
     pub plan: Plan,
 }
 
-/// A relation between a set of symbols.
+/// A relation between a set of variables.
 ///
 /// Relations can be backed by a collection of records of type
 /// `Vec<Value>`, each of a common length (with offsets corresponding
-/// to the symbol offsets), or by an existing arrangement.
+/// to the variable offsets), or by an existing arrangement.
 trait Relation<'a, G: Scope>
 where
     G::Timestamp: Lattice + Data,
 {
     /// List the variable identifiers.
-    fn symbols(&self) -> &[Var];
+    fn variables(&self) -> &[Var];
 
     /// A collection containing all tuples.
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
 
-    /// Returns the offset at which values for this symbol occur.
-    fn offset(&self, sym: Var) -> usize {
-        self.symbols().iter().position(move |&x| sym == x).unwrap()
+    /// Returns the offset at which values for this variable occur.
+    fn offset(&self, variable: Var) -> usize {
+        self.variables()
+            .iter()
+            .position(move |&x| variable == x)
+            .unwrap()
     }
 
-    /// A collection with tuples partitioned by `syms`.
+    /// A collection with tuples partitioned by `variables`.
     ///
-    /// Variables present in `syms` are collected in order and populate a first "key"
-    /// `Vec<Value>`, followed by those variables not present in `syms`.
-    fn tuples_by_symbols(
+    /// Variables present in `variables` are collected in order and populate a first "key"
+    /// `Vec<Value>`, followed by those variables not present in `variables`.
+    fn tuples_by_variables(
         self,
-        syms: &[Var],
+        variables: &[Var],
     ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
 
     /// @TODO
-    fn arrange_by_symbols(
+    fn arrange_by_variables(
         self,
-        syms: &[Var],
+        variables: &[Var],
     ) -> Arranged<
         Iterative<'a, G, u64>,
         Vec<Value>,
@@ -461,7 +464,7 @@ where
 
 /// A collection and variable bindings.
 pub struct CollectionRelation<'a, G: Scope> {
-    symbols: Vec<Var>,
+    variables: Vec<Var>,
     tuples: Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
 }
 
@@ -469,45 +472,50 @@ impl<'a, G: Scope> Relation<'a, G> for CollectionRelation<'a, G>
 where
     G::Timestamp: Lattice + Data,
 {
-    fn symbols(&self) -> &[Var] {
-        &self.symbols
+    fn variables(&self) -> &[Var] {
+        &self.variables
     }
 
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
         self.tuples
     }
 
-    /// Separates tuple fields by those in `syms` and those not.
+    /// Separates tuple fields by those in `variables` and those not.
     ///
     /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)`
-    /// containing first exactly those symbols in `syms` in that
+    /// containing first exactly those variables in `variables` in that
     /// order, followed by the remaining values in their original
     /// order.
-    fn tuples_by_symbols(
+    fn tuples_by_variables(
         self,
-        syms: &[Var],
+        variables: &[Var],
     ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize> {
-        if syms == &self.symbols()[..] {
+        if variables == &self.variables()[..] {
             self.tuples().map(|x| (x, Vec::new()))
-        } else if syms.is_empty() {
+        } else if variables.is_empty() {
             self.tuples().map(|x| (Vec::new(), x))
         } else {
-            let key_length = syms.len();
-            let values_length = self.symbols().len() - key_length;
+            let key_length = variables.len();
+            let values_length = self.variables().len() - key_length;
 
             let mut key_offsets: Vec<usize> = Vec::with_capacity(key_length);
             let mut value_offsets: Vec<usize> = Vec::with_capacity(values_length);
-            let sym_set: HashSet<Var> = syms.iter().cloned().collect();
+            let variable_set: HashSet<Var> = variables.iter().cloned().collect();
 
-            // It is important to preserve the key symbols in the order
+            // It is important to preserve the key variables in the order
             // they were specified.
-            for sym in syms.iter() {
-                key_offsets.push(self.symbols().iter().position(|&v| *sym == v).unwrap());
+            for variable in variables.iter() {
+                key_offsets.push(
+                    self.variables()
+                        .iter()
+                        .position(|&v| *variable == v)
+                        .unwrap(),
+                );
             }
 
             // Values we'll just take in the order they were.
-            for (idx, sym) in self.symbols().iter().enumerate() {
-                if !sym_set.contains(sym) {
+            for (idx, variable) in self.variables().iter().enumerate() {
+                if !variable_set.contains(variable) {
                     value_offsets.push(idx);
                 }
             }
@@ -527,9 +535,9 @@ where
         }
     }
 
-    fn arrange_by_symbols(
+    fn arrange_by_variables(
         self,
-        syms: &[Var],
+        variables: &[Var],
     ) -> Arranged<
         Iterative<'a, G, u64>,
         Vec<Value>,
@@ -537,7 +545,7 @@ where
         isize,
         TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp, u64>, isize>,
     > {
-        self.tuples_by_symbols(syms).arrange()
+        self.tuples_by_variables(variables).arrange()
     }
 }
 
@@ -546,7 +554,7 @@ where
 // where
 //     G::Timestamp: Lattice+Data
 // {
-//     symbols: Vec<Var>,
+//     variables: Vec<Var>,
 //     tuples: Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
 //                      TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>,
 // }
@@ -555,50 +563,50 @@ where
 // where
 //     G::Timestamp: Lattice+Data,
 // {
-//     fn symbols(&self) -> &[Var] { &self.symbols }
+//     fn variables(&self) -> &[Var] { &self.variables }
 
 //     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
 //         unimplemented!()
 //         self.tuples
 //     }
 
-//     /// Separates tuple fields by those in `syms` and those not.
+//     /// Separates tuple fields by those in `variables` and those not.
 //     ///
 //     /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)`
-//     /// containing first exactly those symbols in `syms` in that
+//     /// containing first exactly those variables in `variables` in that
 //     /// order, followed by the remaining values in their original
 //     /// order.
-//     fn tuples_by_symbols
-//         (self, syms: &[Var]) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>
+//     fn tuples_by_variables
+//         (self, variables: &[Var]) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>
 //     {
-//         self.arrange_by_symbols(syms).as_collection(|key,rest| (key,rest))
+//         self.arrange_by_variables(variables).as_collection(|key,rest| (key,rest))
 //     }
 
-//     fn arrange_by_symbols
-//         (self, syms: &[Var]) -> Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
+//     fn arrange_by_variables
+//         (self, variables: &[Var]) -> Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
 //                                          TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>
 //     {
-//         if syms == &self.symbols()[..] {
+//         if variables == &self.variables()[..] {
 //             self.tuples().map(|x| (x, Vec::new()))
-//         } else if syms.is_empty() {
+//         } else if variables.is_empty() {
 //             self.tuples().map(|x| (Vec::new(), x))
 //         } else {
-//             let key_length = syms.len();
-//             let values_length = self.symbols().len() - key_length;
+//             let key_length = variables.len();
+//             let values_length = self.variables().len() - key_length;
 
 //             let mut key_offsets: Vec<usize> = Vec::with_capacity(key_length);
 //             let mut value_offsets: Vec<usize> = Vec::with_capacity(values_length);
-//             let sym_set: HashSet<Var> = syms.iter().cloned().collect();
+//             let variable_set: HashSet<Var> = variables.iter().cloned().collect();
 
-//             // It is important to preserve the key symbols in the order
+//             // It is important to preserve the key variables in the order
 //             // they were specified.
-//             for sym in syms.iter() {
-//                 key_offsets.push(self.symbols().iter().position(|&v| *sym == v).unwrap());
+//             for variable in variables.iter() {
+//                 key_offsets.push(self.variables().iter().position(|&v| *variable == v).unwrap());
 //             }
 
 //             // Values we'll just take in the order they were.
-//             for (idx, sym) in self.symbols().iter().enumerate() {
-//                 if !sym_set.contains(sym) {
+//             for (idx, variable) in self.variables().iter().enumerate() {
+//                 if !variable_set.contains(variable) {
 //                     value_offsets.push(idx);
 //                 }
 //             }
@@ -860,7 +868,7 @@ where
             info!("neu_planning {:?}", rule.name);
 
             // @TODO here we need to split up the plan into multiple
-            // Hector plans (one for each symbol)
+            // Hector plans (one for each variable)
 
             let plan = Plan::Hector(Hector {
                 variables: rule.plan.variables(),

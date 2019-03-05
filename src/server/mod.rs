@@ -258,7 +258,7 @@ where
                 semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
-                name: "df.project/symbols".to_string(),
+                name: "df.project/variables".to_string(),
                 semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
@@ -266,7 +266,7 @@ where
                 semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {
-                name: "df.name/symbols".to_string(),
+                name: "df.name/variables".to_string(),
                 semantics: AttributeSemantics::Raw,
             }),
             Request::CreateAttribute(CreateAttribute {

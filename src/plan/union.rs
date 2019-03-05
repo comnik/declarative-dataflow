@@ -14,7 +14,7 @@ use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
-/// (i.e. bind all of the same symbols in the same order).
+/// (i.e. bind all of the same variables in the same order).
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Union<P: Implementable> {
     /// TODO
@@ -35,13 +35,14 @@ impl<P: Implementable> Implementable for Union<P> {
     }
 
     fn into_bindings(&self) -> Vec<Binding> {
-        let mut bindings = Vec::new();
+        unimplemented!();
+        // let mut bindings = Vec::new();
 
-        for plan in self.plans.iter() {
-            bindings.append(&mut plan.into_bindings());
-        }
+        // for plan in self.plans.iter() {
+        //     bindings.append(&mut plan.into_bindings());
+        // }
 
-        bindings
+        // bindings
     }
 
     fn implement<'b, T, I, S>(
@@ -66,16 +67,20 @@ impl<P: Implementable> Implementable for Union<P> {
 
             shutdown_handle.merge_with(shutdown);
 
-            relation
-                .tuples_by_symbols(&self.variables)
-                .map(|(key, _vals)| key)
-                .inner
+            if relation.variables == self.variables {
+                relation.tuples().inner
+            } else {
+                relation
+                    .tuples_by_variables(&self.variables)
+                    .map(|(key, _vals)| key)
+                    .inner
+            }
         });
 
         let concat = nested.concatenate(streams).as_collection();
 
         let concatenated = CollectionRelation {
-            symbols: self.variables.to_vec(),
+            variables: self.variables.to_vec(),
             tuples: concat.distinct(),
         };
 

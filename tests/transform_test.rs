@@ -42,7 +42,7 @@ fn run_transform_cases() {
             // let constants = vec![None, Some(Value::String(String::from("hour")))];
             Plan::Transform(Transform {
                 variables: vec![t],
-                result_sym: h,
+                result_variable: h,
                 plan: Box::new(Plan::MatchA(e, ":timestamp".to_string(), t)),
                 function: Function::TRUNCATE,
                 constants,

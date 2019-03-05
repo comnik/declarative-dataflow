@@ -17,7 +17,7 @@ pub struct CsvFile {
     pub has_headers: bool,
     /// Column delimiter to use.
     pub delimiter: u8,
-    /// Comment symbol to use.
+    /// Comment variable to use.
     pub comment: Option<u8>,
     /// Allow flexible length records?
     pub flexible: bool,

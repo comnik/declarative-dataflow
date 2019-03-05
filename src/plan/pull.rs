@@ -103,7 +103,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                     .map(move |tuple| interleave(&tuple, &path_attributes));
 
                 let relation = CollectionRelation {
-                    symbols: vec![],
+                    variables: vec![],
                     tuples,
                 };
 
@@ -167,7 +167,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
             let tuples = nested.concatenate(streams).as_collection();
 
             let relation = CollectionRelation {
-                symbols: vec![], // @TODO
+                variables: vec![], // @TODO
                 tuples,
             };
 
@@ -206,7 +206,7 @@ impl<P: Implementable> Implementable for Pull<P> {
         let tuples = nested.concatenate(streams).as_collection();
 
         let relation = CollectionRelation {
-            symbols: vec![], // @TODO
+            variables: vec![], // @TODO
             tuples,
         };
 

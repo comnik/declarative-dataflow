@@ -21,15 +21,15 @@ fn main() {
             variables: vec![a, b, c],
             bindings: vec![
                 Binding::Attribute(AttributeBinding {
-                    symbols: (a, b),
+                    variables: (a, b),
                     source_attribute: "edge".to_string(),
                 }),
                 Binding::Attribute(AttributeBinding {
-                    symbols: (b, c),
+                    variables: (b, c),
                     source_attribute: "edge".to_string(),
                 }),
                 Binding::Attribute(AttributeBinding {
-                    symbols: (a, c),
+                    variables: (a, c),
                     source_attribute: "edge".to_string(),
                 }),
             ],
