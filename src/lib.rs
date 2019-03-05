@@ -46,6 +46,7 @@ use differential_dataflow::{Collection, Data};
 
 pub use num_rational::Rational32;
 
+pub use binding::Binding;
 pub use plan::{Hector, ImplContext, Implementable, Plan};
 
 /// A unique entity identifier.
@@ -627,6 +628,16 @@ where
 //     }
 // }
 
+/// Helper function to create a query plan. The resulting query will
+/// provide values for the requested target variables, under the
+/// constraints expressed by the bindings provided.
+pub fn q(target_variables: Vec<Var>, bindings: Vec<Binding>) -> Plan {
+    Plan::Hector(Hector {
+        variables: target_variables,
+        bindings,
+    })
+}
+
 /// Returns a deduplicates list of all rules used in the definition of
 /// the specified names. Includes the specified names.
 pub fn collect_dependencies<T, I>(context: &I, names: &[&str]) -> Result<Vec<Rule>, Error>
@@ -867,13 +878,7 @@ where
         for rule in rules.iter() {
             info!("neu_planning {:?}", rule.name);
 
-            // @TODO here we need to split up the plan into multiple
-            // Hector plans (one for each variable)
-
-            let plan = Plan::Hector(Hector {
-                variables: rule.plan.variables(),
-                bindings: rule.plan.into_bindings(),
-            });
+            let plan = q(rule.plan.variables(), rule.plan.into_bindings());
 
             let (relation, shutdown) = plan.implement(nested, &local_arrangements, context);
 
