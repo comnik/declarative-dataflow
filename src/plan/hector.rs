@@ -431,12 +431,27 @@ impl Implementable for Hector {
 
                             let mut source_conflicts = source_conflicts(idx, &self.bindings);
 
+                            let index = forward_cache
+                                .entry(delta_binding.source_attribute.to_string())
+                                .or_insert_with(|| {
+                                    let (arranged, shutdown) =
+                                        context.forward_index(&delta_binding.source_attribute).unwrap()
+                                        .import(&scope.parent.parent);
+
+                                    shutdown_handle.merge_with(shutdown);
+
+                                    arranged
+                                });
+                            let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
+
                             let mut source = if !source_conflicts.is_empty() {
+                                // @TODO there can be more than one conflict
+                                assert_eq!(source_conflicts.len(), 1);
+
                                 // @TODO Not just constant bindings can cause issues here!
 
-                                // @TODO there can be more than one conflict
-                                // for conflict in source_conflicts.drain(..) {
                                 let conflict = source_conflicts.pop().unwrap();
+                                // for conflict in source_conflicts.drain(..) {
                                     match conflict {
                                         Binding::Constant(constant_binding) => {
                                             prefix.push(constant_binding.variable);
@@ -448,23 +463,9 @@ impl Implementable for Hector {
                                                 Direction::Forward(_) => {
                                                     prefix.push(delta_binding.variables.1);
 
-                                                    let index = forward_cache
-                                                        .entry(delta_binding.source_attribute.to_string())
-                                                        .or_insert_with(|| {
-                                                            let (arranged, shutdown) =
-                                                                context.forward_index(&delta_binding.source_attribute).unwrap()
-                                                                .import(&scope.parent.parent);
-
-                                                            shutdown_handle.merge_with(shutdown);
-
-                                                            arranged
-                                                        });
-                                                    let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
-
                                                     index
                                                         .propose
-                                                        .filter(move |e,_v| *e == match_v)
-                                                        // .enter(&scope.parent)
+                                                        .filter(move |e, _v| *e == match_v)
                                                         .enter_at(&scope.parent, move |_, _, time| {
                                                             let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
                                                             Product::new(forwarded, Default::default())
@@ -475,55 +476,27 @@ impl Implementable for Hector {
                                                 Direction::Reverse(_) => {
                                                     prefix.push(delta_binding.variables.0);
 
-                                                    let index = reverse_cache
-                                                        .entry(delta_binding.source_attribute.to_string())
-                                                        .or_insert_with(|| {
-                                                            let (arranged, shutdown) =
-                                                                context.reverse_index(&delta_binding.source_attribute).unwrap()
-                                                                .import(&scope.parent.parent);
-
-                                                            shutdown_handle.merge_with(shutdown);
-
-                                                            arranged
-                                                        });
-                                                    let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
-
                                                     index
                                                         .propose
-                                                        .filter(move |v,_e| *v == match_v)
-                                                    // .enter(&scope.parent)
+                                                        .filter(move |_e, v| *v == match_v)
                                                         .enter_at(&scope.parent, move |_, _, time| {
                                                             let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
                                                             Product::new(forwarded, Default::default())
                                                         })
                                                         .enter(&scope)
-                                                        .as_collection(|v,e| vec![v.clone(), e.clone()])
+                                                        .as_collection(|v,e| vec![e.clone(), v.clone()])
                                                 }
                                             }
                                         }
                                         _ => panic!("Can't resolve conflicts on {:?} bindings", conflict),
-                                    }
-                                // }
+                                    // }
+                                }
                             } else {
                                 prefix.push(delta_binding.variables.0);
                                 prefix.push(delta_binding.variables.1);
 
-                                let index = forward_cache
-                                    .entry(delta_binding.source_attribute.to_string())
-                                    .or_insert_with(|| {
-                                        let (arranged, shutdown) =
-                                            context.forward_index(&delta_binding.source_attribute).unwrap()
-                                            .import(&scope.parent.parent);
-
-                                        shutdown_handle.merge_with(shutdown);
-
-                                        arranged
-                                    });
-                                let frontier: Vec<T> = index.validate.trace.advance_frontier().to_vec();
-
                                 index
                                     .validate
-                                    // .enter(&scope.parent)
                                     .enter_at(&scope.parent, move |_, _, time| {
                                         let mut forwarded = time.clone();
                                         forwarded.advance_by(&frontier);

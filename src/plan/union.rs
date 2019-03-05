@@ -35,14 +35,10 @@ impl<P: Implementable> Implementable for Union<P> {
     }
 
     fn into_bindings(&self) -> Vec<Binding> {
-        unimplemented!();
-        // let mut bindings = Vec::new();
-
-        // for plan in self.plans.iter() {
-        //     bindings.append(&mut plan.into_bindings());
-        // }
-
-        // bindings
+        self.plans
+            .iter()
+            .flat_map(|plan| plan.into_bindings())
+            .collect()
     }
 
     fn implement<'b, T, I, S>(
