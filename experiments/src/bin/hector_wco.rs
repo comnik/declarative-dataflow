@@ -1,9 +1,7 @@
 use graph_map::GraphMMap;
 
-use declarative_dataflow::binding::{AttributeBinding, Binding};
-use declarative_dataflow::plan::Hector;
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{q, AttributeSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{q, AttributeSemantics, Binding, Rule, TxData, Value};
 use Value::Eid;
 
 fn main() {
@@ -18,23 +16,14 @@ fn main() {
 
         // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
         let (a, b, c) = (1, 2, 3);
-        let plan = Plan::Hector(Hector {
-            variables: vec![a, b, c],
-            bindings: vec![
-                Binding::Attribute(AttributeBinding {
-                    variables: (a, b),
-                    source_attribute: "edge".to_string(),
-                }),
-                Binding::Attribute(AttributeBinding {
-                    variables: (b, c),
-                    source_attribute: "edge".to_string(),
-                }),
-                Binding::Attribute(AttributeBinding {
-                    variables: (a, c),
-                    source_attribute: "edge".to_string(),
-                }),
+        let plan = q(
+            vec![a, b, c],
+            vec![
+                Binding::attribute(a, "edge", b),
+                Binding::attribute(b, "edge", c),
+                Binding::attribute(a, "edge", c),
             ],
-        });
+        );
 
         let peers = worker.peers();
         let index = worker.index();
@@ -69,7 +58,7 @@ fn main() {
                     graph
                         .edges(index)
                         .iter()
-                        .map(|y| TxData(1, index as u64, "edge".to_string(), Value::Eid(*y as u64)))
+                        .map(|y| TxData(1, index as u64, "edge".to_string(), Eid(*y as u64)))
                         .collect(),
                     0,
                     0,
