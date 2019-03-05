@@ -283,3 +283,54 @@ fn or() {
         },
     ]);
 }
+
+#[test]
+fn or_join() {
+    let data = vec![
+        TxData(1, 1, ":name".to_string(), String("Ivan".to_string())),
+        TxData(1, 1, ":age".to_string(), Number(10)),
+        TxData(1, 2, ":name".to_string(), String("Ivan".to_string())),
+        TxData(1, 2, ":age".to_string(), Number(20)),
+        TxData(1, 3, ":name".to_string(), String("Oleg".to_string())),
+        TxData(1, 3, ":age".to_string(), Number(10)),
+        TxData(1, 4, ":name".to_string(), String("Oleg".to_string())),
+        TxData(1, 4, ":age".to_string(), Number(20)),
+        TxData(1, 5, ":name".to_string(), String("Ivan".to_string())),
+        TxData(1, 5, ":age".to_string(), Number(10)),
+        TxData(1, 6, ":name".to_string(), String("Ivan".to_string())),
+        TxData(1, 6, ":age".to_string(), Number(20)),
+    ];
+
+    run_cases(vec![Case {
+        description: "[:find ?e 
+                           :where
+                           (or-join [?e]
+                             [?e :name ?n]
+                             (and [?e :age ?a] [?e :name ?n]))]",
+        plan: Plan::Union(Union {
+            variables: vec![0],
+            plans: vec![
+                Plan::Hector(Hector {
+                    variables: vec![0],
+                    bindings: vec![Binding::attribute(0, ":name", 2)],
+                }),
+                Plan::Hector(Hector {
+                    variables: vec![0],
+                    bindings: vec![
+                        Binding::attribute(0, ":age", 1),
+                        Binding::attribute(0, ":name", 2),
+                    ],
+                }),
+            ],
+        }),
+        transactions: vec![data.clone()],
+        expectations: vec![vec![
+            (vec![Eid(1)], 0, 1),
+            (vec![Eid(2)], 0, 1),
+            (vec![Eid(3)], 0, 1),
+            (vec![Eid(4)], 0, 1),
+            (vec![Eid(5)], 0, 1),
+            (vec![Eid(6)], 0, 1),
+        ]],
+    }]);
+}
