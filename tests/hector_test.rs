@@ -105,15 +105,17 @@ fn conflicts() {
         Binding::attribute(e, ":name", c),
         Binding::attribute(e2, ":name", n),
         Binding::constant(c, String("Ivan".to_string())),
+        Binding::not(Binding::constant(c, String("Petr".to_string()))),
     ];
 
-    {
-        let conflicts = source_conflicts(2, &bindings);
-        assert_eq!(
-            conflicts,
-            vec![&Binding::constant(c, String("Ivan".to_string()))]
-        );
-    }
+    assert_eq!(source_conflicts(0, &bindings), Vec::<&Binding>::new());
+    assert_eq!(
+        source_conflicts(2, &bindings),
+        vec![
+            &Binding::constant(c, String("Ivan".to_string())),
+            &Binding::not(Binding::constant(c, String("Petr".to_string()))),
+        ]
+    );
 }
 
 /// Ensures that a valid variable order is chosen depending on the
@@ -121,7 +123,6 @@ fn conflicts() {
 #[test]
 fn ordering() {
     let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
-    let variables = vec![c, e2, n, a, e];
     let bindings = vec![
         Binding::attribute(e2, ":age", a),
         Binding::attribute(e, ":age", a),

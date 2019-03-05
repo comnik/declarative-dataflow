@@ -162,35 +162,30 @@ where
 /// special cases, because we always have to start from prefixes of
 /// size two.
 pub fn source_conflicts(source_index: usize, bindings: &[Binding]) -> Vec<&Binding> {
-    let mut conflicts = Vec::new();
-
     match bindings[source_index] {
         Binding::Attribute(ref source) => {
-            for (index, binding) in bindings.iter().enumerate() {
-                // @TODO Not just constant bindings can cause issues here!
-                match binding {
-                    Binding::Attribute(_) => {
-                        continue;
+            let prefix_0 = vec![source.symbols.0];
+            let prefix_1 = vec![source.symbols.1];
+
+            bindings
+                .iter()
+                .enumerate()
+                .flat_map(|(index, binding)| {
+                    // @TODO Not just constant bindings can cause issues here!
+                    if index == source_index {
+                        None
+                    } else if binding.can_extend(&prefix_0, source.symbols.1)
+                        || binding.can_extend(&prefix_1, source.symbols.0)
+                    {
+                        Some(binding)
+                    } else {
+                        None
                     }
-                    Binding::BinaryPredicate(_) => {
-                        continue;
-                    }
-                    _ => {
-                        if index == source_index {
-                            continue;
-                        } else if binding.binds(source.symbols.0).is_some() {
-                            conflicts.push(binding);
-                        } else if binding.binds(source.symbols.1).is_some() {
-                            conflicts.push(binding);
-                        }
-                    }
-                }
-            }
+                })
+                .collect()
         }
         _ => panic!("Source must be an AttributeBinding."),
     }
-
-    conflicts
 }
 
 /// Orders the variables s.t. each has at least one binding from

@@ -92,6 +92,13 @@ impl Binding {
             predicate,
         })
     }
+
+    /// Creates an AntijoinBinding.
+    pub fn not(binding: Binding) -> Binding {
+        Binding::Not(AntijoinBinding {
+            binding: Box::new(binding),
+        })
+    }
 }
 
 impl AsBinding for Binding {
