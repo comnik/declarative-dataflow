@@ -1,5 +1,7 @@
 //! Binding language, mainly for use in Hector-powered plans.
 
+use std::fmt;
+
 use crate::{Aid, Value, Var};
 
 /// A thing that can act as a binding of values to symbols.
@@ -7,11 +9,38 @@ pub trait AsBinding {
     /// Iff the binding has opinions about the given symbol, this will
     /// return the offset, otherwise None.
     fn binds(&self, sym: Var) -> Option<usize>;
+
+    /// Returns an optional variable which must be bound by the prefix
+    /// in order for this binding to extend the prefix. If None, then
+    /// this binding can never be used to extend the prefix to the
+    /// specified symbol (e.g. because it doesn't even bind it).
+    fn required_to_extend(&self, prefix: &AsBinding, target: Var) -> Option<Option<Var>>;
+
+    /// Returns an optional variable by which this binding could
+    /// extend the given prefix.
+    fn ready_to_extend(&self, prefix: &AsBinding) -> Option<Var>;
+
+    /// Returns true iff the binding is ready to participate in the
+    /// extension of a set of prefix symbols to a new symbol.
+    fn can_extend(&self, prefix: &AsBinding, target: Var) -> bool {
+        match self.required_to_extend(prefix, target) {
+            None => false,
+            Some(requirement) => requirement.is_none(),
+        }
+    }
 }
 
 impl AsBinding for Vec<Var> {
     fn binds(&self, sym: Var) -> Option<usize> {
         self.iter().position(|&x| sym == x)
+    }
+
+    fn ready_to_extend(&self, _prefix: &AsBinding) -> Option<Var> {
+        None
+    }
+
+    fn required_to_extend(&self, _prefix: &AsBinding, _target: Var) -> Option<Option<Var>> {
+        Some(None)
     }
 }
 
@@ -70,10 +99,28 @@ impl AsBinding for Binding {
             Binding::BinaryPredicate(ref binding) => binding.binds(sym),
         }
     }
+
+    fn ready_to_extend(&self, prefix: &AsBinding) -> Option<Var> {
+        match *self {
+            Binding::Attribute(ref binding) => binding.ready_to_extend(prefix),
+            Binding::Not(ref binding) => binding.ready_to_extend(prefix),
+            Binding::Constant(ref binding) => binding.ready_to_extend(prefix),
+            Binding::BinaryPredicate(ref binding) => binding.ready_to_extend(prefix),
+        }
+    }
+
+    fn required_to_extend(&self, prefix: &AsBinding, target: Var) -> Option<Option<Var>> {
+        match *self {
+            Binding::Attribute(ref binding) => binding.required_to_extend(prefix, target),
+            Binding::Not(ref binding) => binding.required_to_extend(prefix, target),
+            Binding::Constant(ref binding) => binding.required_to_extend(prefix, target),
+            Binding::BinaryPredicate(ref binding) => binding.required_to_extend(prefix, target),
+        }
+    }
 }
 
 /// Describes symbols whose possible values are given by an attribute.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct AttributeBinding {
     /// The symbols this binding talks about.
     pub symbols: (Var, Var),
@@ -93,11 +140,55 @@ impl AsBinding for AttributeBinding {
             None
         }
     }
+
+    fn ready_to_extend(&self, prefix: &AsBinding) -> Option<Var> {
+        if prefix.binds(self.symbols.0).is_some() && prefix.binds(self.symbols.1).is_none() {
+            Some(self.symbols.1)
+        } else if prefix.binds(self.symbols.1).is_some() && prefix.binds(self.symbols.0).is_none() {
+            Some(self.symbols.0)
+        } else {
+            None
+        }
+    }
+
+    fn required_to_extend(&self, prefix: &AsBinding, target: Var) -> Option<Option<Var>> {
+        match self.binds(target) {
+            None => None,
+            Some(offset) => {
+                // Self binds target at offset.
+                if offset == 0 {
+                    // Ensure that the prefix doesn't in fact bind _both_ symbols already.
+                    assert!(prefix.binds(self.symbols.0).is_none());
+                    match prefix.binds(self.symbols.1) {
+                        None => Some(Some(self.symbols.1)),
+                        Some(_) => Some(None),
+                    }
+                } else {
+                    // Analogously for the reverse case.
+                    assert!(prefix.binds(self.symbols.1).is_none());
+                    match prefix.binds(self.symbols.0) {
+                        None => Some(Some(self.symbols.0)),
+                        Some(_) => Some(None),
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl fmt::Debug for AttributeBinding {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "[{} {} {}]",
+            self.symbols.0, self.source_attribute, self.symbols.1
+        )
+    }
 }
 
 /// Describes symbols whose possible values must not be contained in
 /// the specified attribute.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct AntijoinBinding {
     /// The wrapped binding.
     pub binding: Box<Binding>,
@@ -107,10 +198,24 @@ impl AsBinding for AntijoinBinding {
     fn binds(&self, sym: Var) -> Option<usize> {
         self.binding.binds(sym)
     }
+
+    fn ready_to_extend(&self, prefix: &AsBinding) -> Option<Var> {
+        self.binding.ready_to_extend(prefix)
+    }
+
+    fn required_to_extend(&self, prefix: &AsBinding, target: Var) -> Option<Option<Var>> {
+        self.binding.required_to_extend(prefix, target)
+    }
+}
+
+impl fmt::Debug for AntijoinBinding {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Not({:?})", self.binding)
+    }
 }
 
 /// Describes symbols whose possible values are given by an attribute.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct ConstantBinding {
     /// The symbol this binding talks about.
     pub symbol: Var,
@@ -125,6 +230,30 @@ impl AsBinding for ConstantBinding {
         } else {
             None
         }
+    }
+
+    fn ready_to_extend(&self, prefix: &AsBinding) -> Option<Var> {
+        if prefix.binds(self.symbol).is_none() {
+            Some(self.symbol)
+        } else {
+            None
+        }
+    }
+
+    fn required_to_extend(&self, prefix: &AsBinding, target: Var) -> Option<Option<Var>> {
+        match self.binds(target) {
+            None => None,
+            Some(_) => match prefix.binds(target) {
+                None => Some(Some(self.symbol)),
+                Some(_) => Some(None),
+            },
+        }
+    }
+}
+
+impl fmt::Debug for ConstantBinding {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "Constant({}, {:?})", self.symbol, self.value)
     }
 }
 
@@ -146,7 +275,7 @@ pub enum BinaryPredicate {
 }
 
 /// Describe a binary predicate constraint.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
 pub struct BinaryPredicateBinding {
     /// The symbols this binding talks about.
     pub symbols: (Var, Var),
@@ -163,5 +292,49 @@ impl AsBinding for BinaryPredicateBinding {
         } else {
             None
         }
+    }
+
+    fn ready_to_extend(&self, prefix: &AsBinding) -> Option<Var> {
+        if prefix.binds(self.symbols.0).is_some() && prefix.binds(self.symbols.1).is_none() {
+            Some(self.symbols.1)
+        } else if prefix.binds(self.symbols.1).is_some() && prefix.binds(self.symbols.0).is_none() {
+            Some(self.symbols.0)
+        } else {
+            None
+        }
+    }
+
+    fn required_to_extend(&self, prefix: &AsBinding, target: Var) -> Option<Option<Var>> {
+        match self.binds(target) {
+            None => None,
+            Some(offset) => {
+                // Self binds target at offset.
+                if offset == 0 {
+                    // Ensure that the prefix doesn't in fact bind _both_ symbols already.
+                    assert!(prefix.binds(self.symbols.0).is_none());
+                    match prefix.binds(self.symbols.1) {
+                        None => Some(Some(self.symbols.1)),
+                        Some(_) => Some(None),
+                    }
+                } else {
+                    // Analogously for the reverse case.
+                    assert!(prefix.binds(self.symbols.1).is_none());
+                    match prefix.binds(self.symbols.0) {
+                        None => Some(Some(self.symbols.0)),
+                        Some(_) => Some(None),
+                    }
+                }
+            }
+        }
+    }
+}
+
+impl fmt::Debug for BinaryPredicateBinding {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "({:?} {} {})",
+            self.predicate, self.symbols.0, self.symbols.1
+        )
     }
 }

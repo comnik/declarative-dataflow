@@ -31,7 +31,7 @@ pub enum AggregationFn {
     SUM,
     /// Average
     AVG,
-    ///Variance
+    /// Variance
     VARIANCE,
     // /// Standard deviation
     // STDDEV,

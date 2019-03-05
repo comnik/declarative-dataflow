@@ -136,7 +136,7 @@ where
     match AsBinding::binds(prefix_symbols, extender_symbols.0) {
         None => match AsBinding::binds(prefix_symbols, extender_symbols.1) {
             None => {
-                println!(
+                error!(
                     "Neither extender symbol {:?} bound by prefix {:?}.",
                     extender_symbols, prefix_symbols
                 );
@@ -155,6 +155,133 @@ where
             }
         }
     }
+}
+
+/// Orders the variables s.t. each has at least one binding from
+/// itself to a prior symbol. `source_binding` indicates the binding
+/// from which we will source the prefixes in the resulting delta
+/// pipeline. Returns the chosen variable order and the corresponding
+/// binding order.
+///
+/// (adapted from github.com/frankmcsherry/dataflow-join/src/motif.rs)
+pub fn plan_order(
+    variables: &[Var],
+    source_index: usize,
+    bindings: &[Binding],
+) -> (Vec<Var>, Vec<Binding>, Vec<Binding>) {
+    // Determine an order on the attributes. The order may not
+    // introduce a binding until one of its consituents is already
+    // bound by the prefix. These constraints are captured via the
+    // `AsBinding::can_extend` method. The order may otherwise be
+    // arbitrary, for example selecting the most constrained
+    // attribute first. Presently, we just pick attributes arbitrarily.
+    let mut prefix: Vec<Var> = Vec::with_capacity(variables.len());
+
+    // @TODO factor out conflict detection into a separate thing
+    let mut conflicts = Vec::new();
+
+    match bindings[source_index] {
+        Binding::Attribute(ref source) => {
+            prefix.push(source.symbols.0);
+            prefix.push(source.symbols.1);
+
+            for (index, binding) in bindings.iter().enumerate() {
+                // @TODO
+                match binding {
+                    Binding::Attribute(_) => {
+                        continue;
+                    }
+                    Binding::BinaryPredicate(_) => {
+                        continue;
+                    }
+                    _ => {
+                        if index == source_index {
+                            continue;
+                        } else if binding.binds(source.symbols.0).is_some() {
+                            conflicts.push(binding.clone());
+                        } else if binding.binds(source.symbols.1).is_some() {
+                            conflicts.push(binding.clone());
+                        }
+                    }
+                }
+            }
+        }
+        _ => panic!("Source must be an AttributeBinding."),
+    }
+
+    let candidates_for = |bindings: &[Binding], target: Var| {
+        bindings
+            .iter()
+            .enumerate()
+            .flat_map(move |(index, other)| {
+                if index == source_index {
+                    // Ignore the source binding itself.
+                    None
+                } else if other.binds(target).is_some() {
+                    Some(other.clone())
+                } else {
+                    // Some bindings might not even talk about the target
+                    // variable.
+                    None
+                }
+            })
+            .collect::<Vec<Binding>>()
+    };
+
+    let mut ordered_bindings = Vec::new();
+    let mut candidates: Vec<Binding> = prefix
+        .iter()
+        .flat_map(|x| candidates_for(&bindings, *x))
+        .collect();
+
+    loop {
+        debug!("Candidates: {:?}", candidates);
+
+        let mut waiting_candidates = Vec::new();
+
+        candidates.sort();
+        candidates.dedup();
+
+        for candidate in candidates.drain(..) {
+            match candidate.ready_to_extend(&prefix) {
+                None => {
+                    waiting_candidates.push(candidate);
+                }
+                Some(target) => {
+                    if AsBinding::binds(&prefix, target).is_none() {
+                        prefix.push(target);
+                        for new_candidate in candidates_for(&bindings, target) {
+                            if candidate != new_candidate {
+                                waiting_candidates.push(new_candidate);
+                            }
+                        }
+                    }
+
+                    ordered_bindings.push(candidate);
+                }
+            }
+        }
+
+        if waiting_candidates.is_empty() {
+            break;
+        }
+
+        for candidate in waiting_candidates.drain(..) {
+            candidates.push(candidate);
+        }
+
+        if prefix.len() == variables.len() {
+            break;
+        }
+    }
+
+    debug!("Candidates: {:?}", candidates);
+
+    for candidate in candidates.drain(..) {
+        ordered_bindings.push(candidate);
+    }
+
+    (prefix, conflicts, ordered_bindings)
 }
 
 trait IndexNode<V> {
@@ -236,11 +363,6 @@ impl Implementable for Hector {
 
                 let scope = inner.clone();
 
-                // @TODO
-                // We need to determine an order on the attributes
-                // that ensures that each is bound by preceeding
-                // attributes. For now, we will take the requested order.
-
                 // We cache aggressively, to avoid importing and
                 // wrapping things more than once.
 
@@ -252,12 +374,18 @@ impl Implementable for Hector {
                 // actually experience change), we construct a delta query
                 // driven by changes to that binding.
 
-                // @TODO only do it for distinct attributes
                 let changes = self.bindings.iter().enumerate()
                     .flat_map(|(idx, delta_binding)| match delta_binding {
                         Binding::Attribute(delta_binding) => {
 
+                            // @TODO
+                            // We need to determine an order on the attributes
+                            // that ensures that each is bound by preceeding
+                            // attributes. For now, we will take the requested order.
+
                             let mut prefix_symbols = Vec::with_capacity(self.variables.len());
+
+                            debug!("---\nSource {:?}", delta_binding);
 
                             // We would like to avoid starting with single-symbol
                             // (or even empty) prefixes, because the dataflow-y nature
@@ -386,6 +514,8 @@ impl Implementable for Hector {
                                 match AsBinding::binds(&prefix_symbols, *target) {
                                     Some(_) => { /* already bound */ continue },
                                     None => {
+                                        debug!("Extending {:?} to {:?}", prefix_symbols, target);
+
                                         let mut extenders: Vec<Extender<'_, _, Vec<Value>, _>> = vec![];
 
                                         // Handling AntijoinBinding's requires dealing with recursion,
@@ -418,7 +548,20 @@ impl Implementable for Hector {
                                             // Ignore any binding not talking about the target symbol.
                                             if other.binds(*target).is_none() { continue; }
 
+                                            // @TODO
+                                            //
+                                            // Ignore any binding that isn't ready to extend, either
+                                            // because it doesn't even talk about the target symbol, or
+                                            // because none of its dependent symbols are bound by the prefix
+                                            // yet (relevant for attributes).
+                                            // if !other.can_extend(&prefix_symbols, *target) {
+                                            //     debug!("{:?} can't extend", other);
+                                            //     continue;
+                                            // }
+
                                             let is_neu = other_idx >= idx;
+
+                                            debug!("\t...using {:?}", other);
 
                                             match other {
                                                 Binding::Not(_other) => {
@@ -552,6 +695,7 @@ impl Implementable for Hector {
                                 let target_variables = self.variables.clone();
                                 Some(source
                                      .map(move |tuple| {
+                                         // @TODO project here in one fell swoop
                                          target_variables.iter()
                                              .map(|x| tuple.index(AsBinding::binds(&prefix_symbols, *x).unwrap()))
                                              .collect()

@@ -8,8 +8,8 @@ use timely::dataflow::operators::Operator;
 use timely::Configuration;
 
 use declarative_dataflow::binding::BinaryPredicate::LT;
-use declarative_dataflow::binding::Binding;
-
+use declarative_dataflow::binding::{AsBinding, Binding};
+use declarative_dataflow::plan::hector::plan_order;
 use declarative_dataflow::plan::Hector;
 use declarative_dataflow::server::Server;
 use declarative_dataflow::{Aid, AttributeSemantics, Plan, Rule, TxData, Value};
@@ -34,10 +34,133 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
     deps
 }
 
+/// Ensures bindings report correct dependencies before being asked to
+/// extend a prefix.
 #[test]
-fn run_hector_cases() {
+fn binding_requirements() {
+    let (a, b, c, d) = (0, 1, 2, 3);
+
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).required_to_extend(&vec![a, c], d),
+        None
+    );
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).required_to_extend(&vec![a, c], b),
+        Some(None)
+    );
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).required_to_extend(&vec![c, d], a),
+        Some(Some(b))
+    );
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).required_to_extend(&vec![c, d], b),
+        Some(Some(a))
+    );
+}
+
+/// Ensures bindings honor the correct dependencies before offering to
+/// extend a prefix to a new variable.
+#[test]
+fn binding_readiness() {
+    let (a, b, c, d) = (0, 1, 2, 3);
+
+    assert_eq!(
+        Binding::constant(a, Eid(100)).ready_to_extend(&vec![a, b]),
+        None
+    );
+    assert_eq!(
+        Binding::constant(a, Eid(100)).ready_to_extend(&vec![c, d]),
+        Some(a)
+    );
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, d]),
+        None
+    );
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![a, c]),
+        Some(b)
+    );
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, a]),
+        Some(b)
+    );
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, b]),
+        Some(a)
+    );
+    assert_eq!(
+        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![b, c]),
+        Some(a)
+    );
+}
+
+/// Ensures that a valid variable order is chosen depending on the
+/// current source binding.
+#[test]
+fn ordering() {
     env_logger::init();
 
+    let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
+    let variables = vec![c, e2, n, a, e];
+    let bindings = vec![
+        Binding::attribute(e2, ":age", a),
+        Binding::attribute(e, ":age", a),
+        Binding::attribute(e, ":name", c),
+        Binding::attribute(e2, ":name", n),
+        Binding::constant(c, String("Ivan".to_string())),
+    ];
+
+    {
+        let (variable_order, conflicts, binding_order) = plan_order(&variables, 0, &bindings);
+
+        assert_eq!(variable_order, vec![e2, a, e, n, c]);
+        assert_eq!(conflicts, vec![]);
+        assert_eq!(
+            binding_order,
+            vec![
+                Binding::attribute(e, ":age", a),
+                Binding::attribute(e2, ":name", n),
+                Binding::attribute(e, ":name", c),
+                Binding::constant(c, String("Ivan".to_string())),
+            ]
+        );
+    }
+    {
+        let (variable_order, conflicts, binding_order) = plan_order(&variables, 1, &bindings);
+
+        assert_eq!(variable_order, vec![e, a, c, e2, n]);
+        assert_eq!(conflicts, vec![]);
+        assert_eq!(
+            binding_order,
+            vec![
+                Binding::attribute(e, ":name", c),
+                Binding::attribute(e2, ":age", a),
+                Binding::attribute(e2, ":name", n),
+                Binding::constant(c, String("Ivan".to_string())),
+            ]
+        );
+    }
+    {
+        let (variable_order, conflicts, binding_order) = plan_order(&variables, 2, &bindings);
+
+        assert_eq!(variable_order, vec![e, c, a, e2, n]);
+        assert_eq!(
+            conflicts,
+            vec![Binding::constant(c, String("Ivan".to_string()))]
+        );
+        assert_eq!(
+            binding_order,
+            vec![
+                Binding::attribute(e, ":age", a),
+                Binding::attribute(e2, ":age", a),
+                Binding::attribute(e2, ":name", n),
+            ]
+        );
+    }
+}
+
+#[test]
+fn run_hector_cases() {
     let mut cases: Vec<Case> =
         vec![
         Case {
