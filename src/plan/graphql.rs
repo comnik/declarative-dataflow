@@ -6,7 +6,7 @@ use graphql_parser::query::{Definition, Selection, SelectionSet, OperationDefini
 use crate::plan::{Plan, ImplContext, Implementable, PullLevel};
 
 /// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`.
-#[derive(Serialize, Deserialize, Clone, Debug)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct GraphQl {
     /// String representation of a GraphQL query.
     pub query: String,
@@ -88,13 +88,13 @@ fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
     for definition in &ast.definitions {
         match definition {
             Definition::Operation(operation_definition) => match operation_definition {
-                OperationDefinition::Query(query) => unimplemented!(),
+                OperationDefinition::Query(_) => unimplemented!(),
                 OperationDefinition::SelectionSet(selection_set) => {
                     result.extend(selection_set_to_paths(selection_set, &vec![], true))
                 }
                 _ => unimplemented!(),
             },
-            Definition::Fragment(fragment_definition) => unimplemented!(),
+            Definition::Fragment(_) => unimplemented!(),
         };
     }
 
@@ -102,7 +102,7 @@ fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
 }
 
 impl Implementable for GraphQl {
-    fn dependencies(&self) -> Vec<String> {
+    fn dependencies(&self) -> Dependencies {
         // @TODO cache this?
         let ast = parse_query(&self.query).expect("graphQL ast parsing failed");
         let parsed = Pull {
@@ -113,12 +113,17 @@ impl Implementable for GraphQl {
         parsed.dependencies()
     }
 
-    fn implement<'b, S: Scope<Timestamp = u64>, I: ImplContext>(
+    fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> CollectionRelation<'b, S> {
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
         let ast = parse_query(&self.query).expect("graphQL ast parsing failed");
         let parsed = Pull {
             variables: vec![],

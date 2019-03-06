@@ -58,14 +58,14 @@ fn interleave(values: &[Value], constants: &[Aid]) -> Vec<Value> {
 
         for i in 0..size {
             if i % 2 == 0 {
-                // on even indices we interleave an attribute
+                // on even indices we take from the result tuple
+                result.push(values[next_value].clone());
+                next_value += 1;
+            } else {
+                // on odd indices we interleave an attribute
                 let a = constants[next_const].clone();
                 result.push(Value::Aid(a));
-                next_const = next_const + 1;
-            } else {
-                // on odd indices we take from the result tuple
-                result.push(values[next_value].clone());
-                next_value = next_value + 1;
+                next_const += 1;
             }
         }
 
