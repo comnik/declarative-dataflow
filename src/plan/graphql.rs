@@ -24,9 +24,13 @@ fn selection_set_to_paths(
     for item in &selection_set.items {
         match item {
             Selection::Field(field) => {
-                pull_attributes.push(field.name.to_string());
+                if field.selection_set.items.is_empty() {
+                    pull_attributes.push(field.name.to_string());
+                }
+
                 let mut new_parent_path = parent_path.to_vec();
                 new_parent_path.push(field.name.to_string());
+
                 result.extend(selection_set_to_paths(
                     &field.selection_set,
                     &new_parent_path,

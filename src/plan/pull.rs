@@ -227,6 +227,5 @@ impl<P: Implementable> Implementable for Pull<P> {
         };
 
         (Implemented::Collection(relation), shutdown_handle)
-        }
     }
 }
