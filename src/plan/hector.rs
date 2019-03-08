@@ -1,7 +1,7 @@
 //! WCO expression plan, integrating the following work:
 //! https://github.com/frankmcsherry/differential-dataflow/tree/master/dogsdogsdogs
 
-use std::collections::{HashMap, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
 use std::rc::Rc;
 
@@ -24,8 +24,8 @@ use crate::binding::{AsBinding, BinaryPredicate, Binding};
 use crate::binding::{BinaryPredicateBinding, ConstantBinding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
+use crate::{Aid, Value, Var};
 use crate::{CollectionRelation, LiveIndex, ShutdownHandle, VariableMap};
-use crate::{Value, Var};
 
 type Extender<'a, S, P, V> = Box<(dyn PrefixExtender<S, Prefix = P, Extension = V> + 'a)>;
 
@@ -318,7 +318,22 @@ impl IndexNode<Value> for Vec<Value> {
 
 impl Implementable for Hector {
     fn dependencies(&self) -> Dependencies {
-        Dependencies::none()
+        let attributes = self
+            .bindings
+            .iter()
+            .flat_map(|binding| {
+                if let Binding::Attribute(binding) = binding {
+                    Some(binding.source_attribute.clone())
+                } else {
+                    None
+                }
+            })
+            .collect::<HashSet<Aid>>();
+
+        Dependencies {
+            names: HashSet::new(),
+            attributes,
+        }
     }
 
     fn into_bindings(&self) -> Vec<Binding> {
