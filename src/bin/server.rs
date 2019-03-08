@@ -659,5 +659,13 @@ fn main() {
 
             worker.step_while(|| server.is_any_outdated());
         }
-    }).unwrap(); // asserts error-free execution
+
+        // info!("Shutting down.");
+
+        // @TODO clean shutdown
+        // drop(sequencer);
+
+        // @TODO de-register loggers s.t. logging dataflows can shut down.
+
+    }).expect("Timely computation did not exit cleanly.");
 }
