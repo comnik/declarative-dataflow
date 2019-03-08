@@ -435,7 +435,8 @@ impl Implementable for Hector {
                                 .entry(delta_binding.source_attribute.to_string())
                                 .or_insert_with(|| {
                                     let (arranged, shutdown) =
-                                        context.forward_index(&delta_binding.source_attribute).unwrap()
+                                        context.forward_index(&delta_binding.source_attribute)
+                                        .expect("forward_index doesn't exist")
                                         .import(&scope.parent.parent);
 
                                     shutdown_handle.merge_with(shutdown);
@@ -585,7 +586,8 @@ impl Implementable for Hector {
                                                                 let index = forward_cache.entry(other.source_attribute.to_string())
                                                                     .or_insert_with(|| {
                                                                         let (arranged, shutdown) =
-                                                                            context.forward_index(&other.source_attribute).unwrap()
+                                                                            context.forward_index(&other.source_attribute)
+                                                                            .expect("forward index doesn't exist")
                                                                             .import(&scope.parent.parent);
 
                                                                         shutdown_handle.merge_with(shutdown);

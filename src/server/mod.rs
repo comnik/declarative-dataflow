@@ -233,46 +233,46 @@ where
     /// Returns commands to install built-in plans.
     pub fn builtins() -> Vec<Request> {
         vec![
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.pattern/e".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.pattern/a".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.pattern/v".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.join/binding".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.union/binding".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.project/binding".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.project/variables".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df/name".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.name/variables".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
-            Request::CreateAttribute(CreateAttribute {
-                name: "df.name/plan".to_string(),
-                semantics: AttributeSemantics::Raw,
-            }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.pattern/e".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.pattern/a".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.pattern/v".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.join/binding".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.union/binding".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.project/binding".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.project/variables".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df/name".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.name/variables".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
+            // Request::CreateAttribute(CreateAttribute {
+            //     name: "df.name/plan".to_string(),
+            //     semantics: AttributeSemantics::Raw,
+            // }),
             // Request::Register(Register {
             //     publish: vec!["df.rules".to_string()],
             //     rules: vec![

@@ -1,5 +1,7 @@
 //! Types and operators to feed outputs into external systems.
 
+use timely::dataflow::channels::pact::Pipeline;
+use timely::dataflow::operators::Operator;
 use timely::dataflow::{Scope, Stream};
 use timely::order::TotalOrder;
 use timely::progress::Timestamp;
@@ -30,6 +32,8 @@ pub trait Sinkable {
 /// Supported external systems.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Sink {
+    /// /dev/null, used for benchmarking
+    TheVoid,
     /// CSV files
     #[cfg(feature = "csv-source")]
     CsvFile(CsvFile),
@@ -43,6 +47,15 @@ impl Sinkable for Sink {
         stream: &Stream<S, ResultDiff<S::Timestamp>>,
     ) -> Result<(), Error> {
         match *self {
+            Sink::TheVoid => {
+                stream.sink(Pipeline, "TheVoid", move |input| {
+                    if input.frontier.is_empty() {
+                        println!("Inputs to void sink have ceased.");
+                    }
+                });
+
+                Ok(())
+            }
             #[cfg(feature = "csv-source")]
             Sink::CsvFile(ref sink) => sink.sink(stream),
         }

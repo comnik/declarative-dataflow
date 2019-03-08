@@ -571,7 +571,6 @@ where
 
 //     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
 //         unimplemented!()
-//         self.tuples
 //     }
 
 //     /// Separates tuple fields by those in `variables` and those not.
@@ -583,15 +582,17 @@ where
 //     fn tuples_by_variables
 //         (self, variables: &[Var]) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>
 //     {
-//         self.arrange_by_variables(variables).as_collection(|key,rest| (key,rest))
+//         // self.arrange_by_variables(variables).as_collection(|key,rest| (key,rest))
+//         unimplemented!();
 //     }
 
-//     fn arrange_by_variables
-//         (self, variables: &[Var]) -> Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
-//                                          TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>
+//     fn arrange_by_variables (
+//         self,
+//         variables: &[Var]
+//     ) -> Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize, TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>
 //     {
-//         if variables == &self.variables()[..] {
-//             self.tuples().map(|x| (x, Vec::new()))
+//         if variables == self.variables.as_slice() {
+//             self.tuples.map(|x| (x, Vec::new()))
 //         } else if variables.is_empty() {
 //             self.tuples().map(|x| (Vec::new(), x))
 //         } else {
