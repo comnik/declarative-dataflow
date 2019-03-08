@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::Operator;
-use timely::Configuration;
 
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Function, Implementable, Transform};
@@ -75,7 +74,7 @@ fn run_transform_cases() {
     }];
 
     for case in cases.drain(..) {
-        timely::execute(Configuration::Thread, move |worker| {
+        timely::execute_directly(move |worker| {
             let mut server = Server::<u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
@@ -145,7 +144,6 @@ fn run_transform_cases() {
                     }
                 }
             }
-        })
-        .unwrap();
+        });
     }
 }

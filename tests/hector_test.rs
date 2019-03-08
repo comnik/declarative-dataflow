@@ -5,14 +5,13 @@ use std::time::Duration;
 
 use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::Operator;
-use timely::Configuration;
 
 use declarative_dataflow::binding::BinaryPredicate::LT;
 use declarative_dataflow::binding::{AsBinding, Binding};
 use declarative_dataflow::plan::hector::{plan_order, source_conflicts};
-use declarative_dataflow::plan::Hector;
+use declarative_dataflow::plan::{Hector, Implementable};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Aid, AttributeSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{AttributeSemantics, Plan, Rule, TxData, Value};
 use Value::{Bool, Eid, Number, String};
 
 struct Case {
@@ -20,18 +19,6 @@ struct Case {
     plan: Hector,
     transactions: Vec<Vec<TxData>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
-}
-
-fn dependencies(case: &Case) -> HashSet<Aid> {
-    let mut deps = HashSet::new();
-
-    for binding in case.plan.bindings.iter() {
-        if let Binding::Attribute(binding) = binding {
-            deps.insert(binding.source_attribute.clone());
-        }
-    }
-
-    deps
 }
 
 /// Ensures bindings report correct dependencies before being asked to
@@ -400,17 +387,17 @@ fn run_hector_cases() {
     ];
 
     for case in cases.drain(..) {
-        timely::execute(Configuration::Thread, move |worker| {
+        timely::execute_directly(move |worker| {
             let mut server = Server::<u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
 
-            let deps = dependencies(&case);
+            let deps = case.plan.dependencies();
             let plan = Plan::Hector(case.plan.clone());
 
             worker.dataflow::<u64, _, _>(|scope| {
-                for dep in deps.iter() {
+                for dep in deps.attributes.iter() {
                     server
                         .context
                         .internal
@@ -473,7 +460,6 @@ fn run_hector_cases() {
                     }
                 }
             }
-        })
-        .unwrap();
+        });
     }
 }

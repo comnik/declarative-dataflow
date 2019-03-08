@@ -1,7 +1,5 @@
 use std::sync::mpsc::channel;
 
-use timely::Configuration;
-
 use declarative_dataflow::plan::{Join, Project};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::{AttributeSemantics, Plan, Rule, TxData, Value};
@@ -9,7 +7,7 @@ use Value::{Eid, String};
 
 #[test]
 fn match_ea_after_input() {
-    timely::execute(Configuration::Thread, move |worker| {
+    timely::execute_directly(move |worker| {
         let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
@@ -62,13 +60,12 @@ fn match_ea_after_input() {
             results.recv().unwrap(),
             (vec![String("Dipper".to_string())], 1)
         );
-    })
-    .unwrap();
+    });
 }
 
 #[test]
 fn join_after_input() {
-    timely::execute(Configuration::Thread, move |worker| {
+    timely::execute_directly(move |worker| {
         let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
@@ -148,6 +145,5 @@ fn join_after_input() {
         worker.step_while(|| server.is_any_outdated());
 
         assert_eq!(results.recv().unwrap(), (vec![Eid(101), Eid(1)], 1));
-    })
-    .unwrap();
+    });
 }
