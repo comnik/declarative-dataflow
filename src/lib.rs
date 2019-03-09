@@ -198,7 +198,7 @@ impl ShutdownHandle {
 /// Attribute indices can have various operations applied to them,
 /// based on their semantics.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum AttributeSemantics {
+pub enum InputSemantics {
     /// No special semantics enforced. Source is responsible for
     /// everything.
     Raw,
@@ -207,6 +207,33 @@ pub enum AttributeSemantics {
     /// Multiple different values for any given eid are allowed, but
     /// (e,v) pairs are enforced to be distinct.
     CardinalityMany,
+    // /// @TODO
+    // CAS,
+}
+
+/// Per-attribute semantics.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct AttributeConfig<T>
+where
+    T: Timestamp + Lattice + TotalOrder,
+{
+    /// Modifiers to apply on attribute inputs, such as keeping only
+    /// the most recent value per eid, or compare-and-swap.
+    pub input_semantics: InputSemantics,
+    /// How close indexed traces should follow the computation
+    /// frontier.
+    pub trace_slack: Option<T>,
+}
+
+/// Per-relation semantics.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
+pub struct RelationConfig<T>
+where
+    T: Timestamp + Lattice + TotalOrder,
+{
+    /// How close the arranged trace should follow the computation
+    /// frontier.
+    pub trace_slack: Option<T>,
 }
 
 /// Various indices over a collection of (K, V) pairs, required to

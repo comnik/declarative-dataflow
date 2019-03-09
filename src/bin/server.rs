@@ -100,7 +100,6 @@ fn main() {
                     port: starting_port + (worker.index() as u16),
                     manual_advance: matches.opt_present("manual-advance"),
                     enable_cli: matches.opt_present("enable-cli"),
-                    enable_history: matches.opt_present("enable-history"),
                     enable_optimizer: matches.opt_present("enable-optimizer"),
                     enable_meta: matches.opt_present("enable-meta"),
                 }
@@ -108,13 +107,7 @@ fn main() {
         };
 
         // setup interpretation context
-        let trace_slack = if config.enable_history {
-            None
-        } else {
-            // Some(1)
-            Some(Duration::from_secs(1))
-        };
-        let mut server = Server::<T, Token>::new(config.clone(), trace_slack);
+        let mut server = Server::<T, Token>::new(config.clone());
 
         // The server might specify a sequence of requests for
         // setting-up built-in arrangements. We serialize those here
@@ -688,11 +681,11 @@ fn main() {
             worker.step_while(|| server.is_any_outdated());
         }
 
-        info!("Shutting down.");
+        info!("Shutting down");
 
         drop(sequencer);
 
         // @TODO de-register loggers s.t. logging dataflows can shut down.
 
-    }).expect("Timely computation did not exit cleanly.");
+    }).expect("Timely computation did not exit cleanly");
 }

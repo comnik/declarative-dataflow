@@ -12,7 +12,6 @@ use timely::progress::Timestamp;
 use differential_dataflow::collection::Collection;
 use differential_dataflow::input::Input;
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::trace::TraceReader;
 
 use crate::domain::Domain;
 use crate::plan::{ImplContext, Implementable};
@@ -20,7 +19,7 @@ use crate::sinks::{Sink, Sinkable};
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
 use crate::{
-    implement, implement_neu, AttributeSemantics, CollectionIndex, RelationHandle, ShutdownHandle,
+    implement, implement_neu, CollectionIndex, InputSemantics, RelationHandle, ShutdownHandle,
 };
 use crate::{Aid, Error, Time, TxData, Value};
 
@@ -33,8 +32,6 @@ pub struct Config {
     pub manual_advance: bool,
     /// Should inputs via CLI be accepted?
     pub enable_cli: bool,
-    /// Should as-of queries be possible?
-    pub enable_history: bool,
     /// Should queries use the optimizer during implementation?
     pub enable_optimizer: bool,
     /// Should queries on the query graph be available?
@@ -47,7 +44,6 @@ impl Default for Config {
             port: 6262,
             manual_advance: false,
             enable_cli: false,
-            enable_history: false,
             enable_optimizer: false,
             enable_meta: false,
         }
@@ -104,7 +100,7 @@ pub struct CreateAttribute {
     pub name: String,
     /// Semantics enforced on this attribute by 3DF (vs those enforced
     /// by the external source).
-    pub semantics: AttributeSemantics,
+    pub semantics: InputSemantics,
 }
 
 /// Possible request types.
@@ -154,8 +150,6 @@ where
     pub shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
-    /// How close traces should follow the computation frontier.
-    trace_slack: Option<T>,
 }
 
 /// Implementation context.
@@ -169,22 +163,6 @@ where
     pub underconstrained: HashSet<Aid>,
     /// Internal domain of command sequence numbers.
     pub internal: Domain<T>,
-    /// Named relations.
-    pub arrangements: HashMap<Aid, RelationHandle<T>>,
-}
-
-impl<T> Context<T>
-where
-    T: Timestamp + Lattice + TotalOrder,
-{
-    /// Inserts a new named relation.
-    pub fn register_arrangement(&mut self, name: String, mut trace: RelationHandle<T>) {
-        // decline the capability for that trace handle to subset its
-        // view of the data
-        trace.distinguish_since(&[]);
-
-        self.arrangements.insert(name, trace);
-    }
 }
 
 impl<T> ImplContext<T> for Context<T>
@@ -196,7 +174,7 @@ where
     }
 
     fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle<T>> {
-        self.arrangements.get_mut(name)
+        self.internal.arrangements.get_mut(name)
     }
 
     fn has_attribute(&self, name: &str) -> bool {
@@ -223,19 +201,17 @@ where
     Token: Hash,
 {
     /// Creates a new server state from a configuration.
-    pub fn new(config: Config, trace_slack: Option<T>) -> Self {
+    pub fn new(config: Config) -> Self {
         Server {
             config,
             context: Context {
                 rules: HashMap::new(),
                 internal: Domain::new(Default::default()),
                 underconstrained: HashSet::new(),
-                arrangements: HashMap::new(),
             },
             interests: HashMap::new(),
             shutdown_handles: HashMap::new(),
             probe: ProbeHandle::new(),
-            trace_slack,
         }
     }
 
@@ -244,43 +220,43 @@ where
         vec![
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.pattern/e".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.pattern/a".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.pattern/v".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.join/binding".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.union/binding".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.project/binding".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.project/variables".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df/name".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.name/variables".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.name/plan".to_string(),
-            //     semantics: AttributeSemantics::Raw,
+            //     semantics: InputSemantics::Raw,
             // }),
             // Request::Register(Register {
             //     publish: vec!["df.rules".to_string()],
@@ -335,7 +311,7 @@ where
     ) -> Result<Collection<S, Vec<Value>, isize>, Error> {
         // We need to do a `contains_key` here to avoid taking
         // a mut ref on context.
-        if self.context.arrangements.contains_key(name) {
+        if self.context.internal.arrangements.contains_key(name) {
             // Rule is already implemented.
             let relation = self
                 .context
@@ -404,29 +380,7 @@ where
     /// Handle an AdvanceDomain request.
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
-            None => {
-                // If history is not enabled, we want to keep traces
-                // advanced up to the previous time.
-                let trace_next = match self.trace_slack {
-                    None => None,
-                    Some(ref trace_slack) => Some(next.clone() - trace_slack.clone()),
-                };
-
-                self.context.internal.advance_to(next, trace_next.clone())?;
-
-                if let Some(trace_next) = trace_next {
-                    // if historical queries don't matter, we should advance
-                    // the index traces to allow them to compact
-
-                    let frontier = &[trace_next];
-
-                    for trace in self.context.arrangements.values_mut() {
-                        trace.advance_by(frontier);
-                    }
-                }
-
-                Ok(())
-            }
+            None => self.context.internal.advance_to(next),
             Some(_) => Err(Error {
                 category: "df.error.category/unsupported",
                 message: "Named domains are not yet supported.".to_string(),

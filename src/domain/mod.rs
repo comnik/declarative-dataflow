@@ -2,10 +2,11 @@
 //! semantics.
 
 use std::collections::{HashMap, HashSet};
+use std::ops::Sub;
 
 use timely::dataflow::channels::pact::Exchange;
 use timely::dataflow::operators::generic::operator::Operator;
-use timely::dataflow::operators::{Filter, FrontierNotificator, Map};
+use timely::dataflow::operators::FrontierNotificator;
 use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::order::TotalOrder;
 use timely::progress::Timestamp;
@@ -13,10 +14,11 @@ use timely::progress::Timestamp;
 use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Threshold;
+use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
 use crate::{Aid, Error, TxData, Value};
-use crate::{AttributeSemantics, CollectionIndex};
+use crate::{AttributeConfig, CollectionIndex, InputSemantics, RelationConfig, RelationHandle};
 
 /// A domain manages attributes (and their inputs) that share a
 /// timestamp semantics (e.g. come from the same logical source).
@@ -29,15 +31,21 @@ pub struct Domain<T: Timestamp + Lattice + TotalOrder> {
     pub sinks: HashMap<String, InputSession<T, Vec<Value>, isize>>,
     /// The probe keeping track of progress in this domain.
     probe: ProbeHandle<T>,
+    /// Configurations for attributes in this domain.
+    pub attributes: HashMap<Aid, AttributeConfig<T>>,
     /// Forward attribute indices eid -> v.
     pub forward: HashMap<Aid, CollectionIndex<Value, Value, T>>,
     /// Reverse attribute indices v -> eid.
     pub reverse: HashMap<Aid, CollectionIndex<Value, Value, T>>,
+    /// Configuration for relations in this domain.
+    pub relations: HashMap<Aid, RelationConfig<T>>,
+    /// Relation traces.
+    pub arrangements: HashMap<Aid, RelationHandle<T>>,
 }
 
 impl<T> Domain<T>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    T: Timestamp + Lattice + TotalOrder + Sub<Output = T>,
 {
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
@@ -46,8 +54,11 @@ where
             input_sessions: HashMap::new(),
             sinks: HashMap::new(),
             probe: ProbeHandle::new(),
+            attributes: HashMap::new(),
             forward: HashMap::new(),
             reverse: HashMap::new(),
+            relations: HashMap::new(),
+            arrangements: HashMap::new(),
         }
     }
 
@@ -57,7 +68,7 @@ where
     pub fn create_attribute<S: Scope<Timestamp = T>>(
         &mut self,
         name: &str,
-        typ: AttributeSemantics,
+        typ: InputSemantics,
         scope: &mut S,
     ) -> Result<(), Error> {
         if self.forward.contains_key(name) {
@@ -69,8 +80,8 @@ where
             let (handle, mut tuples) = scope.new_collection::<(Value, Value), isize>();
 
             tuples = match typ {
-                AttributeSemantics::Raw => tuples,
-                AttributeSemantics::CardinalityOne => {
+                InputSemantics::Raw => tuples,
+                InputSemantics::CardinalityOne => {
                     let exchange =
                         Exchange::new(|((e, _v), _t, _diff): &((Value, Value), T, isize)| {
                             if let Value::Eid(eid) = e {
@@ -145,7 +156,7 @@ where
                         })
                         .as_collection()
                 }
-                AttributeSemantics::CardinalityMany => {
+                InputSemantics::CardinalityMany => {
                     // Ensure that redundant (e,v) pairs don't cause
                     // misleading proposals during joining.
                     tuples.distinct()
@@ -168,8 +179,7 @@ where
     pub fn create_source<S: Scope<Timestamp = T>>(
         &mut self,
         name: &str,
-        name_idx: Option<usize>,
-        datoms: &Stream<S, (usize, ((Value, Value), T, isize))>,
+        datoms: &Stream<S, ((Value, Value), T, isize)>,
     ) -> Result<(), Error> {
         if self.forward.contains_key(name) {
             Err(Error {
@@ -177,13 +187,6 @@ where
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let datoms = match name_idx {
-                None => datoms.map(|(_idx, tuple)| tuple),
-                Some(name_idx) => datoms
-                    .filter(move |(idx, _tuple)| *idx == name_idx)
-                    .map(|(_idx, tuple)| tuple),
-            };
-
             let tuples = datoms
                 .as_collection()
                 // Ensure that redundant (e,v) pairs don't cause
@@ -200,6 +203,15 @@ where
 
             Ok(())
         }
+    }
+
+    /// Inserts a new named relation.
+    pub fn register_arrangement(&mut self, name: String, mut trace: RelationHandle<T>) {
+        // decline the capability for that trace handle to subset its
+        // view of the data
+        trace.distinguish_since(&[]);
+
+        self.arrangements.insert(name, trace);
     }
 
     /// Transact data into one or more inputs.
@@ -236,11 +248,9 @@ where
         }
     }
 
-    /// Advances the domain to `next`. The `trace_next` parameter can
-    /// be used to indicate whether (and if so how closely) traces
-    /// should follow the input frontier. Setting this to None
-    /// maintains full trace histories.
-    pub fn advance_to(&mut self, next: T, trace_next: Option<T>) -> Result<(), Error> {
+    /// Advances the domain to `next`. Advances all traces
+    /// accordingly, depending on their configured slack.
+    pub fn advance_to(&mut self, next: T) -> Result<(), Error> {
         if !self.now_at.less_equal(&next) {
             // We can't rewind time.
             Err(Error {
@@ -258,18 +268,39 @@ where
                 handle.flush();
             }
 
-            if let Some(trace_next) = trace_next {
-                // if historical queries don't matter, we should advance
-                // the index traces to allow them to compact
+            for (aid, config) in self.attributes.iter() {
+                if let Some(ref trace_slack) = config.trace_slack {
+                    let frontier = &[next.clone() - trace_slack.clone()];
 
-                let frontier = &[trace_next];
+                    self.forward
+                        .get_mut(aid)
+                        .expect(&format!(
+                            "Configuration available for unknown attribute {}",
+                            aid
+                        ))
+                        .advance_by(frontier);
 
-                for index in self.forward.values_mut() {
-                    index.advance_by(frontier);
+                    self.reverse
+                        .get_mut(aid)
+                        .expect(&format!(
+                            "Configuration available for unknown attribute {}",
+                            aid
+                        ))
+                        .advance_by(frontier);
                 }
+            }
 
-                for index in self.reverse.values_mut() {
-                    index.advance_by(frontier);
+            for (name, config) in self.relations.iter() {
+                if let Some(ref trace_slack) = config.trace_slack {
+                    let frontier = &[next.clone() - trace_slack.clone()];
+
+                    self.arrangements
+                        .get_mut(name)
+                        .expect(&format!(
+                            "Configuration available for unknown relation {}",
+                            name
+                        ))
+                        .advance_by(frontier);
                 }
             }
 

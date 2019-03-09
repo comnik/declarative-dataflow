@@ -4,8 +4,8 @@ use std::time::Duration;
 
 use declarative_dataflow::plan::{Pull, PullLevel};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{AttributeSemantics, Plan, Rule, TxData, Value};
-use AttributeSemantics::Raw;
+use declarative_dataflow::{InputSemantics, Plan, Rule, TxData, Value};
+use InputSemantics::Raw;
 use Value::{Aid, Bool, Eid, Number, String};
 
 #[test]

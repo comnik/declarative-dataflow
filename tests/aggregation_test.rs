@@ -9,7 +9,7 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Aggregate, AggregationFn, Implementable, Join, Project};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Aid, AttributeSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Aid, InputSemantics, Plan, Rule, TxData, Value};
 use Value::{Eid, Number, Rational32, String};
 
 use num_rational::Ratio;
@@ -49,7 +49,7 @@ fn run_cases(mut cases: Vec<Case>) {
                     server
                         .context
                         .internal
-                        .create_attribute(dep, AttributeSemantics::Raw, scope)
+                        .create_attribute(dep, InputSemantics::Raw, scope)
                         .unwrap();
                 }
 

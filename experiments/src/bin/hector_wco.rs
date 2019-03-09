@@ -1,7 +1,7 @@
 use graph_map::GraphMMap;
 
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{q, AttributeSemantics, Binding, Rule, TxData, Value};
+use declarative_dataflow::{q, InputSemantics, Binding, Rule, TxData, Value};
 use Value::Eid;
 
 fn main() {
@@ -32,7 +32,7 @@ fn main() {
             server
                 .context
                 .internal
-                .create_attribute("edge", AttributeSemantics::Raw, scope)
+                .create_attribute("edge", InputSemantics::Raw, scope)
                 .unwrap();
 
             server

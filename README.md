@@ -70,7 +70,6 @@ other for configuring the server itself.
     OPTION           | DESCRIPTION                | DEFAULT
     --port           | port to listen at          | 6262
     --enable-cli     | accept commands via stdin? | false
-    --enable-history | keep full traces           | false
 
 Logging at a specific level can be enabled by setting the `RUST_LOG`
 environment variable to `RUST_LOG=server=info`.

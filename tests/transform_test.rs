@@ -9,7 +9,7 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Function, Implementable, Transform};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Aid, AttributeSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Aid, InputSemantics, Plan, Rule, TxData, Value};
 use Value::{Eid, Instant};
 
 struct Case {
@@ -88,7 +88,7 @@ fn run_transform_cases() {
                     server
                         .context
                         .internal
-                        .create_attribute(dep, AttributeSemantics::Raw, scope)
+                        .create_attribute(dep, InputSemantics::Raw, scope)
                         .unwrap();
                 }
 
