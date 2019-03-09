@@ -129,6 +129,8 @@ pub enum Request {
     AdvanceDomain(Option<String>, u64),
     /// Closes a named input handle.
     CloseInput(String),
+    /// Requests orderly shutdown of the system.
+    Shutdown,
 }
 
 /// Server context maintaining globally registered arrangements and

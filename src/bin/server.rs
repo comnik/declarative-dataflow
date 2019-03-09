@@ -199,7 +199,9 @@ fn main() {
         // Sequence counter for commands.
         let mut next_tx: Tx = 0;
 
-        loop {
+        let mut shutdown = false;
+
+        while !shutdown {
             // each worker has to...
             //
             // ...accept new client connections
@@ -650,6 +652,9 @@ fn main() {
                                 send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                             }
                         }
+                        Request::Shutdown => {
+                            shutdown = true
+                        }
                     }
                 }
 
@@ -667,10 +672,9 @@ fn main() {
             worker.step_while(|| server.is_any_outdated());
         }
 
-        // info!("Shutting down.");
+        info!("Shutting down.");
 
-        // @TODO clean shutdown
-        // drop(sequencer);
+        drop(sequencer);
 
         // @TODO de-register loggers s.t. logging dataflows can shut down.
 
