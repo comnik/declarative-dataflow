@@ -43,6 +43,13 @@ use ws::connection::{ConnEvent, Connection};
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server};
 use declarative_dataflow::{Error, ImplContext, ResultDiff};
 
+/// Transaction ids.
+type Tx = u64;
+
+/// Server timestamp type.
+type T = u64;
+// type T = Duration;
+
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
 const ERRORS: Token = Token(usize::MAX - 3);
@@ -104,13 +111,13 @@ fn main() {
         };
 
         // setup interpretation context
-        let mut server = Server::<u64, Token>::new(config.clone());
+        let mut server = Server::<T, Token>::new(config.clone());
 
         // The server might specify a sequence of requests for
         // setting-up built-in arrangements. We serialize those here
         // and pre-load the sequencer with them, such that they will
         // flow through the regular request handling.
-        let builtins = Server::<u64, Token>::builtins();
+        let builtins = Server::<T, Token>::builtins();
         let preload_command = Command {
             owner: worker.index(),
             client: SYSTEM.0,
@@ -131,10 +138,10 @@ fn main() {
         let (send_cli, recv_cli) = mio::channel::channel();
 
         // setup results channel
-        let (send_results, recv_results) = mio::channel::channel::<(String, Vec<ResultDiff<u64>>)>();
+        let (send_results, recv_results) = mio::channel::channel::<(String, Vec<ResultDiff<T>>)>();
 
         // setup errors channel
-        let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<(Error, u64)>)>();
+        let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<(Error, Tx)>)>();
 
         // setup server socket
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
@@ -190,7 +197,7 @@ fn main() {
         );
 
         // Sequence counter for commands.
-        let mut next_tx: u64 = 0;
+        let mut next_tx: Tx = 0;
 
         loop {
             // each worker has to...
@@ -308,7 +315,7 @@ fn main() {
                                     warn!("NO INTEREST FOR THIS RESULT");
                                 }
                                 Some(tokens) => {
-                                    let serialized = serde_json::to_string::<(String, Vec<ResultDiff<u64>>)>(
+                                    let serialized = serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(
                                         &(query_name, results),
                                     ).expect("failed to serialize outputs");
                                     let msg = ws::Message::text(serialized);
@@ -350,7 +357,7 @@ fn main() {
                                 (serializable, time)
                             }).collect();
 
-                            let serialized = serde_json::to_string::<(String, Vec<(serde_json::Map<_,_>, u64)>)>(
+                            let serialized = serde_json::to_string::<(String, Vec<(serde_json::Map<_,_>, T)>)>(
                                 &("df.error".to_string(), serializable)
                             ).expect("failed to serialize errors");
                             let msg = ws::Message::text(serialized);
@@ -514,7 +521,7 @@ fn main() {
 
                                 let send_results_handle = send_results.clone();
 
-                                worker.dataflow::<u64, _, _>(|scope| {
+                                worker.dataflow::<T, _, _>(|scope| {
                                     let name = req.name.clone();
 
                                     match server.interest(&req.name, scope) {
@@ -574,7 +581,7 @@ fn main() {
                                     let server_handle = &mut server;
                                     let send_errors_handle = &send_errors;
 
-                                    worker.dataflow::<u64, _, _>(move |scope| {
+                                    worker.dataflow::<T, _, _>(move |scope| {
                                         match server_handle.interest(&source, scope) {
                                             Err(error) => {
                                                 send_errors_handle.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
@@ -613,21 +620,21 @@ fn main() {
                             }
                         }
                         Request::RegisterSource(req) => {
-                            worker.dataflow::<u64, _, _>(|scope| {
+                            worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.register_source(req, scope) {
                                     send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                                 }
                             });
                         }
                         Request::RegisterSink(req) => {
-                            worker.dataflow::<u64, _, _>(|scope| {
+                            worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.register_sink(req, scope) {
                                     send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                                 }
                             });
                         }
                         Request::CreateAttribute(CreateAttribute { name, semantics }) => {
-                            worker.dataflow::<u64, _, _>(|scope| {
+                            worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.context.internal.create_attribute(&name, semantics, scope) {
                                     send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
                                 }
