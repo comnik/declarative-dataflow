@@ -905,6 +905,10 @@ where
                     });
                 }
                 Some(variable) => {
+                    #[cfg(feature = "set-semantics")]
+                    variable.set(&execution.tuples().distinct());
+
+                    #[cfg(not(feature = "set-semantics"))]
                     variable.set(&execution.tuples().consolidate());
                 }
             }
