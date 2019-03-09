@@ -1,5 +1,7 @@
 //! Types and operators to feed outputs into external systems.
 
+use std::time::Duration;
+
 use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::Operator;
 use timely::dataflow::{Scope, Stream};
@@ -17,16 +19,14 @@ pub mod csv_file;
 pub use self::csv_file::CsvFile;
 
 /// An external system that wants to receive result diffs.
-pub trait Sinkable {
-    /// The timestamp type accepted by this system.
-    type Timestamp: Timestamp + Lattice + TotalOrder;
-
+pub trait Sinkable<T>
+where
+    T: Timestamp + Lattice + TotalOrder,
+{
     /// Creates a timely operator reading from the source and
     /// producing inputs.
-    fn sink<S: Scope<Timestamp = Self::Timestamp>>(
-        &self,
-        stream: &Stream<S, ResultDiff<S::Timestamp>>,
-    ) -> Result<(), Error>;
+    fn sink<S: Scope<Timestamp = T>>(&self, stream: &Stream<S, ResultDiff<T>>)
+        -> Result<(), Error>;
 }
 
 /// Supported external systems.
@@ -39,12 +39,10 @@ pub enum Sink {
     CsvFile(CsvFile),
 }
 
-impl Sinkable for Sink {
-    type Timestamp = u64;
-
+impl Sinkable<u64> for Sink {
     fn sink<S: Scope<Timestamp = u64>>(
         &self,
-        stream: &Stream<S, ResultDiff<S::Timestamp>>,
+        stream: &Stream<S, ResultDiff<u64>>,
     ) -> Result<(), Error> {
         match *self {
             Sink::TheVoid => {
@@ -58,6 +56,26 @@ impl Sinkable for Sink {
             }
             #[cfg(feature = "csv-source")]
             Sink::CsvFile(ref sink) => sink.sink(stream),
+        }
+    }
+}
+
+impl Sinkable<Duration> for Sink {
+    fn sink<S: Scope<Timestamp = Duration>>(
+        &self,
+        stream: &Stream<S, ResultDiff<Duration>>,
+    ) -> Result<(), Error> {
+        match *self {
+            Sink::TheVoid => {
+                stream.sink(Pipeline, "TheVoid", move |input| {
+                    if input.frontier.is_empty() {
+                        println!("Inputs to void sink have ceased.");
+                    }
+                });
+
+                Ok(())
+            }
+            _ => unimplemented!(),
         }
     }
 }

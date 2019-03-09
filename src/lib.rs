@@ -26,6 +26,7 @@ pub mod timestamp;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
+use std::time::Duration;
 
 use timely::dataflow::operators::CapabilitySet;
 use timely::dataflow::scopes::child::{Child, Iterative};
@@ -60,8 +61,8 @@ pub type Aid = String; // u32
 
 /// Possible data values.
 ///
-/// This enum captures the currently supported data types, and is the least common denominator
-/// for the types of records moved around.
+/// This enum captures the currently supported data types, and is the
+/// least common denominator for the types of records moved around.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Value {
     /// An attribute identifier
@@ -82,6 +83,18 @@ pub enum Value {
     Uuid([u8; 16]),
     /// A Timely operator address.
     Address(Vec<usize>),
+}
+
+/// Possible timestamp types.
+///
+/// This enum captures the currently supported timestamp types, and is
+/// the least common denominator for the types of times moved around.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub enum Time {
+    /// Logical transaction time or sequence numbers.
+    TxId(u64),
+    /// Real time.
+    Real(Duration),
 }
 
 /// A client-facing, non-exceptional error.

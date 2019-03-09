@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::ops::Sub;
+use std::time::Duration;
 
 use timely::dataflow::{ProbeHandle, Scope};
 use timely::order::TotalOrder;
@@ -21,7 +22,7 @@ use crate::Rule;
 use crate::{
     implement, implement_neu, AttributeSemantics, CollectionIndex, RelationHandle, ShutdownHandle,
 };
-use crate::{Aid, Error, TxData, Value};
+use crate::{Aid, Error, Time, TxData, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -129,7 +130,7 @@ pub enum Request {
     /// Creates a named input handle that can be `Transact`ed upon.
     CreateAttribute(CreateAttribute),
     /// Advances the specified domain to the specified time.
-    AdvanceDomain(Option<String>, u64),
+    AdvanceDomain(Option<String>, Time),
     /// Closes a named input handle.
     CloseInput(String),
     /// Requests orderly shutdown of the system.
@@ -153,6 +154,8 @@ where
     pub shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
+    /// How close traces should follow the computation frontier.
+    trace_slack: Option<T>,
 }
 
 /// Implementation context.
@@ -216,11 +219,11 @@ where
 
 impl<T, Token> Server<T, Token>
 where
-    T: Timestamp + Lattice + TotalOrder + Default + Sub<u64, Output = T>,
+    T: Timestamp + Lattice + TotalOrder + Default + Sub<Output = T>,
     Token: Hash,
 {
     /// Creates a new server state from a configuration.
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Config, trace_slack: Option<T>) -> Self {
         Server {
             config,
             context: Context {
@@ -232,6 +235,7 @@ where
             interests: HashMap::new(),
             shutdown_handles: HashMap::new(),
             probe: ProbeHandle::new(),
+            trace_slack,
         }
     }
 
@@ -401,12 +405,11 @@ where
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
             None => {
-                // If history is not enabled, we want to keep traces advanced
-                // up to the previous time.
-                let trace_next = if self.config.enable_history {
-                    None
-                } else {
-                    Some(next.clone() - 1)
+                // If history is not enabled, we want to keep traces
+                // advanced up to the previous time.
+                let trace_next = match self.trace_slack {
+                    None => None,
+                    Some(ref trace_slack) => Some(next.clone() - trace_slack.clone()),
                 };
 
                 self.context.internal.advance_to(next, trace_next.clone())?;

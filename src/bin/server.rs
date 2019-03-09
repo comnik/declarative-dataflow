@@ -40,11 +40,8 @@ use slab::Slab;
 
 use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::server::{Config, CreateAttribute, Request, Server};
-use declarative_dataflow::{Error, ImplContext, ResultDiff};
-
-/// Transaction ids.
-type Tx = u64;
+use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
+use declarative_dataflow::{Error, ImplContext, ResultDiff, Time};
 
 /// Server timestamp type.
 type T = u64;
@@ -111,7 +108,13 @@ fn main() {
         };
 
         // setup interpretation context
-        let mut server = Server::<T, Token>::new(config.clone());
+        let trace_slack = if config.enable_history {
+            None
+        } else {
+            // Some(1)
+            Some(Duration::from_secs(1))
+        };
+        let mut server = Server::<T, Token>::new(config.clone(), trace_slack);
 
         // The server might specify a sequence of requests for
         // setting-up built-in arrangements. We serialize those here
@@ -141,7 +144,7 @@ fn main() {
         let (send_results, recv_results) = mio::channel::channel::<(String, Vec<ResultDiff<T>>)>();
 
         // setup errors channel
-        let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<(Error, Tx)>)>();
+        let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<(Error, TxId)>)>();
 
         // setup server socket
         let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
@@ -197,7 +200,7 @@ fn main() {
         );
 
         // Sequence counter for commands.
-        let mut next_tx: Tx = 0;
+        let mut next_tx: TxId = 0;
 
         let mut shutdown = false;
 
@@ -359,7 +362,7 @@ fn main() {
                                 (serializable, time)
                             }).collect();
 
-                            let serialized = serde_json::to_string::<(String, Vec<(serde_json::Map<_,_>, T)>)>(
+                            let serialized = serde_json::to_string::<(String, Vec<(serde_json::Map<_,_>, TxId)>)>(
                                 &("df.error".to_string(), serializable)
                             ).expect("failed to serialize errors");
                             let msg = ws::Message::text(serialized);
@@ -497,7 +500,7 @@ fn main() {
 
                 let owner = command.owner;
                 let client = command.client;
-                let time = server.context.internal.time().clone();
+                let last_tx = next_tx - 1;
 
                 for req in command.requests.drain(..) {
 
@@ -506,7 +509,7 @@ fn main() {
                     match req {
                         Request::Transact(req) => {
                             if let Err(error) = server.transact(req, owner, worker.index()) {
-                                send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                             }
                         }
                         Request::Interest(req) => {
@@ -528,7 +531,7 @@ fn main() {
 
                                     match server.interest(&req.name, scope) {
                                         Err(error) => {
-                                            send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                            send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                         }
                                         Ok(relation) => {
                                             relation
@@ -577,7 +580,7 @@ fn main() {
                                         category: "df.error.category/not-found",
                                         message: format!("Unknown sink {}", sink),
                                     };
-                                    send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                    send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                 }
                                 Some(mut sink_handle) => {
                                     let server_handle = &mut server;
@@ -586,7 +589,7 @@ fn main() {
                                     worker.dataflow::<T, _, _>(move |scope| {
                                         match server_handle.interest(&source, scope) {
                                             Err(error) => {
-                                                send_errors_handle.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                                send_errors_handle.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                             }
                                             Ok(relation) => {
                                                 // @TODO Ideally we only ever want to "send" references
@@ -618,38 +621,51 @@ fn main() {
                         }
                         Request::Register(req) => {
                             if let Err(error) = server.register(req) {
-                                send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                             }
                         }
                         Request::RegisterSource(req) => {
                             worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.register_source(req, scope) {
-                                    send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                    send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                 }
                             });
                         }
                         Request::RegisterSink(req) => {
                             worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.register_sink(req, scope) {
-                                    send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                    send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                 }
                             });
                         }
                         Request::CreateAttribute(CreateAttribute { name, semantics }) => {
                             worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.context.internal.create_attribute(&name, semantics, scope) {
-                                    send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                    send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                 }
                             });
                         }
                         Request::AdvanceDomain(name, next) => {
-                            if let Err(error) = server.advance_domain(name, next) {
-                                send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                            // if let Time::Real(next) = next {
+                            //     if let Err(error) = server.advance_domain(name, next) {
+                            //         send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
+                            //     }
+                            if let Time::TxId(next) = next {
+                                if let Err(error) = server.advance_domain(name, next) {
+                                    send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
+                                }
+                            } else {
+                                let error = Error {
+                                    category: "df.error.category/incorrect",
+                                    message: "Incorrect timestamp type for domain.".to_string(),
+                                };
+
+                                send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                             }
                         }
                         Request::CloseInput(name) => {
                             if let Err(error) = server.context.internal.close_input(name) {
-                                send_errors.send((vec![Token(client)], vec![(error, time.clone())])).unwrap();
+                                send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                             }
                         }
                         Request::Shutdown => {
@@ -660,7 +676,7 @@ fn main() {
 
                 if !config.manual_advance {
                     if let Err(error) = server.advance_domain(None, next_tx as u64) {
-                        send_errors.send((vec![Token(client)], vec![(error, time)])).unwrap();
+                        send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                     }
                 }
             }
