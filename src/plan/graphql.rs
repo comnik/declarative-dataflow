@@ -5,11 +5,24 @@ use graphql_parser::query::{Definition, Selection, SelectionSet, OperationDefini
 
 use crate::plan::{Plan, ImplContext, Implementable, PullLevel};
 
-/// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`.
+/// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct GraphQl {
-    /// String representation of a GraphQL query.
+    /// String representation of GraphQL query
     pub query: String,
+    /// Cached paths
+    pub paths: Vec<PullLevel<Plan>>,
+}
+
+impl GraphQl {
+    /// Creates a new GraphQL instance by parsing the ast obtained from the provided query
+    pub fn new(query: String) -> Self {
+        let q = query.clone();
+        GraphQl {
+            query,
+            paths: ast_to_paths(parse_query(&q).expect("graphQL ast parsing failed")),
+        }
+    }
 }
 
 fn selection_set_to_paths(
@@ -103,14 +116,13 @@ fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
 
 impl Implementable for GraphQl {
     fn dependencies(&self) -> Dependencies {
-        // @TODO cache this?
-        let ast = parse_query(&self.query).expect("graphQL ast parsing failed");
-        let parsed = Pull {
-            variables: vec![],
-            paths: ast_to_paths(ast),
-        };
+        let mut dependencies = Dependencies::none();
 
-        parsed.dependencies()
+        for path in self.paths.iter() {
+            dependencies = Dependencies::merge(dependencies, path.dependencies());
+        }
+
+        dependencies
     }
 
     fn implement<'b, T, I, S>(
@@ -118,7 +130,7 @@ impl Implementable for GraphQl {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle<T>)
+    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
