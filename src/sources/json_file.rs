@@ -25,15 +25,17 @@ impl Sourceable for JsonFile {
 
     fn source<S: Scope<Timestamp = Self::Timestamp>>(
         &self,
-        scope: &S,
+        scope: &mut S,
         names: Vec<String>,
     ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
         let filename = self.path.clone();
+        let scope_handle = scope.clone();
 
         generic::operator::source(
             scope,
             &format!("File({})", filename),
             move |capability, info| {
+                let scope = scope_handle;
                 let activator = scope.activator_for(&info.address[..]);
 
                 let mut cap = Some(capability);

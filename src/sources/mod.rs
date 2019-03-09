@@ -11,6 +11,7 @@ use crate::Value;
 #[cfg(feature = "csv-source")]
 pub mod csv_file;
 pub mod json_file;
+pub mod timely_logging;
 
 #[cfg(feature = "csv-source")]
 pub use self::csv_file::CsvFile;
@@ -25,7 +26,7 @@ pub trait Sourceable {
     /// producing inputs.
     fn source<S: Scope<Timestamp = Self::Timestamp>>(
         &self,
-        scope: &S,
+        scope: &mut S,
         names: Vec<String>,
     ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))>;
 }
@@ -45,7 +46,7 @@ impl Sourceable for Source {
 
     fn source<S: Scope<Timestamp = u64>>(
         &self,
-        scope: &S,
+        scope: &mut S,
         names: Vec<String>,
     ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
         match *self {

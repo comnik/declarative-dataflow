@@ -35,7 +35,7 @@ impl Sourceable for CsvFile {
 
     fn source<S: Scope<Timestamp = Self::Timestamp>>(
         &self,
-        scope: &S,
+        scope: &mut S,
         _names: Vec<String>,
     ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
         let filename = self.path.clone();
