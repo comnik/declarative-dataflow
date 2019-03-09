@@ -84,14 +84,12 @@ impl Datafy for TimelyEvent {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct TimelyLogging {}
 
-impl Sourceable for TimelyLogging {
-    type Timestamp = Duration;
-
-    fn source<S: Scope<Timestamp = Self::Timestamp>>(
+impl Sourceable<Duration> for TimelyLogging {
+    fn source<S: Scope<Timestamp = Duration>>(
         &self,
         scope: &mut S,
         names: Vec<String>,
-    ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
+    ) -> Stream<S, (usize, ((Value, Value), Duration, isize))> {
         let events = Rc::new(EventLink::new());
         let mut logger = BatchLogger::new(events.clone());
 
@@ -106,7 +104,7 @@ impl Sourceable for TimelyLogging {
                 .datafy()
                 .drain(..)
                 .map(move |(aid, x)| (aid as usize, (x, time, 1)))
-                .collect::<Vec<(usize, ((Value, Value), Self::Timestamp, isize))>>()
+                .collect::<Vec<(usize, ((Value, Value), Duration, isize))>>()
         })
 
         // let mut demux = OperatorBuilder::new("Timely Logging Demux".to_string(), scope.clone());
