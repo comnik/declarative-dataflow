@@ -53,6 +53,9 @@ impl Default for Config {
     }
 }
 
+/// Transaction ids.
+pub type TxId = u64;
+
 /// A request expressing interest in receiving results published under
 /// the specified name.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -147,7 +150,7 @@ where
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, HashSet<Token>>,
     /// Mapping from query names to their shutdown handles.
-    pub shutdown_handles: HashMap<String, ShutdownHandle<T>>,
+    pub shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
 }

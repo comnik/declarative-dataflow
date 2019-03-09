@@ -118,13 +118,24 @@ pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, T, isize>;
 // synthesized (i.e. that are not fully defined yet).
 type VariableMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
 
-/// A wrapper around a vector of ShutdownButton's. Ensures they will
-/// be pressed on dropping the handle.
-pub struct ShutdownHandle<T: Timestamp> {
-    shutdown_buttons: Vec<ShutdownButton<CapabilitySet<T>>>,
+trait Shutdownable {
+    fn press(&mut self);
 }
 
-impl<T: Timestamp> Drop for ShutdownHandle<T> {
+impl<T> Shutdownable for ShutdownButton<T> {
+    #[inline(always)]
+    fn press(&mut self) {
+        self.press();
+    }
+}
+
+/// A wrapper around a vector of ShutdownButton's. Ensures they will
+/// be pressed on dropping the handle.
+pub struct ShutdownHandle {
+    shutdown_buttons: Vec<Box<dyn Shutdownable>>,
+}
+
+impl Drop for ShutdownHandle {
     fn drop(&mut self) {
         for mut button in self.shutdown_buttons.drain(..) {
             button.press();
@@ -132,7 +143,7 @@ impl<T: Timestamp> Drop for ShutdownHandle<T> {
     }
 }
 
-impl<T: Timestamp> ShutdownHandle<T> {
+impl ShutdownHandle {
     /// Returns an empty shutdown handle.
     pub fn empty() -> Self {
         ShutdownHandle {
@@ -141,17 +152,17 @@ impl<T: Timestamp> ShutdownHandle<T> {
     }
 
     /// Wraps a single shutdown button into a shutdown handle.
-    pub fn from_button(button: ShutdownButton<CapabilitySet<T>>) -> Self {
+    pub fn from_button<T: Timestamp>(button: ShutdownButton<CapabilitySet<T>>) -> Self {
         ShutdownHandle {
-            shutdown_buttons: vec![button],
+            shutdown_buttons: vec![Box::new(button)],
         }
     }
 
     /// Adds another shutdown button to this handle. This button will
     /// then also be pressed, whenever the handle is shut down or
     /// dropped.
-    pub fn add_button(&mut self, button: ShutdownButton<CapabilitySet<T>>) {
-        self.shutdown_buttons.push(button);
+    pub fn add_button<T: Timestamp>(&mut self, button: ShutdownButton<CapabilitySet<T>>) {
+        self.shutdown_buttons.push(Box::new(button));
     }
 
     /// Combines the buttons of another handle into self.
@@ -267,7 +278,7 @@ where
             TraceValHandle<K, V, T, isize>,
             TraceKeyHandle<(K, V), T, isize>,
         >,
-        ShutdownHandle<T>,
+        ShutdownHandle,
     ) {
         let (count, shutdown_count) = self
             .count_trace
@@ -285,8 +296,12 @@ where
             validate,
         };
 
-        let shutdown_buttons = vec![shutdown_count, shutdown_propose, shutdown_validate];
-        (index, ShutdownHandle { shutdown_buttons })
+        let mut shutdown_handle = ShutdownHandle::empty();
+        shutdown_handle.add_button(shutdown_count);
+        shutdown_handle.add_button(shutdown_propose);
+        shutdown_handle.add_button(shutdown_validate);
+
+        (index, shutdown_handle)
     }
 
     /// Advances the traces maintained in this index.
@@ -708,7 +723,7 @@ pub fn implement<T, I, S>(
 ) -> Result<
     (
         HashMap<String, Collection<S, Vec<Value>, isize>>,
-        ShutdownHandle<T>,
+        ShutdownHandle,
     ),
     Error,
 >
@@ -809,7 +824,7 @@ pub fn implement_neu<T, I, S>(
 ) -> Result<
     (
         HashMap<String, Collection<S, Vec<Value>, isize>>,
-        ShutdownHandle<T>,
+        ShutdownHandle,
     ),
     Error,
 >
