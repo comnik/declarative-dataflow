@@ -20,14 +20,12 @@ pub struct JsonFile {
     pub path: String,
 }
 
-impl Sourceable for JsonFile {
-    type Timestamp = u64;
-
-    fn source<S: Scope<Timestamp = Self::Timestamp>>(
+impl Sourceable<u64> for JsonFile {
+    fn source<S: Scope<Timestamp = u64>>(
         &self,
         scope: &mut S,
         names: Vec<String>,
-    ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
+    ) -> Stream<S, (usize, ((Value, Value), u64, isize))> {
         let filename = self.path.clone();
         let scope_handle = scope.clone();
 

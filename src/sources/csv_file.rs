@@ -30,14 +30,12 @@ pub struct CsvFile {
     pub schema: Vec<(usize, Value)>,
 }
 
-impl Sourceable for CsvFile {
-    type Timestamp = u64;
-
-    fn source<S: Scope<Timestamp = Self::Timestamp>>(
+impl Sourceable<u64> for CsvFile {
+    fn source<S: Scope<Timestamp = u64>>(
         &self,
         scope: &mut S,
         _names: Vec<String>,
-    ) -> Stream<S, (usize, ((Value, Value), Self::Timestamp, isize))> {
+    ) -> Stream<S, (usize, ((Value, Value), u64, isize))> {
         let filename = self.path.clone();
 
         generic::operator::source(
