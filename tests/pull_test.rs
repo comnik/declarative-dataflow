@@ -480,6 +480,5 @@ fn graph_ql() {
         }
 
         assert!(results.recv_timeout(Duration::from_millis(400)).is_err());
-    })
-    .unwrap();
+    });
 }
