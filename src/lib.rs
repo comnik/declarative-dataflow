@@ -53,12 +53,7 @@ pub use binding::Binding;
 pub use plan::{Hector, ImplContext, Implementable, Plan};
 
 /// A unique entity identifier.
-#[cfg(not(feature = "uuids"))]
 pub type Eid = u64;
-
-/// A unique entity identifier.
-#[cfg(feature = "uuids")]
-pub type Eid = u128;
 
 /// A unique attribute identifier.
 pub type Aid = String; // u32
