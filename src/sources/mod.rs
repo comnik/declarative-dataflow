@@ -13,12 +13,12 @@ use crate::{Aid, Value};
 
 #[cfg(feature = "csv-source")]
 pub mod csv_file;
-// pub mod json_file;
+pub mod json_file;
 pub mod timely_logging;
 
 #[cfg(feature = "csv-source")]
 pub use self::csv_file::CsvFile;
-// pub use self::json_file::JsonFile;
+pub use self::json_file::JsonFile;
 
 /// An external data source that can provide Datoms.
 pub trait Sourceable<T>
@@ -41,8 +41,8 @@ pub enum Source {
     /// CSV files
     #[cfg(feature = "csv-source")]
     CsvFile(CsvFile),
-    // /// Files containing json objects
-    // JsonFile(JsonFile),
+    /// Files containing json objects
+    JsonFile(JsonFile),
 }
 
 impl Sourceable<Duration> for Source {
@@ -65,7 +65,7 @@ impl Sourceable<u64> for Source {
         match *self {
             #[cfg(feature = "csv-source")]
             Source::CsvFile(ref source) => source.source(scope),
-            // Source::JsonFile(ref source) => source.source(scope),
+            Source::JsonFile(ref source) => source.source(scope),
             _ => unimplemented!(),
         }
     }
