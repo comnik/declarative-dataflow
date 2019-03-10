@@ -242,6 +242,41 @@ pub struct AttributeConfig {
     pub trace_slack: Option<Time>,
 }
 
+impl AttributeConfig {
+    /// Shortcut to specifying an attribute that will live in some
+    /// transaction time domain and always compact up to the
+    /// computation frontier.
+    pub fn tx_time(input_semantics: InputSemantics) -> Self {
+        AttributeConfig {
+            input_semantics,
+            // @TODO make this 0? would have to check that no
+            // dataflows are stalled if registered after inputs are
+            // already available
+            trace_slack: Some(Time::TxId(1)),
+        }
+    }
+
+    /// Shortcut to specifying an attribute that will live in some
+    /// real-time domain and always compact up to the computation
+    /// frontier.
+    pub fn real_time(input_semantics: InputSemantics) -> Self {
+        AttributeConfig {
+            input_semantics,
+            // @TODO make this 0?
+            trace_slack: Some(Time::Real(Duration::from_secs(1))),
+        }
+    }
+
+    /// Shortcut to specifying an attribute that will live in an
+    /// arbitrary time domain and never compact its trace.
+    pub fn uncompacted(input_semantics: InputSemantics) -> Self {
+        AttributeConfig {
+            input_semantics,
+            trace_slack: None,
+        }
+    }
+}
+
 /// Per-relation semantics.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct RelationConfig<T>
