@@ -97,6 +97,26 @@ pub enum Time {
     Real(Duration),
 }
 
+impl std::convert::From<Time> for u64 {
+    fn from(t: Time) -> u64 {
+        if let Time::TxId(time) = t {
+            time
+        } else {
+            panic!("Time {:?} can't be converted to u64", t);
+        }
+    }
+}
+
+impl std::convert::From<Time> for Duration {
+    fn from(t: Time) -> Duration {
+        if let Time::Real(time) = t {
+            time
+        } else {
+            panic!("Time {:?} can't be converted to Duration", t);
+        }
+    }
+}
+
 /// A client-facing, non-exceptional error.
 #[derive(Debug)]
 pub struct Error {
@@ -212,17 +232,14 @@ pub enum InputSemantics {
 }
 
 /// Per-attribute semantics.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct AttributeConfig<T>
-where
-    T: Timestamp + Lattice + TotalOrder,
-{
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub struct AttributeConfig {
     /// Modifiers to apply on attribute inputs, such as keeping only
     /// the most recent value per eid, or compare-and-swap.
     pub input_semantics: InputSemantics,
     /// How close indexed traces should follow the computation
     /// frontier.
-    pub trace_slack: Option<T>,
+    pub trace_slack: Option<Time>,
 }
 
 /// Per-relation semantics.

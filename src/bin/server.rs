@@ -41,7 +41,7 @@ use slab::Slab;
 use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
-use declarative_dataflow::{Error, ImplContext, ResultDiff, Time};
+use declarative_dataflow::{Error, ImplContext, ResultDiff};
 
 /// Server timestamp type.
 type T = u64;
@@ -617,9 +617,9 @@ fn main() {
                                 send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                             }
                         }
-                        Request::RegisterSource(req) => {
+                        Request::RegisterSource(source) => {
                             worker.dataflow::<T, _, _>(|scope| {
-                                if let Err(error) = server.register_source(req, scope) {
+                                if let Err(error) = server.register_source(source, scope) {
                                     send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                 }
                             });
@@ -631,28 +631,15 @@ fn main() {
                                 }
                             });
                         }
-                        Request::CreateAttribute(CreateAttribute { name, semantics }) => {
+                        Request::CreateAttribute(CreateAttribute { name, config }) => {
                             worker.dataflow::<T, _, _>(|scope| {
-                                if let Err(error) = server.context.internal.create_attribute(&name, semantics, scope) {
+                                if let Err(error) = server.context.internal.create_attribute(&name, config, scope) {
                                     send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                 }
                             });
                         }
                         Request::AdvanceDomain(name, next) => {
-                            // if let Time::Real(next) = next {
-                            //     if let Err(error) = server.advance_domain(name, next) {
-                            //         send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
-                            //     }
-                            if let Time::TxId(next) = next {
-                                if let Err(error) = server.advance_domain(name, next) {
-                                    send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
-                                }
-                            } else {
-                                let error = Error {
-                                    category: "df.error.category/incorrect",
-                                    message: "Incorrect timestamp type for domain.".to_string(),
-                                };
-
+                            if let Err(error) = server.advance_domain(name, next.into()) {
                                 send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                             }
                         }

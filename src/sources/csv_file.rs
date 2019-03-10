@@ -1,12 +1,14 @@
 //! Operator and utilities to source data from csv files.
 
+use std::collections::HashMap;
+
 use timely::dataflow::operators::generic;
 use timely::dataflow::{Scope, Stream};
 
 use chrono::DateTime;
 
 use crate::sources::Sourceable;
-use crate::{Eid, Value};
+use crate::{Aid, Eid, Value};
 
 /// A local filesystem data source.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -34,8 +36,7 @@ impl Sourceable<u64> for CsvFile {
     fn source<S: Scope<Timestamp = u64>>(
         &self,
         scope: &mut S,
-        _names: Vec<String>,
-    ) -> Stream<S, (usize, ((Value, Value), u64, isize))> {
+    ) -> HashMap<Aid, Stream<S, ((Value, Value), u64, isize)>> {
         let filename = self.path.clone();
 
         generic::operator::source(

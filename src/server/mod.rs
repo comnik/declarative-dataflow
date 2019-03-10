@@ -19,7 +19,7 @@ use crate::sinks::{Sink, Sinkable};
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
 use crate::{
-    implement, implement_neu, CollectionIndex, InputSemantics, RelationHandle, ShutdownHandle,
+    implement, implement_neu, AttributeConfig, CollectionIndex, RelationHandle, ShutdownHandle,
 };
 use crate::{Aid, Error, Time, TxData, Value};
 
@@ -71,16 +71,6 @@ pub struct Register {
     pub publish: Vec<String>,
 }
 
-/// A request with the intent of attaching to an external data source
-/// and publishing it under a globally unique name.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct RegisterSource {
-    /// One or more globally unique names.
-    pub names: Vec<String>,
-    /// A source configuration.
-    pub source: Source,
-}
-
 /// A request with the intent of attaching an external system as a
 /// named sink.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -98,9 +88,8 @@ pub struct CreateAttribute {
     /// A globally unique name under which to publish data sent via
     /// this input.
     pub name: String,
-    /// Semantics enforced on this attribute by 3DF (vs those enforced
-    /// by the external source).
-    pub semantics: InputSemantics,
+    /// Semantics enforced on this attribute by 3DF.
+    pub config: AttributeConfig,
 }
 
 /// Possible request types.
@@ -119,8 +108,9 @@ pub enum Request {
     Flow(String, String),
     /// Registers one or more named relations.
     Register(Register),
-    /// Registers an external data source.
-    RegisterSource(RegisterSource),
+    /// A request with the intent of attaching to an external data
+    /// source that publishes one or more attributes and relations.
+    RegisterSource(Source),
     /// Registers an external data sink.
     RegisterSink(RegisterSink),
     /// Creates a named input handle that can be `Transact`ed upon.
@@ -197,7 +187,7 @@ where
 
 impl<T, Token> Server<T, Token>
 where
-    T: Timestamp + Lattice + TotalOrder + Default + Sub<Output = T>,
+    T: Timestamp + Lattice + TotalOrder + Default + Sub<Output = T> + std::convert::From<Time>,
     Token: Hash,
 {
     /// Creates a new server state from a configuration.
@@ -229,61 +219,6 @@ where
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.pattern/v".to_string(),
             //     semantics: InputSemantics::Raw,
-            // }),
-            // Request::CreateAttribute(CreateAttribute {
-            //     name: "df.join/binding".to_string(),
-            //     semantics: InputSemantics::Raw,
-            // }),
-            // Request::CreateAttribute(CreateAttribute {
-            //     name: "df.union/binding".to_string(),
-            //     semantics: InputSemantics::Raw,
-            // }),
-            // Request::CreateAttribute(CreateAttribute {
-            //     name: "df.project/binding".to_string(),
-            //     semantics: InputSemantics::Raw,
-            // }),
-            // Request::CreateAttribute(CreateAttribute {
-            //     name: "df.project/variables".to_string(),
-            //     semantics: InputSemantics::Raw,
-            // }),
-            // Request::CreateAttribute(CreateAttribute {
-            //     name: "df/name".to_string(),
-            //     semantics: InputSemantics::Raw,
-            // }),
-            // Request::CreateAttribute(CreateAttribute {
-            //     name: "df.name/variables".to_string(),
-            //     semantics: InputSemantics::Raw,
-            // }),
-            // Request::CreateAttribute(CreateAttribute {
-            //     name: "df.name/plan".to_string(),
-            //     semantics: InputSemantics::Raw,
-            // }),
-            // Request::Register(Register {
-            //     publish: vec!["df.rules".to_string()],
-            //     rules: vec![
-            //         // [:name {:join/binding [:pattern/e :pattern/a :pattern/v]}]
-            //         Rule {
-            //             name: "df.rules".to_string(),
-            //             plan: Plan::Pull(Pull {
-            //                 paths: vec![
-            //                     PullLevel {
-            //                         variables: vec![],
-            //                         plan: Box::new(Plan::MatchA(0, "df.join/binding".to_string(), 1)),
-            //                         pull_attributes: vec!["df.pattern/e".to_string(),
-            //                                               "df.pattern/a".to_string(),
-            //                                               "df.pattern/v".to_string()],
-            //                         path_attributes: vec!["df.join/binding".to_string()],
-            //                     },
-            //                     PullLevel {
-            //                         variables: vec![],
-            //                         plan: Box::new(Plan::MatchA(0, "df/name".to_string(), 2)),
-            //                         pull_attributes: vec![],
-            //                         path_attributes: vec![],
-            //                     }
-            //                 ]
-            //             })
-            //         }
-            //     ],
             // }),
         ]
     }
@@ -331,7 +266,7 @@ where
             // @TODO when do we actually want to register result traces for re-use?
             // for (name, relation) in rel_map.into_iter() {
             // let trace = relation.map(|t| (t, ())).arrange_named(name).trace;
-            //     self.context.register_arrangement(name, trace);
+            //     self.context.register_arrangement(name, config, trace);
             // }
 
             match rel_map.remove(name) {
@@ -425,33 +360,54 @@ impl<Token: Hash> Server<u64, Token> {
     /// Handle a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = u64>>(
         &mut self,
-        req: RegisterSource,
+        source: Source,
         scope: &mut S,
     ) -> Result<(), Error> {
-        let RegisterSource { mut names, source } = req;
+        let mut attribute_streams = source.source(scope);
 
-        if names.len() == 1 {
-            let name = names.pop().unwrap();
-            let datoms = source.source(scope, names.clone());
-
-            self.context.internal.create_source(&name, None, &datoms)
-        } else if names.len() > 1 {
-            let datoms = source.source(scope, names.clone());
-
-            for (name_idx, name) in names.iter().enumerate() {
-                self.context
-                    .internal
-                    .create_source(name, Some(name_idx), &datoms)?;
-            }
-
-            Ok(())
-        } else {
-            Ok(())
+        for (aid, datoms) in attribute_streams.drain() {
+            self.context.internal.create_source(&aid, &datoms)?;
         }
+
+        Ok(())
     }
 
     /// Handle a RegisterSink request.
     pub fn register_sink<S: Scope<Timestamp = u64>>(
+        &mut self,
+        req: RegisterSink,
+        scope: &mut S,
+    ) -> Result<(), Error> {
+        let RegisterSink { name, sink } = req;
+
+        let (input, collection) = scope.new_collection();
+
+        sink.sink(&collection.inner)?;
+
+        self.context.internal.sinks.insert(name, input);
+
+        Ok(())
+    }
+}
+
+impl<Token: Hash> Server<Duration, Token> {
+    /// Handle a RegisterSource request.
+    pub fn register_source<S: Scope<Timestamp = Duration>>(
+        &mut self,
+        source: Source,
+        scope: &mut S,
+    ) -> Result<(), Error> {
+        let mut attribute_streams = source.source(scope);
+
+        for (aid, datoms) in attribute_streams.drain() {
+            self.context.internal.create_source(&aid, &datoms)?;
+        }
+
+        Ok(())
+    }
+
+    /// Handle a RegisterSink request.
+    pub fn register_sink<S: Scope<Timestamp = Duration>>(
         &mut self,
         req: RegisterSink,
         scope: &mut S,

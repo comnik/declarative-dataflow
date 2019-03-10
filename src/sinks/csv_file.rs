@@ -20,12 +20,10 @@ pub struct CsvFile {
     pub flexible: bool,
 }
 
-impl Sinkable for CsvFile {
-    type Timestamp = u64;
-
-    fn sink<S: Scope<Timestamp = Self::Timestamp>>(
+impl Sinkable<u64> for CsvFile {
+    fn sink<S: Scope<Timestamp = u64>>(
         &self,
-        stream: &Stream<S, ResultDiff<S::Timestamp>>,
+        stream: &Stream<S, ResultDiff<u64>>,
     ) -> Result<(), Error> {
         let writer_result = csv::WriterBuilder::new()
             .has_headers(self.has_headers)
@@ -47,7 +45,8 @@ impl Sinkable for CsvFile {
                     move |input| {
                         input.for_each(|_cap, data| {
                             data.swap(&mut vector);
-                            for (tuple, time, diff) in vector.drain(..) {
+                            // @TODO what to do with diff here?
+                            for (tuple, time, _diff) in vector.drain(..) {
                                 recvd.push((time, tuple));
                             }
                         });

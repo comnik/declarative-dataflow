@@ -17,7 +17,7 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
-use crate::{Aid, Error, TxData, Value};
+use crate::{Aid, Error, Time, TxData, Value};
 use crate::{AttributeConfig, CollectionIndex, InputSemantics, RelationConfig, RelationHandle};
 
 /// A domain manages attributes (and their inputs) that share a
@@ -32,7 +32,7 @@ pub struct Domain<T: Timestamp + Lattice + TotalOrder> {
     /// The probe keeping track of progress in this domain.
     probe: ProbeHandle<T>,
     /// Configurations for attributes in this domain.
-    pub attributes: HashMap<Aid, AttributeConfig<T>>,
+    pub attributes: HashMap<Aid, AttributeConfig>,
     /// Forward attribute indices eid -> v.
     pub forward: HashMap<Aid, CollectionIndex<Value, Value, T>>,
     /// Reverse attribute indices v -> eid.
@@ -45,7 +45,7 @@ pub struct Domain<T: Timestamp + Lattice + TotalOrder> {
 
 impl<T> Domain<T>
 where
-    T: Timestamp + Lattice + TotalOrder + Sub<Output = T>,
+    T: Timestamp + Lattice + TotalOrder + Sub<Output = T> + std::convert::From<Time>,
 {
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
@@ -68,7 +68,7 @@ where
     pub fn create_attribute<S: Scope<Timestamp = T>>(
         &mut self,
         name: &str,
-        typ: InputSemantics,
+        config: AttributeConfig,
         scope: &mut S,
     ) -> Result<(), Error> {
         if self.forward.contains_key(name) {
@@ -79,7 +79,7 @@ where
         } else {
             let (handle, mut tuples) = scope.new_collection::<(Value, Value), isize>();
 
-            tuples = match typ {
+            tuples = match config.input_semantics {
                 InputSemantics::Raw => tuples,
                 InputSemantics::CardinalityOne => {
                     let exchange =
@@ -163,6 +163,8 @@ where
                 }
             };
 
+            self.attributes.insert(name.to_string(), config);
+
             let forward = CollectionIndex::index(name, &tuples);
             let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
 
@@ -206,11 +208,17 @@ where
     }
 
     /// Inserts a new named relation.
-    pub fn register_arrangement(&mut self, name: String, mut trace: RelationHandle<T>) {
+    pub fn register_arrangement(
+        &mut self,
+        name: String,
+        config: RelationConfig<T>,
+        mut trace: RelationHandle<T>,
+    ) {
         // decline the capability for that trace handle to subset its
         // view of the data
         trace.distinguish_since(&[]);
 
+        self.relations.insert(name.clone(), config);
         self.arrangements.insert(name, trace);
     }
 
@@ -270,7 +278,7 @@ where
 
             for (aid, config) in self.attributes.iter() {
                 if let Some(ref trace_slack) = config.trace_slack {
-                    let frontier = &[next.clone() - trace_slack.clone()];
+                    let frontier = &[next.clone() - trace_slack.clone().into()];
 
                     self.forward
                         .get_mut(aid)
