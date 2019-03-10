@@ -11,7 +11,7 @@ use declarative_dataflow::binding::{AsBinding, Binding};
 use declarative_dataflow::plan::hector::{plan_order, source_conflicts};
 use declarative_dataflow::plan::{Hector, Implementable};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{InputSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
 use Value::{Bool, Eid, Number, String};
 
 struct Case {
@@ -401,7 +401,7 @@ fn run_hector_cases() {
                     server
                         .context
                         .internal
-                        .create_attribute(dep, InputSemantics::Raw, scope)
+                        .create_attribute(dep, AttributeConfig::tx_time(InputSemantics::Raw), scope)
                         .unwrap();
                 }
 

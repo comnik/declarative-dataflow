@@ -2,7 +2,8 @@ use std::sync::mpsc::channel;
 
 use declarative_dataflow::plan::{Join, Project};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{InputSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
+use InputSemantics::Raw;
 use Value::{Eid, String};
 
 #[test]
@@ -18,7 +19,7 @@ fn match_ea_after_input() {
             server
                 .context
                 .internal
-                .create_attribute(":name", InputSemantics::Raw, scope)
+                .create_attribute(":name", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
         });
 
@@ -73,12 +74,12 @@ fn join_after_input() {
             server
                 .context
                 .internal
-                .create_attribute(":transfer/from", InputSemantics::Raw, scope)
+                .create_attribute(":transfer/from", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute(":user/id", InputSemantics::Raw, scope)
+                .create_attribute(":user/id", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
         });
 
