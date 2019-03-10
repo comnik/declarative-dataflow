@@ -47,22 +47,21 @@ impl Sourceable<u64> for CsvFile {
         let operator_info = demux.operator_info();
         demux.set_notify(false);
 
-        let mut wrappers = HashMap::with_capacity(self.schema.len());
-        let mut streams = HashMap::with_capacity(self.schema.len());
+        // Order is very important here, because otherwise the
+        // capabilities won't match up with the output streams later
+        // on (when creating sessions). We stick to the order dictated
+        // by the schema.
+        let mut wrappers = Vec::with_capacity(self.schema.len());
+        let mut streams = Vec::with_capacity(self.schema.len());
 
-        for (aid, _config) in self.schema.iter() {
+        for _ in self.schema.iter() {
             let (wrapper, stream) = demux.new_output();
-            wrappers.insert(aid.to_string(), wrapper);
-            streams.insert(aid.to_string(), stream);
+            wrappers.push(wrapper);
+            streams.push(stream);
         }
-
-        let scope_handle = scope.clone();
-        let schema = self.schema.clone();
 
         demux.build(move |mut capabilities| {
             let activator = scope.activator_for(&operator_info.address[..]);
-
-            let mut cap = Some(capabilities.pop().unwrap());
 
             let worker_index = scope.index();
             let num_workers = scope.peers();
@@ -89,19 +88,18 @@ impl Sourceable<u64> for CsvFile {
                         "[WORKER {}] read {} out of {} datums",
                         worker_index, num_datums_read, datum_index
                     );
-                    cap = None;
+                    capabilities.drain(..);
                 } else {
                     // let mut fuel = 256;
 
-                    let mut handles = HashMap::with_capacity(schema.len());
-                    for (aid, wrapper) in wrappers.iter_mut() {
-                        handles.insert(aid.to_string(), wrapper.activate());
+                    let mut handles = Vec::with_capacity(schema.len());
+                    for wrapper in wrappers.iter_mut() {
+                        handles.push(wrapper.activate());
                     }
 
-                    let cap_ref = cap.as_ref().unwrap();
-                    let mut sessions = HashMap::with_capacity(schema.len());
-                    for (aid, handle) in handles.iter_mut() {
-                        sessions.insert(aid.to_string(), handle.session(&cap_ref));
+                    let mut sessions = Vec::with_capacity(schema.len());
+                    for (idx, handle) in handles.iter_mut().enumerate() {
+                        sessions.push(handle.session(capabilities.get(idx).unwrap()));
                     }
 
                     while let Some(result) = iterator.next() {
@@ -126,7 +124,7 @@ impl Sourceable<u64> for CsvFile {
                                 }
                             };
 
-                            for (aid, (offset, type_hint)) in schema.iter() {
+                            for (idx, (_aid, (offset, type_hint))) in schema.iter().enumerate() {
                                 let v = match type_hint {
                                     Value::String(_) => Value::String(record[*offset].to_string()),
                                     Value::Number(_) => Value::Number(
@@ -141,7 +139,7 @@ impl Sourceable<u64> for CsvFile {
                                 };
 
                                 let tuple = (eid.clone(), v);
-                                sessions.get_mut(aid).unwrap().give((tuple, time, 1));
+                                sessions.get_mut(idx).unwrap().give((tuple, time, 1));
                             }
 
                             num_datums_read += 1;
@@ -160,7 +158,7 @@ impl Sourceable<u64> for CsvFile {
                             "[WORKER {}] read {} out of {} datums",
                             worker_index, num_datums_read, datum_index
                         );
-                        cap = None;
+                        capabilities.drain(..);
                     } else {
                         // cap.downgrade(..);
                         activator.activate();
@@ -169,6 +167,12 @@ impl Sourceable<u64> for CsvFile {
             }
         });
 
-        streams
+        let mut out = HashMap::new();
+        for (idx, stream) in streams.drain(..).enumerate() {
+            let aid = self.schema[idx].0.clone();
+            out.insert(aid.to_string(), stream);
+        }
+
+        out
     }
 }
