@@ -70,40 +70,74 @@ impl Sourceable<Duration> for TimelyLogging {
 
                     for (time, _worker, datum) in demux_buffer.drain(..) {
                         match datum {
-                            TimelyEvent::Operates(x) => {
+                            TimelyEvent::Operates(mut x) => {
                                 let eid = Eid(x.id as u64);
                                 let name = Value::String(x.name);
-                                let address = Address(x.addr);
+                                let address = Address(x.addr.clone());
+
+                                // The id of this operator within its scope.
+                                let local_id = Eid(x.addr.pop().unwrap() as u64);
+
+                                if x.addr.is_empty() {
+                                    // This is a top-level subgraph and thus lives in the root.
+                                    sessions
+                                        .get_mut("timely/scope")
+                                        .map(|s| s.give(((eid.clone(), Eid(0)), time, 1)));
+                                } else {
+                                    // The leaf scope that this operator resides in.
+                                    let scope = Eid(x.addr.pop().unwrap() as u64);
+
+                                    sessions
+                                        .get_mut("timely/scope")
+                                        .map(|s| s.give(((eid.clone(), scope.clone()), time, 1)));
+
+                                    if !x.addr.is_empty() {
+                                        // This means that there are one or more parent scopes.
+                                        // We want to make sure our scope is linked to its parent. But
+                                        // we can assume all others are doing the same, so we don't need to
+                                        // re-introduce edges for higher-level ancestors.
+                                        let parent = Eid(x.addr.pop().unwrap() as u64);
+                                        sessions
+                                            .get_mut("timely/scope")
+                                            .map(|s| s.give(((scope, parent), time, 1)));
+                                    }
+                                }
 
                                 sessions
-                                    .get_mut("operates/address")
+                                    .get_mut("timely.event.operates/local-id")
+                                    .map(|s| s.give(((eid.clone(), local_id), time, 1)));
+                                // @TODO not really needed
+                                sessions
+                                    .get_mut("timely.event.operates/address")
                                     .map(|s| s.give(((eid.clone(), address), time, 1)));
                                 sessions
-                                    .get_mut("operates/name")
+                                    .get_mut("timely.event.operates/name")
                                     .map(|s| s.give(((eid, name), time, 1)));
                             }
-                            TimelyEvent::Channels(x) => {
+                            TimelyEvent::Channels(mut x) => {
                                 let eid = Eid(x.id as u64);
-                                let address = Address(x.scope_addr);
                                 let src_index = Eid(x.source.0 as u64);
                                 let src_port = Eid(x.source.1 as u64);
                                 let target_index = Eid(x.target.0 as u64);
                                 let target_port = Eid(x.target.1 as u64);
 
+                                // The leaf scope that this channel resides in.
+                                let scope = Eid(x.scope_addr.pop().unwrap() as u64);
+
                                 sessions
-                                    .get_mut("channels/address")
-                                    .map(|s| s.give(((eid.clone(), address), time, 1)));
+                                    .get_mut("timely/scope")
+                                    .map(|s| s.give(((eid.clone(), scope.clone()), time, 1)));
                                 sessions
-                                    .get_mut("channels/src-index")
+                                    .get_mut("timely.event.channels/src-index")
                                     .map(|s| s.give(((eid.clone(), src_index), time, 1)));
                                 sessions
-                                    .get_mut("channels/src-port")
+                                    .get_mut("timely.event.channels/src-port")
                                     .map(|s| s.give(((eid.clone(), src_port), time, 1)));
                                 sessions
-                                    .get_mut("channels/target-index")
+                                    .get_mut("timely.event.channels/target-index")
                                     .map(|s| s.give(((eid.clone(), target_index), time, 1)));
                                 sessions
-                                    .get_mut("channels/target-port")
+                                    .get_mut("timely.event.channels/target-port")
                                     .map(|s| s.give(((eid, target_port), time, 1)));
                             }
                             TimelyEvent::Schedule(x) => {
