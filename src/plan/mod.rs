@@ -22,7 +22,7 @@ use crate::{
 #[cfg(feature = "set-semantics")]
 pub mod aggregate;
 #[cfg(not(feature = "set-semantics"))]
-pub mod aggregate_neu;
+pub mod aggregate_monoid;
 pub mod antijoin;
 pub mod filter;
 pub mod hector;
@@ -35,7 +35,7 @@ pub mod union;
 #[cfg(feature = "set-semantics")]
 pub use self::aggregate::{Aggregate, AggregationFn};
 #[cfg(not(feature = "set-semantics"))]
-pub use self::aggregate_neu::{Aggregate, AggregationFn};
+pub use self::aggregate_monoid::{Aggregate, AggregationFn};
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
 pub use self::hector::Hector;
