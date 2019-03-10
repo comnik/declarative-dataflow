@@ -44,8 +44,12 @@ use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxI
 use declarative_dataflow::{Error, ImplContext, ResultDiff};
 
 /// Server timestamp type.
+#[cfg(not(feature = "real-time"))]
 type T = u64;
-// type T = Duration;
+
+/// Server timestamp type.
+#[cfg(feature = "real-time")]
+type T = Duration;
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
@@ -655,7 +659,13 @@ fn main() {
                 }
 
                 if !config.manual_advance {
-                    if let Err(error) = server.advance_domain(None, next_tx as u64) {
+                    #[cfg(not(feature = "real-time"))]
+                    let next = next_tx as u64;
+
+                    #[cfg(feature = "real-time")]
+                    let next = Instant::now().duration_since(worker.timer());
+
+                    if let Err(error) = server.advance_domain(None, next) {
                         send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                     }
                 }
@@ -673,6 +683,12 @@ fn main() {
         drop(sequencer);
 
         // @TODO de-register loggers s.t. logging dataflows can shut down.
+        // worker
+        //     .log_register()
+        //     .insert::<TimelyEvent,_>("timely", move |_time, _data| { });
 
+        // worker
+        //     .log_register()
+        //     .insert::<DifferentialEvent,_>("differential/arrange", move |_time, _data| { });
     }).expect("Timely computation did not exit cleanly");
 }
