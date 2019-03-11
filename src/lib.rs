@@ -780,7 +780,7 @@ where
                     None => {
                         return Err(Error {
                             category: "df.error.category/not-found",
-                            message: format!("Unknown rule {}.", dep_name),
+                            message: format!("Unknown rule {}", dep_name),
                         });
                     }
                     Some(rule) => {
@@ -796,7 +796,7 @@ where
             if !context.has_attribute(aid) {
                 return Err(Error {
                     category: "df.error.category/not-found",
-                    message: format!("Rule depends on unknown attribute {}.", aid),
+                    message: format!("Rule depends on unknown attribute {}", aid),
                 });
             }
         }
