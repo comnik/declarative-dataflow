@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
 use timely::dataflow::{Scope, Stream};
@@ -24,11 +25,12 @@ pub struct JsonFile {
     pub attributes: Vec<Aid>,
 }
 
-impl Sourceable<u64> for JsonFile {
-    fn source<S: Scope<Timestamp = u64>>(
+impl Sourceable<Duration> for JsonFile {
+    fn source<S: Scope<Timestamp = Duration>>(
         &self,
         scope: &mut S,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), u64, isize)>> {
+        t0: Instant,
+    ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
         let filename = self.path.clone();
 
         // The following is mostly the innards of
@@ -83,6 +85,8 @@ impl Sourceable<u64> for JsonFile {
                         sessions.insert(aid.to_string(), handle.session(&cap_ref));
                     }
 
+                    let time = Instant::now().duration_since(t0);
+
                     for readline in iterator.by_ref().take(256 - 1) {
                         let line = readline.expect("read error");
 
@@ -117,9 +121,10 @@ impl Sourceable<u64> for JsonFile {
                                         };
 
                                         let tuple = (Value::Eid(object_index as Eid), v);
+
                                         sessions.get_mut(aid)
                                             .unwrap()
-                                            .give((tuple, Default::default(), 1));
+                                            .give((tuple, time, 1));
                                     }
                                 }
                             }
