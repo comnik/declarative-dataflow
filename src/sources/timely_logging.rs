@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 use std::rc::Rc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::capture::event::link::EventLink;
@@ -27,6 +27,7 @@ impl Sourceable<Duration> for TimelyLogging {
     fn source<S: Scope<Timestamp = Duration>>(
         &self,
         scope: &mut S,
+        _t0: Instant,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
         let events = Rc::new(EventLink::new());
         let mut logger = BatchLogger::new(events.clone());

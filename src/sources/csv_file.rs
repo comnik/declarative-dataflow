@@ -1,6 +1,7 @@
 //! Operator and utilities to source data from csv files.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
 use timely::dataflow::{Scope, Stream};
@@ -32,11 +33,12 @@ pub struct CsvFile {
     pub schema: Vec<(Aid, (usize, Value))>,
 }
 
-impl Sourceable<u64> for CsvFile {
-    fn source<S: Scope<Timestamp = u64>>(
+impl Sourceable<Duration> for CsvFile {
+    fn source<S: Scope<Timestamp = Duration>>(
         &self,
         scope: &mut S,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), u64, isize)>> {
+        t0: Instant,
+    ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
         let filename = self.path.clone();
 
         // The following is mostly the innards of
@@ -108,21 +110,22 @@ impl Sourceable<u64> for CsvFile {
                         if datum_index % num_workers == worker_index {
                             let eid =
                                 Value::Eid(record[eid_offset].parse::<Eid>().expect("not a eid"));
-                            let time: u64 = match timestamp_offset {
-                                None => Default::default(),
-                                Some(timestamp_offset) => {
-                                    let epoch =
-                                        DateTime::parse_from_rfc3339(&record[timestamp_offset])
-                                            .expect("not a valid rfc3339 datetime")
-                                            .timestamp();
+                            // let time = match timestamp_offset {
+                            //     None => Default::default(),
+                            //     Some(timestamp_offset) => {
+                            //         let epoch =
+                            //             DateTime::parse_from_rfc3339(&record[timestamp_offset])
+                            //                 .expect("not a valid rfc3339 datetime")
+                            //                 .timestamp();
 
-                                    if epoch >= 0 {
-                                        epoch as u64
-                                    } else {
-                                        panic!("invalid epoch");
-                                    }
-                                }
-                            };
+                            //         if epoch >= 0 {
+                            //             epoch as u64
+                            //         } else {
+                            //             panic!("invalid epoch");
+                            //         }
+                            //     }
+                            // };
+                            let time = Instant::now().duration_since(t0);
 
                             for (idx, (_aid, (offset, type_hint))) in schema.iter().enumerate() {
                                 let v = match type_hint {

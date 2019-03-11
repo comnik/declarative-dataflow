@@ -1,7 +1,7 @@
 //! Types and operators to work with external data sources.
 
 use std::collections::HashMap;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use timely::dataflow::{Scope, Stream};
 use timely::order::TotalOrder;
@@ -31,6 +31,7 @@ where
     fn source<S: Scope<Timestamp = T>>(
         &self,
         scope: &mut S,
+        t0: Instant,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), T, isize)>>;
 }
 
@@ -44,33 +45,34 @@ pub enum Source {
     /// CSV files
     #[cfg(feature = "csv-source")]
     CsvFile(CsvFile),
-    /// Files containing json objects
-    JsonFile(JsonFile),
+    // /// Files containing json objects
+    // JsonFile(JsonFile),
 }
 
 impl Sourceable<Duration> for Source {
     fn source<S: Scope<Timestamp = Duration>>(
         &self,
         scope: &mut S,
+        t0: Instant,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
         match *self {
-            Source::TimelyLogging(ref source) => source.source(scope),
-            Source::DifferentialLogging(ref source) => source.source(scope),
+            Source::TimelyLogging(ref source) => source.source(scope, t0),
+            Source::DifferentialLogging(ref source) => source.source(scope, t0),
+            #[cfg(feature = "csv-source")]
+            Source::CsvFile(ref source) => source.source(scope, t0),
             _ => unimplemented!(),
         }
     }
 }
 
-impl Sourceable<u64> for Source {
-    fn source<S: Scope<Timestamp = u64>>(
-        &self,
-        scope: &mut S,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), u64, isize)>> {
-        match *self {
-            #[cfg(feature = "csv-source")]
-            Source::CsvFile(ref source) => source.source(scope),
-            Source::JsonFile(ref source) => source.source(scope),
-            _ => unimplemented!(),
-        }
-    }
-}
+// impl<T: Timestamp + Default> Sourceable<T> for Source {
+//     fn source<S: Scope<Timestamp = T>>(
+//         &self,
+//         scope: &mut S,
+//     ) -> HashMap<Aid, Stream<S, ((Value, Value), T, isize)>> {
+//         match *self {
+//             Source::JsonFile(ref source) => source.source(scope),
+//             _ => unimplemented!(),
+//         }
+//     }
+// }

@@ -111,7 +111,7 @@ fn main() {
         };
 
         // setup interpretation context
-        let mut server = Server::<T, Token>::new(config.clone());
+        let mut server = Server::<T, Token>::new_at(config.clone(), worker.timer());
 
         // The server might specify a sequence of requests for
         // setting-up built-in arrangements. We serialize those here
@@ -309,7 +309,7 @@ fn main() {
                     }
                     RESULTS => {
                         while let Ok((query_name, results)) = recv_results.try_recv() {
-                            info!("[WORKER {}] {:?} {:?}", worker.index(), query_name, results);
+                            info!("[WORKER {}] {} {} results", worker.index(), query_name, results.len());
 
                             match server.interests.get(&query_name) {
                                 None => {
