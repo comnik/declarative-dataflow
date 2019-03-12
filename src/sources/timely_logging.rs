@@ -115,7 +115,7 @@ impl Sourceable<Duration> for TimelyLogging {
                                     .get_mut("timely.event.operates/name")
                                     .map(|s| s.give(((eid, name), time, 1)));
                             }
-                            TimelyEvent::Shutdown(mut x) => {
+                            TimelyEvent::Shutdown(x) => {
                                 let eid = Eid(x.id as u64);
                                 sessions
                                     .get_mut("timely.event.operates/shutdown?")

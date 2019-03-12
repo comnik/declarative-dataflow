@@ -104,6 +104,10 @@ impl Sourceable<Duration> for CsvFile {
                         sessions.push(handle.session(capabilities.get(idx).unwrap()));
                     }
 
+                    let time = Instant::now().duration_since(t0);
+
+                    info!("Ingesting at {:?}", time);
+
                     while let Some(result) = iterator.next() {
                         let record = result.expect("read error");
 
@@ -125,7 +129,6 @@ impl Sourceable<Duration> for CsvFile {
                             //         }
                             //     }
                             // };
-                            let time = Instant::now().duration_since(t0);
 
                             for (idx, (_aid, (offset, type_hint))) in schema.iter().enumerate() {
                                 let v = match type_hint {
