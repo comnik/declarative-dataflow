@@ -430,6 +430,7 @@ impl Implementable for Hector {
                             // attributes. For now, we will take the requested order.
 
                             // @TODO use binding order returned here?
+                            // might be problematic to ensure ordering is maintained?
                             let (variables, _) = plan_order(idx, &self.bindings);
 
                             let mut prefix = Vec::with_capacity(variables.len());

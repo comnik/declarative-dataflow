@@ -8,7 +8,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::difference::DiffPair;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Join as JoinMap;
-use differential_dataflow::operators::{Consolidate, Count, Reduce, Threshold};
+use differential_dataflow::operators::{Count, Reduce, Threshold};
 
 use crate::binding::Binding;
 use crate::plan::{Dependencies, ImplContext, Implementable};
@@ -174,7 +174,6 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 AggregationFn::SUM => {
                     let tuples = tuples
                         .map(prepare_unary)
-                        .consolidate()
                         .distinct()
                         .explode(|(key, val)| {
                             let v = match val[0] {
@@ -190,7 +189,6 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 AggregationFn::AVG => {
                     let tuples = tuples
                         .map(prepare_unary)
-                        .consolidate()
                         .distinct()
                         .explode(move |(key, val)| {
                             let v = match val[0] {
@@ -214,7 +212,6 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                 AggregationFn::VARIANCE => {
                     let tuples = tuples
                         .map(prepare_unary)
-                        .consolidate()
                         .distinct()
                         .explode(move |(key, val)| {
                             let v = match val[0] {
