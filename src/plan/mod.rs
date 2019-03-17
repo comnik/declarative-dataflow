@@ -64,7 +64,7 @@ pub trait ImplContext<T>
 where
     T: Timestamp + Lattice + TotalOrder,
 {
-    /// Returns the set of constraints associated with a rule.
+    /// Returns the definition for the rule of the given name.
     fn rule(&self, name: &str) -> Option<&Rule>;
 
     /// Returns a mutable reference to a (non-base) relation, if one
