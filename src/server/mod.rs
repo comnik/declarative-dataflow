@@ -367,40 +367,41 @@ where
     }
 }
 
-// impl<Token: Hash> Server<u64, Token> {
-//     /// Handle a RegisterSource request.
-//     pub fn register_source<S: Scope<Timestamp = u64>>(
-//         &mut self,
-//         source: Source,
-//         scope: &mut S,
-//     ) -> Result<(), Error> {
-//         let mut attribute_streams = source.source(scope);
+impl<Token: Hash> Server<u64, Token> {
+    /// Handle a RegisterSource request.
+    pub fn register_source<S: Scope<Timestamp = u64>>(
+        &mut self,
+        source: Source,
+        scope: &mut S,
+    ) -> Result<(), Error> {
+        let mut attribute_streams = source.source(scope, self.t0);
 
-//         for (aid, datoms) in attribute_streams.drain() {
-//             self.context.internal.create_source(&aid, &datoms)?;
-//         }
+        for (aid, datoms) in attribute_streams.drain() {
+            self.context.internal.create_source(&aid, &datoms)?;
+        }
 
-//         Ok(())
-//     }
+        Ok(())
+    }
 
-//     /// Handle a RegisterSink request.
-//     pub fn register_sink<S: Scope<Timestamp = u64>>(
-//         &mut self,
-//         req: RegisterSink,
-//         scope: &mut S,
-//     ) -> Result<(), Error> {
-//         let RegisterSink { name, sink } = req;
+    /// Handle a RegisterSink request.
+    pub fn register_sink<S: Scope<Timestamp = u64>>(
+        &mut self,
+        req: RegisterSink,
+        scope: &mut S,
+    ) -> Result<(), Error> {
+        let RegisterSink { name, sink } = req;
 
-//         let (input, collection) = scope.new_collection();
+        let (input, collection) = scope.new_collection();
 
-//         sink.sink(&collection.inner)?;
+        sink.sink(&collection.inner)?;
 
-//         self.context.internal.sinks.insert(name, input);
+        self.context.internal.sinks.insert(name, input);
 
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}
 
+#[cfg(feature = "real-time")]
 impl<Token: Hash> Server<Duration, Token> {
     /// Handle a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = Duration>>(
