@@ -381,7 +381,7 @@ fn main() {
                         }
 
                         poll.reregister(
-                            &recv_results,
+                            &recv_errors,
                             ERRORS,
                             Ready::readable(),
                             PollOpt::edge() | PollOpt::oneshot(),
