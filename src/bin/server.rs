@@ -413,25 +413,48 @@ fn main() {
                                         for conn_event in conn_events.drain(0..) {
                                             match conn_event {
                                                 ConnEvent::Message(msg) => {
-                                                    match serde_json::from_str::<Vec<Request>>(&msg.into_text().unwrap()) {
-                                                        Err(serde_error) => {
-                                                            let error = Error {
-                                                                category: "df.error.category/incorrect",
-                                                                message: serde_error.to_string(),
-                                                            };
+                                                    match msg {
+                                                        ws::Message::Text(string) => {
+                                                            match serde_json::from_str::<Vec<Request>>(&string) {
+                                                                Err(serde_error) => {
+                                                                    let error = Error {
+                                                                        category: "df.error.category/incorrect",
+                                                                        message: serde_error.to_string(),
+                                                                    };
 
-                                                            send_errors.send((vec![token], vec![(error, next_tx - 1)])).unwrap();
+                                                                    send_errors.send((vec![token], vec![(error, next_tx - 1)])).unwrap();
+                                                                }
+                                                                Ok(requests) => {
+                                                                    sequencer.push(
+                                                                        Command {
+                                                                            owner: worker.index(),
+                                                                            client: token.into(),
+                                                                            requests,
+                                                                        }
+                                                                    );
+                                                                }
+                                                            }
                                                         }
-                                                        Ok(requests) => {
-                                                            let command = Command {
-                                                                owner: worker.index(),
-                                                                client: token.into(),
-                                                                requests,
-                                                            };
+                                                        ws::Message::Binary(bytes) => {
+                                                            match rmp_serde::decode::from_slice::<Vec<Request>>(&bytes) {
+                                                                Err(rmp_error) => {
+                                                                    let error = Error {
+                                                                        category: "df.error.category/incorrect",
+                                                                        message: rmp_error.to_string(),
+                                                                    };
 
-                                                            trace!("[WORKER {}] {:?}", worker.index(), command);
-
-                                                            sequencer.push(command);
+                                                                    send_errors.send((vec![token], vec![(error, next_tx - 1)])).unwrap();
+                                                                }
+                                                                Ok(requests) => {
+                                                                    sequencer.push(
+                                                                        Command {
+                                                                            owner: worker.index(),
+                                                                            client: token.into(),
+                                                                            requests,
+                                                                        }
+                                                                    );
+                                                                }
+                                                            }
                                                         }
                                                     }
                                                 }
