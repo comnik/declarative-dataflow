@@ -81,8 +81,6 @@ pub enum Value {
     Instant(u64),
     /// A 16 byte unique identifier.
     Uuid([u8; 16]),
-    /// A Timely operator address.
-    Address(Vec<usize>),
 }
 
 /// Possible timestamp types.

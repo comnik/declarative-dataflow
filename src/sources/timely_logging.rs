@@ -14,7 +14,7 @@ use timely::logging::{BatchLogger, TimelyEvent};
 
 use crate::sources::Sourceable;
 use crate::{Aid, Value};
-use Value::{Address, Bool, Eid};
+use Value::{Bool, Eid};
 
 /// One or more taps into Timely logging.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -74,7 +74,6 @@ impl Sourceable<Duration> for TimelyLogging {
                             TimelyEvent::Operates(mut x) => {
                                 let eid = Eid(x.id as u64);
                                 let name = Value::String(x.name);
-                                let address = Address(x.addr.clone());
 
                                 // The id of this operator within its scope.
                                 let local_id = Eid(x.addr.pop().unwrap() as u64);
@@ -107,10 +106,6 @@ impl Sourceable<Duration> for TimelyLogging {
                                 sessions
                                     .get_mut("timely.event.operates/local-id")
                                     .map(|s| s.give(((eid.clone(), local_id), time, 1)));
-                                // @TODO not really needed
-                                sessions
-                                    .get_mut("timely.event.operates/address")
-                                    .map(|s| s.give(((eid.clone(), address), time, 1)));
                                 sessions
                                     .get_mut("timely.event.operates/name")
                                     .map(|s| s.give(((eid, name), time, 1)));
