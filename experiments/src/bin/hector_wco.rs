@@ -1,7 +1,7 @@
 use graph_map::GraphMMap;
 
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{q, InputSemantics, Binding, Rule, TxData, Value};
+use declarative_dataflow::{q, Binding, InputSemantics, Rule, TxData, Value};
 use Value::Eid;
 
 fn main() {

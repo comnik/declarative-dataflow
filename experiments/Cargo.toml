@@ -12,4 +12,4 @@ graph_map = "0.1"
 
 [dependencies.declarative-dataflow]
 path = ".."
-features = ["csv-source"]
+features = ["csv-source", "real-time"]
