@@ -50,7 +50,7 @@ use differential_dataflow::{Collection, Data};
 
 pub use num_rational::Rational32;
 
-pub use binding::Binding;
+pub use binding::{AsBinding, AttributeBinding, Binding};
 pub use plan::{Hector, ImplContext, Implementable, Plan};
 
 /// A unique entity identifier.
@@ -528,23 +528,12 @@ pub struct Rule {
 /// Relations can be backed by a collection of records of type
 /// `Vec<Value>`, each of a common length (with offsets corresponding
 /// to the variable offsets), or by an existing arrangement.
-trait Relation<'a, G: Scope>
+trait Relation<'a, G: Scope>: AsBinding
 where
     G::Timestamp: Lattice + Data,
 {
-    /// List the variable identifiers.
-    fn variables(&self) -> &[Var];
-
     /// A collection containing all tuples.
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
-
-    /// Returns the offset at which values for this variable occur.
-    fn offset(&self, variable: Var) -> usize {
-        self.variables()
-            .iter()
-            .position(move |&x| variable == x)
-            .unwrap()
-    }
 
     /// A collection with tuples partitioned by `variables`.
     ///
@@ -574,14 +563,31 @@ pub struct CollectionRelation<'a, G: Scope> {
     tuples: Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
 }
 
+impl<'a, G: Scope> AsBinding for CollectionRelation<'a, G>
+where
+    G::Timestamp: Lattice + Data,
+{
+    fn variables(&self) -> Vec<Var> {
+        self.variables.clone()
+    }
+
+    fn binds(&self, variable: Var) -> Option<usize> {
+        self.variables.binds(variable)
+    }
+
+    fn ready_to_extend(&self, _prefix: &AsBinding) -> Option<Var> {
+        unimplemented!();
+    }
+
+    fn required_to_extend(&self, _prefix: &AsBinding, _target: Var) -> Option<Option<Var>> {
+        unimplemented!();
+    }
+}
+
 impl<'a, G: Scope> Relation<'a, G> for CollectionRelation<'a, G>
 where
     G::Timestamp: Lattice + Data,
 {
-    fn variables(&self) -> &[Var] {
-        &self.variables
-    }
-
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
         self.tuples
     }
@@ -611,12 +617,7 @@ where
             // It is important to preserve the key variables in the order
             // they were specified.
             for variable in variables.iter() {
-                key_offsets.push(
-                    self.variables()
-                        .iter()
-                        .position(|&v| *variable == v)
-                        .unwrap(),
-                );
+                key_offsets.push(self.binds(*variable).unwrap());
             }
 
             // Values we'll just take in the order they were.
@@ -626,15 +627,13 @@ where
                 }
             }
 
-            // let debug_keys: Vec<String> = key_offsets.iter().map(|x| x.to_string()).collect();
-            // let debug_values: Vec<String> = value_offsets.iter().map(|x| x.to_string()).collect();
-            // println!("key offsets: {:?}", debug_keys);
-            // println!("value offsets: {:?}", debug_values);
-
             self.tuples().map(move |tuple| {
                 let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
                 // @TODO second clone not really neccessary
-                let values: Vec<Value> = value_offsets.iter().map(|i| tuple[*i].clone()).collect();
+                let values: Vec<Value> = value_offsets
+                    .iter()
+                    .map(move |i| tuple[*i].clone())
+                    .collect();
 
                 (key, values)
             })

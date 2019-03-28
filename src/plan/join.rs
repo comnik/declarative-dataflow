@@ -8,7 +8,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::JoinCore;
 
-use crate::binding::Binding;
+use crate::binding::{AsBinding, Binding};
 use crate::plan::{next_id, Dependencies, ImplContext, Implementable};
 use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionRelation, Relation, ShutdownHandle, VariableMap};
@@ -96,16 +96,14 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
             .cloned()
             .chain(
                 left.variables()
-                    .iter()
-                    .filter(|x| !self.variables.contains(x))
-                    .cloned(),
+                    .drain(..)
+                    .filter(|x| !self.variables.contains(x)),
             )
             .chain(
                 right
                     .variables()
-                    .iter()
-                    .filter(|x| !self.variables.contains(x))
-                    .cloned(),
+                    .drain(..)
+                    .filter(|x| !self.variables.contains(x)),
             )
             .collect();
 

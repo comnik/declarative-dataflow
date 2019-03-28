@@ -12,7 +12,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::trace::TraceReader;
 
-use crate::binding::Binding;
+use crate::binding::{AsBinding, Binding};
 use crate::Rule;
 use crate::{Aid, Eid, Value, Var};
 use crate::{
@@ -348,7 +348,7 @@ impl Implementable for Plan {
             Plan::Negate(ref plan) => {
                 let (relation, shutdown) = plan.implement(nested, local_arrangements, context);
                 let negated = CollectionRelation {
-                    variables: relation.variables().to_vec(),
+                    variables: relation.variables(),
                     tuples: relation.tuples().negate(),
                 };
 

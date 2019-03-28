@@ -7,7 +7,9 @@ use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 
-pub use crate::binding::{BinaryPredicate as Predicate, BinaryPredicateBinding, Binding};
+pub use crate::binding::{
+    AsBinding, BinaryPredicate as Predicate, BinaryPredicateBinding, Binding,
+};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
 
@@ -85,13 +87,7 @@ impl<P: Implementable> Implementable for Filter<P> {
         let key_offsets: Vec<usize> = self
             .variables
             .iter()
-            .map(|variable| {
-                relation
-                    .variables()
-                    .iter()
-                    .position(|&v| *variable == v)
-                    .expect("Variable not found.")
-            })
+            .map(|variable| relation.binds(*variable).expect("variable not found"))
             .collect();
 
         let binary_predicate = match self.predicate {

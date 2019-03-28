@@ -7,7 +7,7 @@ use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 
-use crate::binding::Binding;
+use crate::binding::{AsBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
 
@@ -65,16 +65,10 @@ impl<P: Implementable> Implementable for Transform<P> {
         let key_offsets: Vec<usize> = self
             .variables
             .iter()
-            .map(|variable| {
-                relation
-                    .variables()
-                    .iter()
-                    .position(|&v| *variable == v)
-                    .expect("Variable not found.")
-            })
+            .map(|variable| relation.binds(*variable).expect("variable not found"))
             .collect();
 
-        let mut variables = relation.variables().to_vec();
+        let mut variables = relation.variables();
         variables.push(self.result_variable);
 
         let constants_local = self.constants.clone();

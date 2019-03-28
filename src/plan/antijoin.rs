@@ -8,7 +8,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::{Join, Threshold};
 
-use crate::binding::Binding;
+use crate::binding::{AsBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
 
@@ -69,9 +69,8 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
             .cloned()
             .chain(
                 left.variables()
-                    .iter()
-                    .filter(|x| !self.variables.contains(x))
-                    .cloned(),
+                    .drain(..)
+                    .filter(|x| !self.variables.contains(x)),
             )
             .collect();
 

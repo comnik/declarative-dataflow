@@ -10,7 +10,7 @@ use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Join as JoinMap;
 use differential_dataflow::operators::{Count, Reduce, Threshold};
 
-use crate::binding::Binding;
+use crate::binding::{AsBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
 
@@ -89,11 +89,11 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         let mut seen = Vec::new();
 
         for variable in self.aggregation_variables.iter() {
-            if !seen.contains(&variable) {
-                seen.push(&variable);
+            if !seen.contains(variable) {
+                seen.push(*variable);
                 value_offsets.push(seen.len() - 1);
             } else {
-                value_offsets.push(seen.iter().position(|&v| variable == v).unwrap());
+                value_offsets.push(AsBinding::binds(&seen, *variable).unwrap());
             }
         }
 
@@ -105,7 +105,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         let mut output_offsets = Vec::new();
 
         for variable in self.aggregation_variables.iter() {
-            let output_index = variables.iter().position(|&v| *variable == v).unwrap();
+            let output_index = AsBinding::binds(&variables, *variable).unwrap();
             output_offsets.push(output_index);
 
             variables[output_index] = 0;
