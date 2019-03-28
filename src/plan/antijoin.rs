@@ -77,12 +77,7 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
         let tuples = left
             .tuples_by_variables(&self.variables)
             .distinct()
-            .antijoin(
-                &right
-                    .tuples_by_variables(&self.variables)
-                    .map(|(key, _)| key)
-                    .distinct(),
-            )
+            .antijoin(&right.projected(&self.variables).distinct())
             .map(|(key, tuple)| key.iter().cloned().chain(tuple.iter().cloned()).collect());
 
         let shutdown_handle = ShutdownHandle::merge(shutdown_left, shutdown_right);

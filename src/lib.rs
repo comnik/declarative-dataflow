@@ -535,6 +535,13 @@ where
     /// A collection containing all tuples.
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
 
+    /// A collection containing all tuples projected onto the
+    /// specified variables.
+    fn projected(
+        self,
+        target_variables: &[Var],
+    ) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
+
     /// A collection with tuples partitioned by `variables`.
     ///
     /// Variables present in `variables` are collected in order and populate a first "key"
@@ -590,6 +597,28 @@ where
 {
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
         self.tuples
+    }
+
+    fn projected(
+        self,
+        target_variables: &[Var],
+    ) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
+        if self.variables() == target_variables {
+            self.tuples
+        } else {
+            let relation_variables = self.variables();
+            let target_variables = target_variables.to_vec();
+
+            self.tuples().map(move |tuple| {
+                target_variables
+                    .iter()
+                    .map(|x| {
+                        let idx = relation_variables.binds(*x).unwrap();
+                        tuple[idx].clone()
+                    })
+                    .collect()
+            })
+        }
     }
 
     /// Separates tuple fields by those in `variables` and those not.

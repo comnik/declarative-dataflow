@@ -8,7 +8,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Threshold;
 
-use crate::binding::Binding;
+use crate::binding::{AsBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
 
@@ -63,14 +63,7 @@ impl<P: Implementable> Implementable for Union<P> {
 
             shutdown_handle.merge_with(shutdown);
 
-            if relation.variables == self.variables {
-                relation.tuples().inner
-            } else {
-                relation
-                    .tuples_by_variables(&self.variables)
-                    .map(|(key, _vals)| key)
-                    .inner
-            }
+            relation.projected(&self.variables).inner
         });
 
         let concat = nested.concatenate(streams).as_collection();

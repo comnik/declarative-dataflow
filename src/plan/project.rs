@@ -59,13 +59,10 @@ impl<P: Implementable> Implementable for Project<P> {
         S: Scope<Timestamp = T>,
     {
         let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
-        let tuples = relation
-            .tuples_by_variables(&self.variables)
-            .map(|(key, _tuple)| key);
 
         let projected = CollectionRelation {
             variables: self.variables.to_vec(),
-            tuples,
+            tuples: relation.projected(&self.variables),
         };
 
         (projected, shutdown_handle)
