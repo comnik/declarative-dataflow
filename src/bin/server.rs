@@ -33,6 +33,8 @@ use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
 use timely::synchronization::Sequencer;
 
+use differential_dataflow::operators::Consolidate;
+
 use mio::net::TcpListener;
 use mio::*;
 
@@ -570,7 +572,23 @@ fn main() {
                                             send_errors.send((vec![Token(client)], vec![(error, last_tx)])).unwrap();
                                         }
                                         Ok(relation) => {
-                                            relation
+                                            let delayed = match req.granularity {
+                                                None => relation,
+                                                #[cfg(feature = "real-time")]
+                                                Some(granularity) => {
+                                                    relation
+                                                        .delay(move |t| Duration::from_secs((t.as_secs()/granularity + 1) * granularity))
+                                                        .consolidate()
+                                                }
+                                                #[cfg(not(feature = "real-time"))]
+                                                Some(delay) => {
+                                                    relation
+                                                        .delay(move |t| (t/granularity + 1) * granularity)
+                                                        .consolidate()
+                                                }
+                                            };
+
+                                            delayed
                                                 .inner
                                                 .unary_notify(
                                                     Exchange::new(move |_| owner as u64),

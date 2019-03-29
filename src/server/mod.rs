@@ -64,6 +64,9 @@ pub type TxId = u64;
 pub struct Interest {
     /// The name of a previously registered dataflow.
     pub name: String,
+    /// Granularity (in seconds or tx ids) at which to send
+    /// results. None indicates no delay.
+    pub granularity: Option<u64>,
 }
 
 /// A request with the intent of synthesising one or more new rules
