@@ -14,7 +14,8 @@ license = "MIT"
 [dependencies]
 jemallocator = "0.1.8"
 timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
-differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
+# differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
+differential-dataflow = {path = "/Users/david/Projects/David/differential-dataflow/"}
 abomonation = "0.7"
 abomonation_derive = "0.3"
 serde = "1"
