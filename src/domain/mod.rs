@@ -1,12 +1,11 @@
 //! Logic for working with attributes under a shared timestamp
 //! semantics.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::ops::Sub;
 
-use timely::dataflow::channels::pact::Exchange;
-use timely::dataflow::operators::generic::operator::Operator;
-use timely::dataflow::operators::FrontierNotificator;
+use timely::dataflow::operators::aggregation::StateMachine;
+use timely::dataflow::operators::Map;
 use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::order::TotalOrder;
 use timely::progress::Timestamp;
@@ -82,78 +81,40 @@ where
             tuples = match config.input_semantics {
                 InputSemantics::Raw => tuples,
                 InputSemantics::CardinalityOne => {
-                    let exchange =
-                        Exchange::new(|((e, _v), _t, _diff): &((Value, Value), T, isize)| {
-                            if let Value::Eid(eid) = e {
-                                *eid as u64
-                            } else {
-                                panic!("Expected an eid.");
-                            }
-                        });
-
-                    // @TODO replace this with a delta-query, looking
-                    // up eids in the validate trace and retracting
-                    // old values
                     tuples
                         .inner
-                        .unary_frontier(exchange, "CardinalityOne", |_, _| {
-                            let mut notificator = FrontierNotificator::new();
-
-                            let mut eids: HashMap<T, HashSet<Value>> = HashMap::new();
-                            let mut current: HashMap<Value, Value> = HashMap::new();
-                            let mut next: HashMap<Value, (T, Value)> = HashMap::new();
-
-                            let mut tuples = Vec::new();
-
-                            move |input, output| {
-                                while let Some((cap, data)) = input.next() {
-                                    data.swap(&mut tuples);
-
-                                    let mut interest = false;
-                                    for ((eid, v), t, _) in tuples.drain(..) {
-                                        let (last_t, _next_v) = next
-                                            .entry(eid.clone())
-                                            .or_insert((cap.time().clone(), v.clone()));
-
-                                        if last_t.less_equal(&t) {
-                                            next.insert(eid.clone(), (t.clone(), v.clone()));
-
-                                            eids.entry(t).or_insert_with(HashSet::new).insert(eid);
-
-                                            interest = true;
-                                        }
+                        .map(|((e, next_v), t, diff)| (e, (next_v, t, diff)))
+                        .state_machine(
+                            |e, (next_v, t, diff), v| {
+                                match v {
+                                    None => {
+                                        assert!(diff > 0, "Received a retraction of a new key on a CardinalityOne attribute");
+                                        *v = Some(next_v.clone());
+                                        (false, vec![((e.clone(), next_v), t, 1)])
                                     }
-
-                                    if interest {
-                                        notificator.notify_at(cap.retain());
+                                    Some(old_v) => {
+                                        let old_v = old_v.clone();
+                                        if diff > 0 {
+                                            *v = Some(next_v.clone());
+                                            (false, vec![
+                                                ((e.clone(), old_v), t.clone(), -1),
+                                                ((e.clone(), next_v), t, 1),
+                                            ])
+                                        } else {
+                                            // Retraction received. Can clean up state.
+                                            (true, vec![((e.clone(), old_v), t, -1)])
+                                        }
                                     }
                                 }
-
-                                notificator.for_each(&[input.frontier()], |cap, _| {
-                                    let mut session = output.session(&cap);
-
-                                    if let Some(mut eids) = eids.remove(cap.time()) {
-                                        for eid in eids.drain() {
-                                            if let Some(current_v) = current.remove(&eid) {
-                                                session.give((
-                                                    (eid.clone(), current_v),
-                                                    cap.time().clone(),
-                                                    -1,
-                                                ));
-                                            }
-                                            if let Some((_t, next_v)) = next.remove(&eid) {
-                                                session.give((
-                                                    (eid.clone(), next_v.clone()),
-                                                    cap.time().clone(),
-                                                    1,
-                                                ));
-                                                current.insert(eid, next_v);
-                                            }
-                                        }
-                                    }
-                                });
+                            },
+                            |e| {
+                                if let Value::Eid(eid) = e {
+                                    *eid as u64
+                                } else {
+                                    panic!("Expected an eid.");
+                                }
                             }
-                        })
+                        )
                         .as_collection()
                 }
                 InputSemantics::CardinalityMany => {
