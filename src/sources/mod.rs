@@ -1,7 +1,6 @@
 //! Types and operators to work with external data sources.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Weak;
 use std::time::{Duration, Instant};
 
@@ -17,12 +16,12 @@ use crate::{Aid, Value};
 #[cfg(feature = "csv-source")]
 pub mod csv_file;
 pub mod differential_logging;
-pub mod json_file;
+// pub mod json_file;
 pub mod timely_logging;
 
 #[cfg(feature = "csv-source")]
 pub use self::csv_file::CsvFile;
-pub use self::json_file::JsonFile;
+// pub use self::json_file::JsonFile;
 
 /// An external data source that can provide Datoms.
 pub trait Sourceable<T>
@@ -36,7 +35,7 @@ where
         scope: &mut S,
         t0: Instant,
         scheduler: Weak<RefCell<Scheduler>>,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), T, isize)>>;
+    ) -> Vec<(Aid, Stream<S, ((Value, Value), T, isize)>)>;
 }
 
 /// Supported external data sources.
@@ -49,8 +48,8 @@ pub enum Source {
     /// CSV files
     #[cfg(feature = "csv-source")]
     CsvFile(CsvFile),
-    /// Files containing json objects
-    JsonFile(JsonFile),
+    // /// Files containing json objects
+    // JsonFile(JsonFile),
 }
 
 #[cfg(feature = "real-time")]
@@ -60,7 +59,7 @@ impl Sourceable<Duration> for Source {
         scope: &mut S,
         t0: Instant,
         scheduler: Weak<RefCell<Scheduler>>,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
+    ) -> Vec<(Aid, Stream<S, ((Value, Value), Duration, isize)>)> {
         match *self {
             Source::TimelyLogging(ref source) => source.source(scope, t0, scheduler),
             Source::DifferentialLogging(ref source) => source.source(scope, t0, scheduler),
@@ -77,7 +76,7 @@ impl Sourceable<u64> for Source {
         _scope: &mut S,
         _t0: Instant,
         _scheduler: Weak<RefCell<Scheduler>>,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), u64, isize)>> {
+    ) -> Vec<(Aid, Stream<S, ((Value, Value), u64, isize)>)> {
         match *self {
             // Source::TimelyLogging(ref source) => source.source(scope, t0),
             // Source::DifferentialLogging(ref source) => source.source(scope, t0),

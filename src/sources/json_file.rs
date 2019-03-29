@@ -2,7 +2,6 @@
 //! arbitrary json structures.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -34,7 +33,7 @@ impl Sourceable<Duration> for JsonFile {
         scope: &mut S,
         t0: Instant,
         _scheduler: Weak<RefCell<Scheduler>>,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
+    ) -> Vec<(Aid, Stream<S, ((Value, Value), Duration, isize)>)> {
         let filename = self.path.clone();
 
         // The following is mostly the innards of
@@ -45,13 +44,13 @@ impl Sourceable<Duration> for JsonFile {
         let operator_info = demux.operator_info();
         demux.set_notify(false);
 
-        let mut wrappers = HashMap::with_capacity(self.attributes.len());
-        let mut streams = HashMap::with_capacity(self.attributes.len());
+        let mut wrappers = Vec::with_capacity(self.attributes.len());
+        let mut streams = Vec::with_capacity(self.attributes.len());
 
-        for aid in self.attributes.iter() {
+        for _ in self.attributes.iter() {
             let (wrapper, stream) = demux.new_output();
-            wrappers.insert(aid.to_string(), wrapper);
-            streams.insert(aid.to_string(), stream);
+            wrappers.push(wrapper);
+            streams.push(stream);
         }
 
         let scope_handle = scope.clone();
@@ -61,8 +60,6 @@ impl Sourceable<Duration> for JsonFile {
 
             let scope = scope_handle;
             let activator = scope.activator_for(&operator_info.address[..]);
-
-            let mut cap = Some(capabilities.pop().unwrap());
 
             let worker_index = scope.index();
             let num_workers = scope.peers();
@@ -77,16 +74,15 @@ impl Sourceable<Duration> for JsonFile {
             let mut object_index = 0;
 
             move |_frontiers| {
-                let mut handles = HashMap::with_capacity(attributes.len());
-                for (aid, wrapper) in wrappers.iter_mut() {
-                    handles.insert(aid.to_string(), wrapper.activate());
+                let mut handles = Vec::with_capacity(attributes.len());
+                for wrapper in wrappers.iter_mut() {
+                    handles.push(wrapper.activate());
                 }
 
                 if iterator.peek().is_some() {
-                    let cap_ref = cap.as_ref().unwrap();
-                    let mut sessions = HashMap::with_capacity(attributes.len());
-                    for (aid, handle) in handles.iter_mut() {
-                        sessions.insert(aid.to_string(), handle.session(&cap_ref));
+                    let mut sessions = Vec::with_capacity(attributes.len());
+                    for (idx, handle) in handles.iter_mut().enumerate() {
+                        sessions.push(handle.session(capabilities.get(idx).unwrap()));
                     }
 
                     let time = Instant::now().duration_since(t0);
@@ -108,7 +104,7 @@ impl Sourceable<Duration> for JsonFile {
                             // otherwise:
                             // for (k, v) in obj.as_object().unwrap() {
 
-                            for aid in attributes.iter() {
+                            for (idx, aid) in attributes.iter().enumerate() {
                                 match obj_map.get(aid) {
                                     None => {}
                                     Some(json_value) => {
@@ -126,7 +122,7 @@ impl Sourceable<Duration> for JsonFile {
 
                                         let tuple = (Value::Eid(object_index as Eid), v);
 
-                                        sessions.get_mut(aid)
+                                        sessions.get_mut(idx)
                                             .unwrap()
                                             .give((tuple, time, 1));
                                     }
@@ -143,7 +139,7 @@ impl Sourceable<Duration> for JsonFile {
 
                     activator.activate();
                 } else {
-                    cap = None;
+                    capabilities.drain(..);
                 }
             }
         });

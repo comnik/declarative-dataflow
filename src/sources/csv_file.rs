@@ -1,7 +1,6 @@
 //! Operator and utilities to source data from csv files.
 
 use std::cell::RefCell;
-use std::collections::HashMap;
 use std::rc::Weak;
 use std::time::{Duration, Instant};
 
@@ -42,7 +41,7 @@ impl Sourceable<Duration> for CsvFile {
         scope: &mut S,
         t0: Instant,
         scheduler: Weak<RefCell<Scheduler>>,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
+    ) -> Vec<(Aid, Stream<S, ((Value, Value), Duration, isize)>)> {
         let filename = self.path.clone();
 
         // The following is mostly the innards of
@@ -177,10 +176,10 @@ impl Sourceable<Duration> for CsvFile {
             }
         });
 
-        let mut out = HashMap::new();
+        let mut out = Vec::with_capacity(streams.len());
         for (idx, stream) in streams.drain(..).enumerate() {
             let aid = self.schema[idx].0.clone();
-            out.insert(aid.to_string(), stream);
+            out.push((aid.to_string(), stream));
         }
 
         out

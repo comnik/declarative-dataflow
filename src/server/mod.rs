@@ -384,7 +384,7 @@ impl<Token: Hash> Server<u64, Token> {
     ) -> Result<(), Error> {
         let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
 
-        for (aid, datoms) in attribute_streams.drain() {
+        for (aid, datoms) in attribute_streams.drain(..) {
             self.context.internal.create_source(&aid, &datoms)?;
         }
 
@@ -419,7 +419,7 @@ impl<Token: Hash> Server<Duration, Token> {
     ) -> Result<(), Error> {
         let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
 
-        for (aid, datoms) in attribute_streams.drain() {
+        for (aid, datoms) in attribute_streams.drain(..) {
             self.context.internal.create_source(&aid, &datoms)?;
         }
 

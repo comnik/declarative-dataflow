@@ -33,7 +33,7 @@ impl Sourceable<Duration> for DifferentialLogging {
         scope: &mut S,
         _t0: Instant,
         _scheduler: Weak<RefCell<Scheduler>>,
-    ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
+    ) -> Vec<(Aid, Stream<S, ((Value, Value), Duration, isize)>)> {
         let events = Rc::new(EventLink::new());
         let mut logger = BatchLogger::new(events.clone());
 
@@ -107,6 +107,9 @@ impl Sourceable<Duration> for DifferentialLogging {
             }
         });
 
-        streams
+        self.attributes
+            .iter()
+            .map(|aid| (aid.to_string(), streams.remove(aid).unwrap()))
+            .collect()
     }
 }
