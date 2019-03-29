@@ -218,10 +218,25 @@ fn main() {
             // polling - should usually be driven completely
             // non-blocking (i.e. timeout 0), but higher timeouts can
             // be used for debugging or artificial braking
-            //
-            // @TODO handle errors
-            poll.poll(&mut events, Some(Duration::from_millis(0)))
-                .unwrap();
+
+            if server.scheduler.borrow().has_pending() {
+                let mut scheduler = server.scheduler.borrow_mut();
+                while let Some(activator) = scheduler.next() {
+                    activator.activate();
+                }
+
+                // We mustn't timeout here, operators are pending!
+                poll.poll(&mut events, Some(Duration::from_millis(0)))
+                    .expect("failed to poll I/O events");
+            } else {
+                #[cfg(not(feature = "blocking"))]
+                poll.poll(&mut events, Some(Duration::from_millis(0)))
+                    .expect("failed to poll I/O events");
+
+                #[cfg(feature = "blocking")]
+                poll.poll(&mut events, None)
+                    .expect("failed to poll I/O events");
+            }
 
             for event in events.iter() {
                 trace!(

@@ -1,8 +1,10 @@
 //! Server logic for driving the library via commands.
 
+use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::ops::Sub;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use timely::dataflow::{ProbeHandle, Scope};
@@ -22,6 +24,9 @@ use crate::{
     implement, implement_neu, AttributeConfig, CollectionIndex, RelationHandle, ShutdownHandle,
 };
 use crate::{Aid, Error, Time, TxData, Value};
+
+pub mod scheduler;
+use self::scheduler::Scheduler;
 
 /// Server configuration.
 #[derive(Clone, Debug)]
@@ -143,6 +148,8 @@ where
     pub shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
+    /// Scheduler managing deferred operator activations.
+    pub scheduler: Rc<RefCell<Scheduler>>,
 }
 
 /// Implementation context.
@@ -213,6 +220,7 @@ where
             interests: HashMap::new(),
             shutdown_handles: HashMap::new(),
             probe: ProbeHandle::new(),
+            scheduler: Rc::new(RefCell::new(Scheduler::new())),
         }
     }
 
@@ -374,7 +382,7 @@ impl<Token: Hash> Server<u64, Token> {
         source: Source,
         scope: &mut S,
     ) -> Result<(), Error> {
-        let mut attribute_streams = source.source(scope, self.t0);
+        let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
 
         for (aid, datoms) in attribute_streams.drain() {
             self.context.internal.create_source(&aid, &datoms)?;
@@ -409,7 +417,7 @@ impl<Token: Hash> Server<Duration, Token> {
         source: Source,
         scope: &mut S,
     ) -> Result<(), Error> {
-        let mut attribute_streams = source.source(scope, self.t0);
+        let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
 
         for (aid, datoms) in attribute_streams.drain() {
             self.context.internal.create_source(&aid, &datoms)?;

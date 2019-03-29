@@ -8,7 +8,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Threshold;
 
-use crate::binding::{AsBinding, Binding};
+use crate::binding::Binding;
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
 

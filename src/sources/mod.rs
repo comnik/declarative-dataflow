@@ -1,6 +1,8 @@
 //! Types and operators to work with external data sources.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Weak;
 use std::time::{Duration, Instant};
 
 use timely::dataflow::{Scope, Stream};
@@ -9,6 +11,7 @@ use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 
+use crate::server::scheduler::Scheduler;
 use crate::{Aid, Value};
 
 #[cfg(feature = "csv-source")]
@@ -32,6 +35,7 @@ where
         &self,
         scope: &mut S,
         t0: Instant,
+        scheduler: Weak<RefCell<Scheduler>>,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), T, isize)>>;
 }
 
@@ -55,12 +59,13 @@ impl Sourceable<Duration> for Source {
         &self,
         scope: &mut S,
         t0: Instant,
+        scheduler: Weak<RefCell<Scheduler>>,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
         match *self {
-            Source::TimelyLogging(ref source) => source.source(scope, t0),
-            Source::DifferentialLogging(ref source) => source.source(scope, t0),
+            Source::TimelyLogging(ref source) => source.source(scope, t0, scheduler),
+            Source::DifferentialLogging(ref source) => source.source(scope, t0, scheduler),
             #[cfg(feature = "csv-source")]
-            Source::CsvFile(ref source) => source.source(scope, t0),
+            Source::CsvFile(ref source) => source.source(scope, t0, scheduler),
             _ => unimplemented!(),
         }
     }
@@ -71,6 +76,7 @@ impl Sourceable<u64> for Source {
         &self,
         _scope: &mut S,
         _t0: Instant,
+        _scheduler: Weak<RefCell<Scheduler>>,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), u64, isize)>> {
         match *self {
             // Source::TimelyLogging(ref source) => source.source(scope, t0),

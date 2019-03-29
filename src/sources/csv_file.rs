@@ -1,6 +1,8 @@
 //! Operator and utilities to source data from csv files.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Weak;
 use std::time::{Duration, Instant};
 
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
@@ -8,6 +10,7 @@ use timely::dataflow::{Scope, Stream};
 
 use chrono::DateTime;
 
+use crate::server::scheduler::Scheduler;
 use crate::sources::Sourceable;
 use crate::{Aid, Eid, Value};
 
@@ -38,6 +41,7 @@ impl Sourceable<Duration> for CsvFile {
         &self,
         scope: &mut S,
         t0: Instant,
+        scheduler: Weak<RefCell<Scheduler>>,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
         let filename = self.path.clone();
 

@@ -1,10 +1,12 @@
 //! Operator and utilities to source data from plain files containing
 //! arbitrary json structures.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
 use std::path::Path;
+use std::rc::Weak;
 use std::time::{Duration, Instant};
 
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
@@ -12,6 +14,7 @@ use timely::dataflow::{Scope, Stream};
 
 // use sources::json_file::flate2::read::GzDecoder;
 
+use crate::server::scheduler::Scheduler;
 use crate::sources::Sourceable;
 use crate::{Aid, Eid, Value};
 use Value::{Bool, Number};
@@ -30,6 +33,7 @@ impl Sourceable<Duration> for JsonFile {
         &self,
         scope: &mut S,
         t0: Instant,
+        _scheduler: Weak<RefCell<Scheduler>>,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
         let filename = self.path.clone();
 

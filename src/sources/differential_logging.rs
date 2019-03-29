@@ -1,8 +1,9 @@
 //! Operator and utilities to source data from the underlying
 //! Differential logging streams.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use timely::dataflow::channels::pact::Pipeline;
@@ -14,6 +15,7 @@ use timely::logging::BatchLogger;
 
 use differential_dataflow::logging::DifferentialEvent;
 
+use crate::server::scheduler::Scheduler;
 use crate::sources::Sourceable;
 use crate::{Aid, Value};
 use Value::{Eid, Number};
@@ -30,6 +32,7 @@ impl Sourceable<Duration> for DifferentialLogging {
         &self,
         scope: &mut S,
         _t0: Instant,
+        _scheduler: Weak<RefCell<Scheduler>>,
     ) -> HashMap<Aid, Stream<S, ((Value, Value), Duration, isize)>> {
         let events = Rc::new(EventLink::new());
         let mut logger = BatchLogger::new(events.clone());
