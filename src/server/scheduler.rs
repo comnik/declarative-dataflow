@@ -12,6 +12,7 @@ use timely::scheduling::activate::Activator;
 /// (optionally) block for input from within the event loop without
 /// unnecessarily delaying sources that have run out of fuel during
 /// the current step.
+#[derive(Default)]
 pub struct Scheduler {
     activator_queue: BinaryHeap<TimedActivator>,
 }
@@ -28,11 +29,7 @@ impl Scheduler {
     /// scheduled.
     pub fn has_pending(&self) -> bool {
         if let Some(ref timed_activator) = self.activator_queue.peek() {
-            if Instant::now() <= timed_activator.at {
-                true
-            } else {
-                false
-            }
+            Instant::now() <= timed_activator.at
         } else {
             false
         }

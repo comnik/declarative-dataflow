@@ -243,18 +243,16 @@ where
 
                     self.forward
                         .get_mut(aid)
-                        .expect(&format!(
-                            "Configuration available for unknown attribute {}",
-                            aid
-                        ))
+                        .unwrap_or_else(|| {
+                            panic!("Configuration available for unknown attribute {}", aid)
+                        })
                         .advance_by(frontier);
 
                     self.reverse
                         .get_mut(aid)
-                        .expect(&format!(
-                            "Configuration available for unknown attribute {}",
-                            aid
-                        ))
+                        .unwrap_or_else(|| {
+                            panic!("Configuration available for unknown attribute {}", aid)
+                        })
                         .advance_by(frontier);
                 }
             }
@@ -265,10 +263,9 @@ where
 
                     self.arrangements
                         .get_mut(name)
-                        .expect(&format!(
-                            "Configuration available for unknown relation {}",
-                            name
-                        ))
+                        .unwrap_or_else(|| {
+                            panic!("Configuration available for unknown relation {}", name)
+                        })
                         .advance_by(frontier);
                 }
             }

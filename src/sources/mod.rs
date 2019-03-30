@@ -2,7 +2,7 @@
 
 use std::cell::RefCell;
 use std::rc::Weak;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use timely::dataflow::{Scope, Stream};
 use timely::order::TotalOrder;
@@ -53,13 +53,13 @@ pub enum Source {
 }
 
 #[cfg(feature = "real-time")]
-impl Sourceable<Duration> for Source {
-    fn source<S: Scope<Timestamp = Duration>>(
+impl Sourceable<std::time::Duration> for Source {
+    fn source<S: Scope<Timestamp = std::time::Duration>>(
         &self,
         scope: &mut S,
         t0: Instant,
         scheduler: Weak<RefCell<Scheduler>>,
-    ) -> Vec<(Aid, Stream<S, ((Value, Value), Duration, isize)>)> {
+    ) -> Vec<(Aid, Stream<S, ((Value, Value), std::time::Duration, isize)>)> {
         match *self {
             Source::TimelyLogging(ref source) => source.source(scope, t0, scheduler),
             Source::DifferentialLogging(ref source) => source.source(scope, t0, scheduler),

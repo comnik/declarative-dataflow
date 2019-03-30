@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::ops::Sub;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use timely::dataflow::{ProbeHandle, Scope};
 use timely::order::TotalOrder;
@@ -420,9 +420,9 @@ impl<Token: Hash> Server<u64, Token> {
 }
 
 #[cfg(feature = "real-time")]
-impl<Token: Hash> Server<Duration, Token> {
+impl<Token: Hash> Server<std::time::Duration, Token> {
     /// Handle a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = Duration>>(
+    pub fn register_source<S: Scope<Timestamp = std::time::Duration>>(
         &mut self,
         source: Source,
         scope: &mut S,
@@ -437,7 +437,7 @@ impl<Token: Hash> Server<Duration, Token> {
     }
 
     /// Handle a RegisterSink request.
-    pub fn register_sink<S: Scope<Timestamp = Duration>>(
+    pub fn register_sink<S: Scope<Timestamp = std::time::Duration>>(
         &mut self,
         req: RegisterSink,
         scope: &mut S,

@@ -1,24 +1,12 @@
 #[global_allocator]
 static ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
-extern crate declarative_dataflow;
-extern crate differential_dataflow;
-extern crate getopts;
-extern crate mio;
 #[macro_use]
 extern crate serde_derive;
-extern crate serde_json;
-extern crate slab;
-extern crate timely;
-extern crate ws;
-
-#[macro_use]
-extern crate log;
-extern crate env_logger;
-
 #[macro_use]
 extern crate abomonation_derive;
-extern crate abomonation;
+#[macro_use]
+extern crate log;
 
 use std::collections::{HashSet, VecDeque};
 use std::io::BufRead;
@@ -91,8 +79,9 @@ fn main() {
 
     let args: Vec<String> = std::env::args().collect();
     let timely_args = std::env::args().take_while(|ref arg| *arg != "--");
+    let timely_config = timely::Configuration::from_args(timely_args).unwrap();
 
-    timely::execute_from_args(timely_args, move |worker| {
+    timely::execute(timely_config, move |worker| {
         // read configuration
         let server_args = args.iter().rev().take_while(|arg| *arg != "--");
         let default_config: Config = Default::default();
@@ -139,13 +128,13 @@ fn main() {
         };
 
         // setup CLI channel
-        let (send_cli, recv_cli) = mio::channel::channel();
+        let (send_cli, recv_cli) = mio_extras::channel::channel();
 
         // setup results channel
-        let (send_results, recv_results) = mio::channel::channel::<(String, Vec<ResultDiff<T>>)>();
+        let (send_results, recv_results) = mio_extras::channel::channel::<(String, Vec<ResultDiff<T>>)>();
 
         // setup errors channel
-        let (send_errors, recv_errors) = mio::channel::channel::<(Vec<Token>, Vec<(Error, TxId)>)>();
+        let (send_errors, recv_errors) = mio_extras::channel::channel::<(Vec<Token>, Vec<(Error, TxId)>)>();
 
         // setup server socket
         // let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
@@ -416,14 +405,12 @@ fn main() {
                     _ => {
                         let token = event.token();
                         let active = {
-                            let readiness = event.readiness();
-                            let conn_events = connections[token.into()].events();
+                            let event_readiness = event.readiness();
+                            let conn_readiness = connections[token.into()].events();
 
-                            // @TODO refactor connection to accept a
-                            // vector in which to place events and
-                            // rename conn_events to avoid name clash
+                            // @TODO refactor connection to accept a vector in which to place events
 
-                            if (readiness & conn_events).is_readable() {
+                            if (event_readiness & conn_readiness).is_readable() {
                                 match connections[token.into()].read() {
                                     Err(err) => {
                                         trace!(
@@ -493,9 +480,9 @@ fn main() {
                                 }
                             }
 
-                            let conn_events = connections[token.into()].events();
+                            let conn_readiness = connections[token.into()].events();
 
-                            if (readiness & conn_events).is_writable() {
+                            if (event_readiness & conn_readiness).is_writable() {
                                 if let Err(err) = connections[token.into()].write() {
                                     trace!(
                                         "[WORKER {}] error while writing: {}",
@@ -589,7 +576,7 @@ fn main() {
                                                         .consolidate()
                                                 }
                                                 #[cfg(not(feature = "real-time"))]
-                                                Some(delay) => {
+                                                Some(granularity) => {
                                                     relation
                                                         .delay(move |t| (t/granularity + 1) * granularity)
                                                         .consolidate()
