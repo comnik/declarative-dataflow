@@ -56,9 +56,10 @@ for Q1 2019.
 ## Build / Run
 
 Assuming an up-to-date Rust environment, the server can be built and
-run via
+run from within the [server/](server/) sub-directory:
 
-    cargo run --release --bin server -- <timely args> -- <server args>
+    cd server/
+    cargo run --release -- <timely args> -- <server args>
 
 The server executable accepts two sets of arguments separated by `--`,
 one for [configuring timely

@@ -1,0 +1,37 @@
+[package]
+
+name = "declarative-server"
+version = "0.1.0"
+authors = ["Nikolas Göbel <me@nikolasgoebel.com>", "Frank McSherry <fmcsherry@me.com>"]
+edition = "2018"
+
+[dependencies]
+jemallocator = "0.1.8"
+timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
+differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
+declarative-dataflow = { path = "../" }
+serde = "1"
+serde_derive = "1"
+serde_json = "1"
+rmp-serde = "0.13.7"
+mio = "0.6.16"
+mio-extras = "2.0.5"
+slab = "0.4.1"
+ws = { git = "https://github.com/comnik/ws-rs", rev = "fdf5a291b8962de802e1745963a4c4575d76cecf" }
+log = "0.4"
+env_logger = "0.5.6"
+getopts = "0.2.18"
+
+[features]
+blocking = []
+real-time = ["declarative-dataflow/real-time"]
+csv-source = ["declarative-dataflow/csv-source"]
+json-source = ["declarative-dataflow/json-source"]
+
+[profile.release]
+opt-level = 3
+debug = true
+debug-assertions = false
+rpath = false
+lto = false
+codegen-units = 4

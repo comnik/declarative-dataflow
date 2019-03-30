@@ -6,15 +6,10 @@
 
 #![forbid(missing_docs)]
 
-extern crate differential_dataflow;
-extern crate timely;
-extern crate timely_sort;
 #[macro_use]
 extern crate log;
-extern crate abomonation;
 #[macro_use]
 extern crate serde_derive;
-extern crate num_rational;
 
 pub mod binding;
 pub mod domain;
