@@ -31,8 +31,10 @@ use getopts::Options;
 use timely::dataflow::channels::pact::{Exchange, Pipeline};
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
+use timely::logging::TimelyEvent;
 use timely::synchronization::Sequencer;
 
+use differential_dataflow::logging::DifferentialEvent;
 use differential_dataflow::operators::Consolidate;
 
 use mio::net::TcpListener;
@@ -739,13 +741,13 @@ fn main() {
 
         drop(sequencer);
 
-        // @TODO de-register loggers s.t. logging dataflows can shut down.
-        // worker
-        //     .log_register()
-        //     .insert::<TimelyEvent,_>("timely", move |_time, _data| { });
+        // de-register loggers s.t. logging dataflows can shut down.
+        worker
+            .log_register()
+            .insert::<TimelyEvent,_>("timely", move |_time, _data| { });
 
-        // worker
-        //     .log_register()
-        //     .insert::<DifferentialEvent,_>("differential/arrange", move |_time, _data| { });
+        worker
+            .log_register()
+            .insert::<DifferentialEvent,_>("differential/arrange", move |_time, _data| { });
     }).expect("Timely computation did not exit cleanly");
 }
