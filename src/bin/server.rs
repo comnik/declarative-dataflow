@@ -294,9 +294,6 @@ fn main() {
                                         addr
                                     );
 
-                                    // @TODO to nagle or not to nagle?
-                                    // sock.set_nodelay(true)
-
                                     let token = {
                                         let entry = connections.vacant_entry();
                                         let token = Token(entry.key());
@@ -331,10 +328,10 @@ fn main() {
                         while let Ok((query_name, results)) = recv_results.try_recv() {
                             info!("[WORKER {}] {} {} results", worker.index(), query_name, results.len());
 
-                            match server.interests.get(&query_name) {
+                            match server.interests.get_mut(&query_name) {
                                 None => {
-                                    /* @TODO unregister this flow */
-                                    warn!("NO INTEREST FOR THIS RESULT");
+                                    trace!("result on query {} w/o interested clients", query_name);
+                                    server.shutdown_query(&query_name);
                                 }
                                 Some(tokens) => {
                                     let serialized = serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(
@@ -342,20 +339,27 @@ fn main() {
                                     ).expect("failed to serialize outputs");
                                     let msg = ws::Message::text(serialized);
 
-                                    for &token in tokens.iter() {
-                                        // @TODO check whether connection still exists
-                                        let conn = &mut connections[token.into()];
+                                    tokens.retain(|token| {
+                                        match connections.get_mut((*token).into()) {
+                                            None => {
+                                                trace!("client {:?} has gone away", token);
+                                                false
+                                            }
+                                            Some(conn) => {
+                                                conn.send_message(msg.clone())
+                                                    .expect("failed to send message");
 
-                                        conn.send_message(msg.clone())
-                                            .expect("failed to send message");
+                                                poll.reregister(
+                                                    conn.socket(),
+                                                    conn.token(),
+                                                    conn.events(),
+                                                    PollOpt::edge() | PollOpt::oneshot(),
+                                                ).unwrap();
 
-                                        poll.reregister(
-                                            conn.socket(),
-                                            conn.token(),
-                                            conn.events(),
-                                            PollOpt::edge() | PollOpt::oneshot(),
-                                        ).unwrap();
-                                    }
+                                                true
+                                            }
+                                        }
+                                    });
                                 }
                             }
                         }
@@ -368,7 +372,7 @@ fn main() {
                         ).unwrap();
                     }
                     ERRORS => {
-                        while let Ok((tokens, mut errors)) = recv_errors.try_recv() {
+                        while let Ok((mut tokens, mut errors)) = recv_errors.try_recv() {
                             error!("[WORKER {}] {:?}", worker.index(), errors);
 
                             let serializable = errors.drain(..).map(|(error, time)| {
@@ -384,19 +388,21 @@ fn main() {
                             ).expect("failed to serialize errors");
                             let msg = ws::Message::text(serialized);
 
-                            for &token in tokens.iter() {
-                                // @TODO check whether connection still exists
-                                let conn = &mut connections[token.into()];
+                            for token in tokens.drain(..) {
+                                match connections.get_mut(token.into()) {
+                                    None => warn!("sending errors to client that went away"),
+                                    Some(conn) => {
+                                        conn.send_message(msg.clone())
+                                            .expect("failed to send message");
 
-                                conn.send_message(msg.clone())
-                                    .expect("failed to send message");
-
-                                poll.reregister(
-                                    conn.socket(),
-                                    conn.token(),
-                                    conn.events(),
-                                    PollOpt::edge() | PollOpt::oneshot(),
-                                ).unwrap();
+                                        poll.reregister(
+                                            conn.socket(),
+                                            conn.token(),
+                                            conn.events(),
+                                            PollOpt::edge() | PollOpt::oneshot(),
+                                        ).unwrap();
+                                    }
+                                }
                             }
                         }
 
@@ -621,9 +627,8 @@ fn main() {
                                 entry.remove(&client_token);
 
                                 if entry.is_empty() {
-                                    info!("Shutting down {}", name);
+                                    server.shutdown_query(&name);
                                     server.interests.remove(&name);
-                                    server.shutdown_handles.remove(&name);
                                 }
                             }
                         }

@@ -147,8 +147,8 @@ where
     pub context: Context<T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, HashSet<Token>>,
-    /// Mapping from query names to their shutdown handles.
-    pub shutdown_handles: HashMap<String, ShutdownHandle>,
+    // Mapping from query names to their shutdown handles.
+    shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
     /// Scheduler managing deferred operator activations.
@@ -243,6 +243,13 @@ where
             //     semantics: InputSemantics::Raw,
             // }),
         ]
+    }
+
+    /// Drops all shutdown handles associated with the specified
+    /// query, resulting in its dataflow getting cleaned up.
+    pub fn shutdown_query(&mut self, name: &str) {
+        info!("Shutting down {}", name);
+        self.shutdown_handles.remove(name);
     }
 
     /// Handle a Transact request.
