@@ -78,6 +78,16 @@ pub enum Value {
     Uuid([u8; 16]),
 }
 
+impl std::convert::From<Value> for Eid {
+    fn from(v: Value) -> Eid {
+        if let Value::Eid(eid) = v {
+            eid
+        } else {
+            panic!("Value {:?} can't be converted to Eid", v);
+        }
+    }
+}
+
 /// Possible timestamp types.
 ///
 /// This enum captures the currently supported timestamp types, and is

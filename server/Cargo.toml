@@ -21,6 +21,7 @@ ws = { git = "https://github.com/comnik/ws-rs", rev = "fdf5a291b8962de802e174596
 log = "0.4"
 env_logger = "0.5.6"
 getopts = "0.2.18"
+itertools = "0.8.0"
 
 [features]
 blocking = []

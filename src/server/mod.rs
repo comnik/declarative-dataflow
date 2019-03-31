@@ -64,6 +64,8 @@ pub type TxId = u64;
 pub struct Interest {
     /// The name of a previously registered dataflow.
     pub name: String,
+    /// Result offset holding client token (for multi-tenant flows).
+    pub tenant: Option<usize>,
     /// Granularity (in seconds or tx ids) at which to send
     /// results. None indicates no delay.
     pub granularity: Option<u64>,
@@ -127,6 +129,8 @@ pub enum Request {
     AdvanceDomain(Option<String>, Time),
     /// Closes a named input handle.
     CloseInput(String),
+    /// Client has disconnected.
+    Disconnect,
     /// Requests orderly shutdown of the system.
     Shutdown,
 }
@@ -136,7 +140,7 @@ pub enum Request {
 pub struct Server<T, Token>
 where
     T: Timestamp + Lattice + TotalOrder,
-    Token: Hash,
+    Token: Hash + Eq + Copy,
 {
     /// Server configuration.
     pub config: Config,
@@ -147,6 +151,10 @@ where
     pub context: Context<T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, HashSet<Token>>,
+    /// Mapping from client tokens to the workers managing their
+    /// connections. Only maintained for clients participating in
+    /// multi-tenant queries.
+    pub tenant_owner: Rc<RefCell<HashMap<Token, u64>>>,
     // Mapping from query names to their shutdown handles.
     shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
@@ -201,7 +209,7 @@ where
 impl<T, Token> Server<T, Token>
 where
     T: Timestamp + Lattice + TotalOrder + Default + Sub<Output = T> + std::convert::From<Time>,
-    Token: Hash,
+    Token: Hash + Eq + Copy,
 {
     /// Creates a new server state from a configuration.
     pub fn new(config: Config) -> Self {
@@ -221,6 +229,7 @@ where
                 underconstrained: HashSet::new(),
             },
             interests: HashMap::new(),
+            tenant_owner: Rc::new(RefCell::new(HashMap::new())),
             shutdown_handles: HashMap::new(),
             probe: ProbeHandle::new(),
             scheduler: Rc::new(RefCell::new(Scheduler::new())),
@@ -352,6 +361,32 @@ where
         }
     }
 
+    /// Handles an Uninterest request, possibly cleaning up dataflows
+    /// that are no longer interesting to any client.
+    pub fn uninterest(&mut self, client: Token, name: &str) {
+        // All workers keep track of every client's interests, s.t. they
+        // know when to clean up unused dataflows.
+        if let Some(entry) = self.interests.get_mut(name) {
+            entry.remove(&client);
+
+            if entry.is_empty() {
+                self.shutdown_query(name);
+                self.interests.remove(name);
+            }
+        }
+    }
+
+    /// Cleans up all bookkeeping state for the specified client.
+    pub fn disconnect_client(&mut self, client: Token) {
+        let names: Vec<String> = self.interests.keys().cloned().collect();
+
+        for query_name in names.iter() {
+            self.uninterest(client, query_name);
+        }
+
+        self.tenant_owner.borrow_mut().remove(&client);
+    }
+
     /// Returns true iff the probe is behind any input handle. Mostly
     /// used as a convenience method during testing.
     pub fn is_any_outdated(&self) -> bool {
@@ -385,7 +420,7 @@ where
     }
 }
 
-impl<Token: Hash> Server<u64, Token> {
+impl<Token: Hash + Eq + Copy> Server<u64, Token> {
     /// Handle a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = u64>>(
         &mut self,
@@ -420,7 +455,7 @@ impl<Token: Hash> Server<u64, Token> {
 }
 
 #[cfg(feature = "real-time")]
-impl<Token: Hash> Server<std::time::Duration, Token> {
+impl<Token: Hash + Eq + Copy> Server<std::time::Duration, Token> {
     /// Handle a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = std::time::Duration>>(
         &mut self,
