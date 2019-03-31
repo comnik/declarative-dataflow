@@ -5,8 +5,8 @@ use std::io::{LineWriter, Write};
 use std::time::{Duration, Instant};
 
 use timely::dataflow::channels::pact::ParallelizationContract;
-use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
-use timely::dataflow::operators::generic::FrontieredInputHandle;
+use timely::dataflow::operators::generic::Operator;
+use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::{Scope, Stream};
 use timely::order::TotalOrder;
 use timely::progress::Timestamp;
@@ -42,7 +42,7 @@ where
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Sink {
     /// /dev/null, used for benchmarking
-    TheVoid(String),
+    TheVoid(Option<String>),
     /// CSV files
     #[cfg(feature = "csv-source")]
     CsvFile(CsvFile),
@@ -77,27 +77,37 @@ impl Sinkable<Duration> for Sink {
         P: ParallelizationContract<S::Timestamp, ResultDiff<Duration>>,
     {
         match *self {
-            Sink::TheVoid(ref name) => {
-                let file = File::create(name).unwrap();
-                let mut writer = LineWriter::new(file);
+            Sink::TheVoid(ref filename) => {
+                let mut writer = match *filename {
+                    None => None,
+                    Some(ref filename) => {
+                        let file = File::create(filename.to_owned()).unwrap();
+                        Some(LineWriter::new(file))
+                    }
+                };
 
-                let mut builder = OperatorBuilder::new(name.to_owned(), stream.scope());
-                let mut input = builder.new_input(stream, pact);
-                let (_output, sunk) = builder.new_output();
+                let mut t0 = Instant::now();
+                let mut last = Duration::from_millis(0);
+                let mut buffer = Vec::new();
 
-                builder.build(|_capabilities| {
-                    let mut t0 = Instant::now();
-                    let mut last = Duration::from_millis(0);
+                let sunk = stream.unary_frontier(pact, "TheVoid", move |_cap, _info| {
+                    move |input, _output: &mut OutputHandle<_, ResultDiff<Duration>, _>| {
+                        let mut received_input = false;
+                        input.for_each(|time, data| {
+                            data.swap(&mut buffer);
+                            received_input = !buffer.is_empty();
+                            buffer.clear();
+                        });
 
-                    move |frontiers| {
-                        let input_handle = FrontieredInputHandle::new(&mut input, &frontiers[0]);
-
-                        if input_handle.frontier.is_empty() {
+                        if input.frontier.is_empty() {
                             println!("[{:?}] inputs to void sink ceased", t0.elapsed());
-                        } else if !input_handle.frontier.frontier().less_equal(&last) {
-                            write!(writer, "{},{:?}\n", t0.elapsed().as_millis(), last).unwrap();
+                        } else if received_input && !input.frontier.frontier().less_equal(&last) {
+                            if let Some(ref mut writer) = &mut writer {
+                                write!(writer, "{},{:?}\n", t0.elapsed().as_millis(), last)
+                                    .unwrap();
+                            }
 
-                            last = input_handle.frontier.frontier()[0].clone();
+                            last = input.frontier.frontier()[0].clone();
                             t0 = Instant::now();
                         }
                     }
