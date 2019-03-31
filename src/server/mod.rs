@@ -242,7 +242,7 @@ where
 
     /// Drops all shutdown handles associated with the specified
     /// query, resulting in its dataflow getting cleaned up.
-    pub fn shutdown_query(&mut self, name: &str) {
+    fn shutdown_query(&mut self, name: &str) {
         info!("Shutting down {}", name);
         self.shutdown_handles.remove(name);
     }
