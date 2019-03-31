@@ -1,6 +1,8 @@
 //! Types and operators to feed outputs into external systems.
 
-use std::time::Duration;
+use std::fs::File;
+use std::io::{LineWriter, Write};
+use std::time::{Duration, Instant};
 
 use timely::dataflow::channels::pact::ParallelizationContract;
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
@@ -40,7 +42,7 @@ where
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Sink {
     /// /dev/null, used for benchmarking
-    TheVoid,
+    TheVoid(String),
     /// CSV files
     #[cfg(feature = "csv-source")]
     CsvFile(CsvFile),
@@ -75,18 +77,28 @@ impl Sinkable<Duration> for Sink {
         P: ParallelizationContract<S::Timestamp, ResultDiff<Duration>>,
     {
         match *self {
-            Sink::TheVoid => {
-                let mut builder = OperatorBuilder::new("TheVoid".to_owned(), stream.scope());
+            Sink::TheVoid(ref name) => {
+                let file = File::create(name).unwrap();
+                let mut writer = LineWriter::new(file);
+
+                let mut builder = OperatorBuilder::new(name.to_owned(), stream.scope());
                 let mut input = builder.new_input(stream, pact);
                 let (_output, sunk) = builder.new_output();
 
                 builder.build(|_capabilities| {
+                    let mut t0 = Instant::now();
+                    let mut last = Duration::from_millis(0);
+
                     move |frontiers| {
-                        let mut input_handle =
-                            FrontieredInputHandle::new(&mut input, &frontiers[0]);
+                        let input_handle = FrontieredInputHandle::new(&mut input, &frontiers[0]);
 
                         if input_handle.frontier.is_empty() {
-                            println!("Inputs to void sink have ceased.");
+                            println!("[{:?}] inputs to void sink ceased", t0.elapsed());
+                        } else if !input_handle.frontier.frontier().less_equal(&last) {
+                            write!(writer, "{},{:?}\n", t0.elapsed().as_millis(), last).unwrap();
+
+                            last = input_handle.frontier.frontier()[0].clone();
+                            t0 = Instant::now();
                         }
                     }
                 });
