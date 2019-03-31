@@ -16,7 +16,7 @@ use getopts::Options;
 
 use itertools::Itertools;
 
-use timely::dataflow::channels::pact::{Exchange, Pipeline};
+use timely::dataflow::channels::pact::Exchange;
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
 use timely::logging::TimelyEvent;
@@ -33,7 +33,8 @@ use slab::Slab;
 use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
-use declarative_dataflow::{Eid, Error, ImplContext, ResultDiff};
+use declarative_dataflow::sinks::Sinkable;
+use declarative_dataflow::{Eid, Error, ResultDiff};
 
 /// Server timestamp type.
 #[cfg(not(feature = "real-time"))]
@@ -598,21 +599,25 @@ fn main() {
                             }
                         }
                         Request::Interest(req) => {
+                            let interests = server.interests
+                                .entry(req.name.clone())
+                                .or_insert_with(HashSet::new);
+
+                            // We need to check this, because we only want to setup
+                            // the dataflow on the first interest.
+                            let was_first = interests.is_empty();
+
                             // All workers keep track of every client's interests, s.t. they
                             // know when to clean up unused dataflows.
+                            interests.insert(Token(client));
 
-                            let client_token = Token(client);
-                            server.interests
-                                .entry(req.name.clone())
-                                .or_insert_with(HashSet::new)
-                                .insert(client_token);
-
+                            // For multi-tenant flows, we need to keep track of the worker
+                            // that is managing this client's connection.
                             if let Some(_) = req.tenant {
                                 server.tenant_owner.borrow_mut().insert(Token(client), command.owner as u64);
                             }
 
-                            if server.context.global_arrangement(&req.name).is_none() {
-
+                            if was_first {
                                 let send_results_handle = send_results.clone();
                                 let send_tenant_results_handle = send_tenant_results.clone();
 
@@ -644,112 +649,73 @@ fn main() {
                                                 let mut buffer = Vec::new();
                                                 let tenant_owner = server.tenant_owner.clone();
 
-                                                delayed
-                                                    .inner
-                                                    .unary(
-                                                        Exchange::new(move |(ref tuple, _t, _diff): &ResultDiff<T>| {
-                                                            let tenant: Eid = tuple[offset].clone().into();
-                                                            tenant_owner.borrow().get(&Token(tenant as usize)).unwrap().clone()
-                                                        }),
-                                                        "MultiTenantResults",
-                                                        move |_cap, _info| {
-                                                            move |input, _output: &mut OutputHandle<_, (), _>| {
-                                                                input.for_each(|_time, data| {
-                                                                    data.swap(&mut buffer);
+                                                let pact = Exchange::new(move |(ref tuple, _t, _diff): &ResultDiff<T>| {
+                                                    let tenant: Eid = tuple[offset].clone().into();
+                                                    tenant_owner.borrow().get(&Token(tenant as usize)).unwrap().clone()
+                                                });
 
-                                                                    let per_tenant = buffer
-                                                                        .drain(..)
-                                                                        .group_by(|(tuple, _, _)| {
-                                                                            let tenant: Eid = tuple[offset].clone().into();
-                                                                            tenant as usize
-                                                                        });
+                                                let sunk = match req.sink {
+                                                    Some(sink) => sink.sink(&delayed.inner, pact).expect("sinking failed"),
+                                                    None => {
+                                                        delayed
+                                                            .inner
+                                                            .unary(pact, "MultiTenantResults", move |_cap, _info| {
+                                                                move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
+                                                                    input.for_each(|_time, data| {
+                                                                        data.swap(&mut buffer);
 
-                                                                    for (tenant, batch) in &per_tenant {
-                                                                        send_tenant_results_handle
-                                                                            .send((name.clone(), Token(tenant), batch.collect()))
-                                                                            .unwrap();
-                                                                    }
-                                                                });
-                                                            }
-                                                        })
-                                                    .probe_with(&mut server.probe);
+                                                                        let per_tenant = buffer
+                                                                            .drain(..)
+                                                                            .group_by(|(tuple, _, _)| {
+                                                                                let tenant: Eid = tuple[offset].clone().into();
+                                                                                tenant as usize
+                                                                            });
+
+                                                                        for (tenant, batch) in &per_tenant {
+                                                                            send_tenant_results_handle
+                                                                                .send((name.clone(), Token(tenant), batch.collect()))
+                                                                                .unwrap();
+                                                                        }
+                                                                    });
+                                                                }
+                                                            })
+                                                    }
+                                                };
+
+                                                sunk.probe_with(&mut server.probe);
                                             } else {
-                                                delayed
-                                                    .inner
-                                                    .unary_notify(
-                                                        Exchange::new(move |_| owner as u64),
-                                                        "ResultsRecv",
-                                                        vec![],
-                                                        move |input, _output: &mut OutputHandle<_, (), _>, _notificator| {
+                                                let pact = Exchange::new(move |_| owner as u64);
 
-                                                            // due to the exchange pact, this closure is only
-                                                            // executed by the owning worker
+                                                let sunk = match req.sink {
+                                                    Some(sink) => sink.sink(&delayed.inner, pact).expect("sinking failed"),
+                                                    None => {
+                                                        delayed
+                                                            .inner
+                                                            .unary(pact, "ResultsRecv", move |_cap, _info| {
+                                                                move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
+                                                                    // due to the exchange pact, this closure is only
+                                                                    // executed by the owning worker
 
-                                                            // @TODO only forward inputs up to the frontier!
+                                                                    // @TODO only forward inputs up to the frontier!
 
-                                                            input.for_each(|_time, data| {
-                                                                send_results_handle
-                                                                    .send((name.clone(), data.to_vec()))
-                                                                    .unwrap();
-                                                            });
-                                                        })
-                                                    .probe_with(&mut server.probe);
+                                                                    input.for_each(|_time, data| {
+                                                                        send_results_handle
+                                                                            .send((name.clone(), data.to_vec()))
+                                                                            .unwrap();
+                                                                    });
+                                                                }
+                                                            })
+                                                    }
+                                                };
+
+                                                sunk.probe_with(&mut server.probe);
                                             }
-
                                         }
                                     }
                                 });
                             }
                         }
                         Request::Uninterest(name) => server.uninterest(Token(command.client), &name),
-                        Request::Flow(source, sink) => {
-                            // @TODO?
-                            // We treat sinks as single-use right now.
-                            match server.context.internal.sinks.remove(&sink) {
-                                None => {
-                                    let error = Error {
-                                        category: "df.error.category/not-found",
-                                        message: format!("Unknown sink {}", sink),
-                                    };
-                                    send_errors.send((Token(client), error, last_tx)).unwrap();
-                                }
-                                Some(mut sink_handle) => {
-                                    let server_handle = &mut server;
-                                    let send_errors_handle = &send_errors;
-
-                                    worker.dataflow::<T, _, _>(move |scope| {
-                                        match server_handle.interest(&source, scope) {
-                                            Err(error) => {
-                                                send_errors_handle.send((Token(client), error, last_tx)).unwrap();
-                                            }
-                                            Ok(relation) => {
-                                                // @TODO Ideally we only ever want to "send" references
-                                                // to local trace batches. 
-                                                relation
-                                                    .inner
-                                                    .sink(Pipeline, "Flow", move |input| {
-                                                        input.for_each(|_time, data| {
-                                                            for (tuple, time, diff) in data.to_vec().drain(..) {
-                                                                sink_handle.update_at(tuple, time, diff);
-                                                            }
-                                                        });
-
-                                                        let frontier = input.frontier().frontier();
-                                                        if frontier.is_empty() {
-                                                            // @TODO
-                                                            // sink_handle.close();
-                                                            sink_handle.flush();
-                                                        } else {
-                                                            sink_handle.advance_to(frontier[0]);
-                                                            sink_handle.flush();
-                                                        }
-                                                    });
-                                            }
-                                        }
-                                    });
-                                }
-                            }
-                        }
                         Request::Register(req) => {
                             if let Err(error) = server.register(req) {
                                 send_errors.send((Token(client), error, last_tx)).unwrap();
@@ -758,13 +724,6 @@ fn main() {
                         Request::RegisterSource(source) => {
                             worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.register_source(source, scope) {
-                                    send_errors.send((Token(client), error, last_tx)).unwrap();
-                                }
-                            });
-                        }
-                        Request::RegisterSink(req) => {
-                            worker.dataflow::<T, _, _>(|scope| {
-                                if let Err(error) = server.register_sink(req, scope) {
                                     send_errors.send((Token(client), error, last_tx)).unwrap();
                                 }
                             });

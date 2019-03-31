@@ -12,12 +12,11 @@ use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 
 use differential_dataflow::collection::Collection;
-use differential_dataflow::input::Input;
 use differential_dataflow::lattice::Lattice;
 
 use crate::domain::Domain;
 use crate::plan::{ImplContext, Implementable};
-use crate::sinks::{Sink, Sinkable};
+use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable};
 use crate::Rule;
 use crate::{
@@ -69,6 +68,8 @@ pub struct Interest {
     /// Granularity (in seconds or tx ids) at which to send
     /// results. None indicates no delay.
     pub granularity: Option<u64>,
+    /// An optional sink configuration.
+    pub sink: Option<Sink>,
 }
 
 /// A request with the intent of synthesising one or more new rules
@@ -79,16 +80,6 @@ pub struct Register {
     pub rules: Vec<Rule>,
     /// The names of rules that should be published.
     pub publish: Vec<String>,
-}
-
-/// A request with the intent of attaching an external system as a
-/// named sink.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct RegisterSink {
-    /// A globally unique name.
-    pub name: String,
-    /// A sink configuration.
-    pub sink: Sink,
 }
 
 /// A request with the intent of creating a new named, globally
@@ -113,16 +104,11 @@ pub enum Request {
     /// stopped. Once all interested clients have sent this, the
     /// dataflow can be cleaned up.
     Uninterest(String),
-    /// Expresses interest in a named relation, but directing results
-    /// to be forwarded to a sink.
-    Flow(String, String),
     /// Registers one or more named relations.
     Register(Register),
     /// A request with the intent of attaching to an external data
     /// source that publishes one or more attributes and relations.
     RegisterSource(Source),
-    /// Registers an external data sink.
-    RegisterSink(RegisterSink),
     /// Creates a named input handle that can be `Transact`ed upon.
     CreateAttribute(CreateAttribute),
     /// Advances the specified domain to the specified time.
@@ -435,23 +421,6 @@ impl<Token: Hash + Eq + Copy> Server<u64, Token> {
 
         Ok(())
     }
-
-    /// Handle a RegisterSink request.
-    pub fn register_sink<S: Scope<Timestamp = u64>>(
-        &mut self,
-        req: RegisterSink,
-        scope: &mut S,
-    ) -> Result<(), Error> {
-        let RegisterSink { name, sink } = req;
-
-        let (input, collection) = scope.new_collection();
-
-        sink.sink(&collection.inner)?;
-
-        self.context.internal.sinks.insert(name, input);
-
-        Ok(())
-    }
 }
 
 #[cfg(feature = "real-time")]
@@ -467,23 +436,6 @@ impl<Token: Hash + Eq + Copy> Server<std::time::Duration, Token> {
         for (aid, datoms) in attribute_streams.drain(..) {
             self.context.internal.create_source(&aid, &datoms)?;
         }
-
-        Ok(())
-    }
-
-    /// Handle a RegisterSink request.
-    pub fn register_sink<S: Scope<Timestamp = std::time::Duration>>(
-        &mut self,
-        req: RegisterSink,
-        scope: &mut S,
-    ) -> Result<(), Error> {
-        let RegisterSink { name, sink } = req;
-
-        let (input, collection) = scope.new_collection();
-
-        sink.sink(&collection.inner)?;
-
-        self.context.internal.sinks.insert(name, input);
 
         Ok(())
     }

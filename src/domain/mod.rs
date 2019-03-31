@@ -26,8 +26,6 @@ pub struct Domain<T: Timestamp + Lattice + TotalOrder> {
     now_at: T,
     /// Input handles to attributes in this domain.
     input_sessions: HashMap<String, InputSession<T, (Value, Value), isize>>,
-    /// Input handles to named sinks in this domain.
-    pub sinks: HashMap<String, InputSession<T, Vec<Value>, isize>>,
     /// The probe keeping track of progress in this domain.
     probe: ProbeHandle<T>,
     /// Configurations for attributes in this domain.
@@ -51,7 +49,6 @@ where
         Domain {
             now_at: start_at,
             input_sessions: HashMap::new(),
-            sinks: HashMap::new(),
             probe: ProbeHandle::new(),
             attributes: HashMap::new(),
             forward: HashMap::new(),

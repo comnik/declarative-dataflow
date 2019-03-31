@@ -1,7 +1,8 @@
 //! Operator and utilities to write output diffs into csv files.
 
-use timely::dataflow::channels::pact::Pipeline;
-use timely::dataflow::operators::Operator;
+use timely::dataflow::channels::pact::ParallelizationContract;
+use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
+use timely::dataflow::operators::generic::FrontieredInputHandle;
 use timely::dataflow::{Scope, Stream};
 
 use super::Sinkable;
@@ -21,10 +22,15 @@ pub struct CsvFile {
 }
 
 impl Sinkable<u64> for CsvFile {
-    fn sink<S: Scope<Timestamp = u64>>(
+    fn sink<S, P>(
         &self,
         stream: &Stream<S, ResultDiff<u64>>,
-    ) -> Result<(), Error> {
+        pact: P,
+    ) -> Result<Stream<S, ResultDiff<u64>>, Error>
+    where
+        S: Scope<Timestamp = u64>,
+        P: ParallelizationContract<S::Timestamp, ResultDiff<u64>>,
+    {
         let writer_result = csv::WriterBuilder::new()
             .has_headers(self.has_headers)
             .delimiter(self.delimiter)
@@ -39,11 +45,18 @@ impl Sinkable<u64> for CsvFile {
                 let mut recvd = Vec::new();
                 let mut vector = Vec::new();
 
-                stream.sink(
-                    Pipeline,
-                    &format!("CsvFile({})", &self.path),
-                    move |input| {
-                        input.for_each(|_cap, data| {
+                let name = format!("CsvFile({})", &self.path);
+
+                let mut builder = OperatorBuilder::new(name, stream.scope());
+                let mut input = builder.new_input(stream, pact);
+                let (_output, sunk) = builder.new_output();
+
+                builder.build(|_capabilities| {
+                    move |frontiers| {
+                        let mut input_handle =
+                            FrontieredInputHandle::new(&mut input, &frontiers[0]);
+
+                        input_handle.for_each(|_cap, data| {
                             data.swap(&mut vector);
                             // @TODO what to do with diff here?
                             for (tuple, time, _diff) in vector.drain(..) {
@@ -56,16 +69,20 @@ impl Sinkable<u64> for CsvFile {
                         // determine how many (which) elements to read from `recvd`.
                         let count = recvd
                             .iter()
-                            .filter(|&(ref time, _)| !input.frontier().less_equal(time))
+                            .filter(|&(ref time, _)| !input_handle.frontier().less_equal(time))
                             .count();
 
                         for (_, tuple) in recvd.drain(..count) {
                             writer.serialize(tuple).expect("failed to write record");
                         }
-                    },
-                );
 
-                Ok(())
+                        if input_handle.frontier.is_empty() {
+                            println!("Inputs to csv sink have ceased.");
+                        }
+                    }
+                });
+
+                Ok(sunk)
             }
         }
     }
