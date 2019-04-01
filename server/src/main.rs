@@ -582,7 +582,7 @@ fn main() {
                 // Count-up sequence numbers.
                 next_tx += 1;
 
-                info!("[WORKER {}] {:?} {:?}", worker.index(), next_tx, command);
+                info!("[WORKER {}] {} requests by client {} at {}", worker.index(), command.requests.len(), command.client, next_tx);
 
                 let owner = command.owner;
                 let client = command.client;
@@ -591,6 +591,8 @@ fn main() {
                 for req in command.requests.drain(..) {
 
                     // @TODO only create a single dataflow, but only if req != Transact
+
+                    trace!("[WORKER {}] {:?}", worker.index(), req);
 
                     match req {
                         Request::Transact(req) => {
@@ -772,7 +774,7 @@ fn main() {
             worker.step_while(|| server.is_any_outdated());
         }
 
-        info!("Shutting down");
+        info!("[WORKER {}] shutting down", worker.index());
 
         drop(sequencer);
 

@@ -3,7 +3,11 @@
 A reactive query engine built on [differential
 dataflow](https://github.com/frankmcsherry/differential-dataflow).
 
-Declarative provides:
+![crates](https://img.shields.io/crates/v/declarative-dataflow.svg)
+
+[Documentation](https://docs.rs/declarative-dataflow/0.1.0/declarative_dataflow/)
+
+## Features
 
 **Interactive use:** Declarative accepts queries expressed in a
 Datalog-inspired binding language and turns them into differential
@@ -80,6 +84,9 @@ Configuration options are still very much in flux and are found in
 
 ## Documentation
 
+Crate documentation available on
+[crates.io](https://docs.rs/declarative-dataflow/0.1.0/declarative_dataflow/).
+
 Important architectural decisions are documented in the
 [docs/adr/](docs/adr/) sub-directory.
 
@@ -104,6 +111,10 @@ project](https://www.nikolasgoebel.com/2018/09/13/incremental-datalog.html).
 [[video] Reactive Datalog For
 Datomic](https://www.youtube.com/watch?v=ZgqFlowyfTA), recorded at
 Clojure/conj 2018.
+
+[[video] 3DF: Reactive Datalog For
+Datomic](https://www.youtube.com/watch?v=CuSyVILzGDQ), recorded at
+:clojureD 2019.
 
 The [Clockworks blog](https://www.clockworks.io/en/blog/) has a number
 of posts on Declarative.
