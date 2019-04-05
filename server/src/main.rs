@@ -239,7 +239,7 @@ fn main() {
                     .expect("failed to poll I/O events");
 
                 #[cfg(feature = "blocking")]
-                poll.poll(&mut events, None)
+                poll.poll(&mut events, Some(Duration::from_millis(100)))
                     .expect("failed to poll I/O events");
             }
 

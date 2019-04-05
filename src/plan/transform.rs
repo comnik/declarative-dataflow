@@ -89,10 +89,10 @@ impl<P: Implementable> Implementable for Transform<P> {
                     };
 
                     let mod_val = match interval_param.as_ref() {
-                        ":minute" => 60000,
-                        ":hour" => 3_600_000,
-                        ":day" => 86_400_000,
-                        ":week" => 604_800_000,
+                        ":minute" => 60,
+                        ":hour" => 3_600,
+                        ":day" => 86_400,
+                        ":week" => 604_800,
                         _ => panic!("Unknown interval for TRUNCATE"),
                     };
 

@@ -112,53 +112,44 @@ fn run_cases(mut cases: Vec<Case>) {
 
 #[test]
 fn multiple_aggregations() {
-    run_cases(vec![
-        Case {
-            description:
-            "[:find (sum ?amount) (sum ?debt) (count ?amount) (count ?debt) \
-             :where [?e :amount ?amount][?e :debt ?debt]]",
-            plan: {
-                let (e, amount, debt) = (1, 2, 3);
-                Plan::Aggregate(Aggregate {
-                    variables: vec![amount, debt, amount, debt],
-                    plan: Box::new(Plan::Project(Project {
-                        variables: vec![amount, debt],
-                        plan: Box::new(Plan::Join(Join {
-                            variables: vec![e],
-                            left_plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                            right_plan: Box::new(Plan::MatchA(e, ":debt".to_string(), debt)),
-                        })),
+    run_cases(vec![Case {
+        description: "[:find (sum ?amount) (sum ?debt) (count ?amount) (count ?debt) \
+                      :where [?e :amount ?amount][?e :debt ?debt]]",
+        plan: {
+            let (e, amount, debt) = (1, 2, 3);
+            Plan::Aggregate(Aggregate {
+                variables: vec![amount, debt, amount, debt],
+                plan: Box::new(Plan::Project(Project {
+                    variables: vec![amount, debt],
+                    plan: Box::new(Plan::Join(Join {
+                        variables: vec![e],
+                        left_plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                        right_plan: Box::new(Plan::MatchA(e, ":debt".to_string(), debt)),
                     })),
-                    aggregation_fns: vec![
-                        AggregationFn::SUM,
-                        AggregationFn::SUM,
-                        AggregationFn::COUNT,
-                        AggregationFn::COUNT,
-                    ],
-                    key_variables: vec![],
-                    aggregation_variables: vec![amount, debt, amount, debt],
-                    with_variables: vec![],
-                })
-            },
-            transactions: vec![
-                vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 2, ":amount".to_string(), Number(5)),
-                    TxData(1, 1, ":debt".to_string(), Number(12)),
-                    TxData(1, 2, ":debt".to_string(), Number(15)),
+                })),
+                aggregation_fns: vec![
+                    AggregationFn::SUM,
+                    AggregationFn::SUM,
+                    AggregationFn::COUNT,
+                    AggregationFn::COUNT,
                 ],
-            ],
-            expectations: vec![
-                vec![
-                    (vec![Number(10), Number(12)], 0, 1),
-                ],
-            ],
-            // set-semantics
-            // expectations: vec![
-            //     vec![
-            //         (vec![Number(10), Number(4), Number(36), Rational32(Ratio::new(14, 1))], 0, 1),
-            //     ],
-            // ],
+                key_variables: vec![],
+                aggregation_variables: vec![amount, debt, amount, debt],
+                with_variables: vec![],
+            })
         },
-    ]);
+        transactions: vec![vec![
+            TxData(1, 1, ":amount".to_string(), Number(5)),
+            TxData(1, 2, ":amount".to_string(), Number(5)),
+            TxData(1, 1, ":debt".to_string(), Number(12)),
+            TxData(1, 2, ":debt".to_string(), Number(15)),
+        ]],
+        expectations: vec![vec![(vec![Number(10), Number(12)], 0, 1)]],
+        // set-semantics
+        // expectations: vec![
+        //     vec![
+        //         (vec![Number(10), Number(4), Number(36), Rational32(Ratio::new(14, 1))], 0, 1),
+        //     ],
+        // ],
+    }]);
 }

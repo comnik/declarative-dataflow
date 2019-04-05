@@ -8,16 +8,13 @@ use timely::dataflow::Scope;
 use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 
-use differential_dataflow::difference::{DiffPair, DiffVector};
+use differential_dataflow::difference::DiffVector;
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::Join as JoinMap;
-use differential_dataflow::operators::{Consolidate, Count, Reduce, Threshold};
+use differential_dataflow::operators::{Count};
 
 use crate::binding::Binding;
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
-
-use num_rational::{Ratio, Rational32};
 
 /// Permitted aggregation function.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -155,12 +152,11 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                         for (agg, index) in agg_fns.iter().zip(value_offsets.clone()) {
                             v.push(match agg {
                                 AggregationFn::COUNT => match values[index] {
-                                    Value::Number(_) => 1 as isize,
-                                    _ => panic!("Wow... this I can't do!"),
+                                    _ => 1 as isize,
                                 },
                                 AggregationFn::SUM => match values[index] {
                                     Value::Number(val) => val as isize,
-                                    _ => panic!("Wow... this I can't do!"),
+                                    _ => panic!("Cannot `sum` non numbers"),
                                 },
                             })
                         }
