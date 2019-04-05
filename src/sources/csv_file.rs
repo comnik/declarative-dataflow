@@ -11,8 +11,8 @@ use timely::dataflow::{Scope, Stream};
 use crate::server::scheduler::Scheduler;
 use crate::sources::Sourceable;
 use crate::{Aid, Eid, Value};
-use chrono::NaiveDateTime;
 use crate::{AttributeConfig, InputSemantics};
+use chrono::NaiveDateTime;
 
 /// A local filesystem data source.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
