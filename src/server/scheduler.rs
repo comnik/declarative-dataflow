@@ -38,6 +38,15 @@ impl Scheduler {
         }
     }
 
+    /// Schedule activation now. No hard
+    /// guarantees on when the activator will actually be triggered.
+    pub fn schedule(&mut self, activator: Weak<Activator>) {
+        self.activator_queue.push(TimedActivator {
+            at: Instant::now(),
+            activator,
+        });
+    }
+
     /// Schedule activation at the specified instant. No hard
     /// guarantees on when the activator will actually be triggered.
     pub fn schedule_at(&mut self, at: Instant, activator: Weak<Activator>) {
