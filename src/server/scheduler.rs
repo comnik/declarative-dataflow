@@ -29,7 +29,7 @@ impl Scheduler {
     /// scheduled.
     pub fn has_pending(&self) -> bool {
         if let Some(ref timed_activator) = self.activator_queue.peek() {
-            Instant::now() <= timed_activator.at
+            Instant::now() >= timed_activator.at
         } else {
             false
         }
