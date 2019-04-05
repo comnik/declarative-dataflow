@@ -1,5 +1,8 @@
 //! Timer-based management of operator activators.
 
+use std::rc::Rc;
+use std::rc::Weak;
+
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::time::{Duration, Instant};
@@ -37,13 +40,13 @@ impl Scheduler {
 
     /// Schedule activation at the specified instant. No hard
     /// guarantees on when the activator will actually be triggered.
-    pub fn schedule_at(&mut self, at: Instant, activator: Activator) {
+    pub fn schedule_at(&mut self, at: Instant, activator: Weak<Activator>) {
         self.activator_queue.push(TimedActivator { at, activator });
     }
 
     /// Schedule activation after the specified duration. No hard
     /// guarantees on when the activator will actually be triggered.
-    pub fn schedule_after(&mut self, after: Duration, activator: Activator) {
+    pub fn schedule_after(&mut self, after: Duration, activator: Weak<Activator>) {
         self.activator_queue.push(TimedActivator {
             at: Instant::now() + after,
             activator,
@@ -52,10 +55,10 @@ impl Scheduler {
 }
 
 impl Iterator for Scheduler {
-    type Item = Activator;
-    fn next(&mut self) -> Option<Activator> {
+    type Item = Rc<Activator>;
+    fn next(&mut self) -> Option<Rc<Activator>> {
         if self.has_pending() {
-            Some(self.activator_queue.pop().unwrap().activator)
+            self.activator_queue.pop().unwrap().activator.upgrade()
         } else {
             None
         }
@@ -64,7 +67,7 @@ impl Iterator for Scheduler {
 
 struct TimedActivator {
     pub at: Instant,
-    pub activator: Activator,
+    pub activator: Weak<Activator>,
 }
 
 // We want the activator_queue to act like a min-heap.
