@@ -1,7 +1,8 @@
 use graph_map::GraphMMap;
 
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{q, Binding, InputSemantics, Rule, TxData, Value};
+use declarative_dataflow::plan::{Plan, Join};
+use declarative_dataflow::{q, Binding, AttributeConfig, InputSemantics, Rule, TxData, Value};
 use Value::Eid;
 
 fn main() {
@@ -10,20 +11,71 @@ fn main() {
     let inspect = std::env::args().any(|x| x == "inspect");
 
     timely::execute_from_args(std::env::args().skip(2), move |worker| {
-        let timer = std::time::Instant::now();
+        let mut timer = std::time::Instant::now();
         let graph = GraphMMap::new(&filename);
         let mut server = Server::<u64, u64>::new(Default::default());
 
         // [?a :edge ?b] [?b :edge ?c] [?a :edge ?c]
         let (a, b, c) = (1, 2, 3);
+        // let plan = q(
+        //     vec![a, b, c],
+        //     vec![
+        //         Binding::attribute(a, "edge", b),
+        //         Binding::attribute(b, "edge", c),
+        //         Binding::attribute(a, "edge", c),
+        //     ],
+        // );
+
         let plan = q(
             vec![a, b, c],
             vec![
                 Binding::attribute(a, "edge", b),
-                Binding::attribute(b, "edge", c),
                 Binding::attribute(a, "edge", c),
+                Binding::attribute(b, "edge", c),
             ],
         );
+
+        // let plan = q(
+        //     vec![a, b, c],
+        //     vec![
+        //         Binding::attribute(b, "edge", c),
+        //         Binding::attribute(a, "edge", c),
+        //         Binding::attribute(a, "edge", b),
+        //     ],
+        // );
+
+        // ([?a ?b] [?b ?c]) [?a ?c]
+        // let plan = Plan::Join(Join {
+        //     variables: vec![a],
+        //     left_plan: Box::new(Plan::MatchA(a, "edge".to_string(), c)),
+        //     right_plan: Box::new(Plan::Join(Join {
+        //         variables: vec![b],
+        //         left_plan: Box::new(Plan::MatchA(a, "edge".to_string(), b)),
+        //         right_plan: Box::new(Plan::MatchA(b, "edge".to_string(), c)),
+        //     }))
+        // });
+
+        // ([?a ?b] [?a ?c]) [?b ?c]
+        // let plan = Plan::Join(Join {
+        //     variables: vec![b, c],
+        //     left_plan: Box::new(Plan::MatchA(b, "edge".to_string(), c)),
+        //     right_plan: Box::new(Plan::Join(Join {
+        //         variables: vec![a],
+        //         left_plan: Box::new(Plan::MatchA(a, "edge".to_string(), b)),
+        //         right_plan: Box::new(Plan::MatchA(a, "edge".to_string(), c)),
+        //     }))
+        // });
+
+        // ([?a ?c] [?b ?c]) [?a ?b]
+        // let plan = Plan::Join(Join {
+        //     variables: vec![a, b],
+        //     left_plan: Box::new(Plan::MatchA(a, "edge".to_string(), b)),
+        //     right_plan: Box::new(Plan::Join(Join {
+        //         variables: vec![c],
+        //         left_plan: Box::new(Plan::MatchA(a, "edge".to_string(), c)),
+        //         right_plan: Box::new(Plan::MatchA(b, "edge".to_string(), c)),
+        //     }))
+        // });
 
         let peers = worker.peers();
         let index = worker.index();
@@ -32,7 +84,7 @@ fn main() {
             server
                 .context
                 .internal
-                .create_attribute("edge", InputSemantics::Raw, scope)
+                .create_attribute("edge", AttributeConfig::tx_time(InputSemantics::Raw), scope)
                 .unwrap();
 
             server
@@ -71,7 +123,8 @@ fn main() {
             index += peers;
             if (index / peers) % batching == 0 {
                 worker.step_while(|| server.is_any_outdated());
-                println!("{:?}\tRound {} complete", timer.elapsed(), index);
+                println!("{},{}", index, timer.elapsed().as_millis());
+                timer = std::time::Instant::now();
             }
         }
     })
