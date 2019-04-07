@@ -160,7 +160,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
                                 },
                             })
                         }
-                        Some((key, DiffVector::new(v))
+                        Some((key, DiffVector::new(v)))
                     })
                     .count()
                     .map(|(key, vals)| {
