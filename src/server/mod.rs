@@ -117,6 +117,9 @@ pub enum Request {
     CloseInput(String),
     /// Client has disconnected.
     Disconnect,
+    /// Requests any setup logic that needs to be executed
+    /// deterministically across all workers.
+    Setup,
     /// Requests orderly shutdown of the system.
     Shutdown,
 }
