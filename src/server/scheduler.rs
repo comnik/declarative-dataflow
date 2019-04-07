@@ -5,6 +5,7 @@ use std::rc::Weak;
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
+use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use timely::scheduling::activate::Activator;
@@ -53,13 +54,16 @@ impl Scheduler {
         self.activator_queue.push(TimedActivator { at, activator });
     }
 
+    /// Schedule activation now. No hard guarantees on when the
+    /// activator will actually be triggered.
+    pub fn schedule_now(&mut self, activator: Weak<Activator>) {
+        self.schedule_at(Instant::now(), activator);
+    }
+
     /// Schedule activation after the specified duration. No hard
     /// guarantees on when the activator will actually be triggered.
     pub fn schedule_after(&mut self, after: Duration, activator: Weak<Activator>) {
-        self.activator_queue.push(TimedActivator {
-            at: Instant::now() + after,
-            activator,
-        });
+        self.schedule_at(Instant::now() + after, activator);
     }
 }
 
@@ -67,7 +71,10 @@ impl Iterator for Scheduler {
     type Item = Rc<Activator>;
     fn next(&mut self) -> Option<Rc<Activator>> {
         if self.has_pending() {
-            self.activator_queue.pop().unwrap().activator.upgrade()
+            match self.activator_queue.pop().unwrap().activator.upgrade() {
+                None => self.next(),
+                Some(activator) => Some(activator),
+            }
         } else {
             None
         }
