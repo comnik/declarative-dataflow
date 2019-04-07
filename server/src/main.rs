@@ -748,6 +748,7 @@ fn main() {
                             }
                         }
                         Request::Disconnect => server.disconnect_client(Token(command.client)),
+                        Request::Setup => unimplemented!(),
                         Request::Shutdown => {
                             shutdown = true
                         }
