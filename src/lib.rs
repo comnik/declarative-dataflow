@@ -302,11 +302,11 @@ where
     /// A name uniquely identifying this index.
     pub name: String,
     /// A trace of type (K, ()), used to count extensions for each prefix.
-    count_trace: TraceKeyHandle<K, T, isize>,
+    pub count_trace: TraceKeyHandle<K, T, isize>,
     /// A trace of type (K, V), used to propose extensions for each prefix.
-    propose_trace: TraceValHandle<K, V, T, isize>,
+    pub propose_trace: TraceValHandle<K, V, T, isize>,
     /// A trace of type ((K, V), ()), used to validate proposed extensions.
-    validate_trace: TraceKeyHandle<(K, V), T, isize>,
+    pub validate_trace: TraceKeyHandle<(K, V), T, isize>,
 }
 
 impl<K, V, T> Clone for CollectionIndex<K, V, T>
