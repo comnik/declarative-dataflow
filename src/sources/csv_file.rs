@@ -123,7 +123,10 @@ impl Sourceable<Duration> for CsvFile {
                 while let Some(result) = iterator.next() {
                     let record = result.expect("read error");
 
-                        for (idx, (_aid, (offset, type_hint))) in schema.iter().enumerate() {
+                    // @TODO Hardcoded the number of processes to 3
+                    if datum_index % (num_workers / 3) == (worker_index % (num_workers / 3)) {
+
+                        for (idx, (aid, (offset, type_hint))) in schema.iter().enumerate() {
                             let v = match type_hint {
                                 Value::String(_) =>  Ok(Value::String(record[*offset].to_string())),
                                 Value::Number(_) => match record[*offset].parse::<i64>() {
@@ -158,7 +161,7 @@ impl Sourceable<Duration> for CsvFile {
 
                         eid += num_workers;
                         num_datums_read += 1;
-
+                    }
 
                     datum_index += 1;
 
