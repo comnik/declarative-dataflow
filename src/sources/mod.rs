@@ -24,18 +24,19 @@ pub use self::csv_file::CsvFile;
 // pub use self::json_file::JsonFile;
 
 /// An external data source that can provide Datoms.
-pub trait Sourceable<T>
+pub trait Sourceable<S>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + TotalOrder,
 {
     /// Conjures from thin air (or from wherever the source lives) one
     /// or more timely streams feeding directly into attributes.
-    fn source<S: Scope<Timestamp = T>>(
+    fn source(
         &self,
         scope: &mut S,
         t0: Instant,
         scheduler: Weak<RefCell<Scheduler>>,
-    ) -> Vec<(Aid, Stream<S, ((Value, Value), T, isize)>)>;
+    ) -> Vec<(Aid, Stream<S, ((Value, Value), S::Timestamp, isize)>)>;
 }
 
 /// Supported external data sources.
@@ -53,8 +54,8 @@ pub enum Source {
 }
 
 #[cfg(feature = "real-time")]
-impl Sourceable<std::time::Duration> for Source {
-    fn source<S: Scope<Timestamp = std::time::Duration>>(
+impl<S: Scope<Timestamp = std::time::Duration>> Sourceable<S> for Source {
+    fn source(
         &self,
         scope: &mut S,
         t0: Instant,
@@ -70,8 +71,9 @@ impl Sourceable<std::time::Duration> for Source {
     }
 }
 
-impl Sourceable<u64> for Source {
-    fn source<S: Scope<Timestamp = u64>>(
+#[cfg(not(feature = "real-time"))]
+impl<S: Scope<Timestamp = u64>> Sourceable<S> for Source {
+    fn source(
         &self,
         _scope: &mut S,
         _t0: Instant,
