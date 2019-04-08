@@ -80,7 +80,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DifferentialLogging {
                     for (time, _worker, datum) in demux_buffer.drain(..) {
                         match datum {
                             DifferentialEvent::Batch(x) => {
-                                let operator = Eid(x.operator as u64);
+                                let operator = Eid((x.operator as u64).into());
                                 let length = Number(x.length as i64);
 
                                 sessions
@@ -91,7 +91,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DifferentialLogging {
                                 trace!("[DIFFERENTIAL] {:?}", x);
 
                                 if let Some(complete_size) = x.complete {
-                                    let operator = Eid(x.operator as u64);
+                                    let operator = Eid((x.operator as u64).into());
                                     let size_diff =
                                         (complete_size as i64) - (x.length1 + x.length2) as i64;
 
