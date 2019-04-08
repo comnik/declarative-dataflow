@@ -725,7 +725,7 @@ fn main() {
                         }
                         Request::RegisterSource(source) => {
                             worker.dataflow::<T, _, _>(|scope| {
-                                if let Err(error) = server.register_source(source, scope) {
+                                if let Err(error) = server.register_source(std::boxed::Box::new(source), scope) {
                                     send_errors.send((Token(client), error, last_tx)).unwrap();
                                 }
                             });
