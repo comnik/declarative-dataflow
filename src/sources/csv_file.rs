@@ -35,8 +35,8 @@ pub struct CsvFile {
     pub schema: Vec<(Aid, (usize, Value))>,
 }
 
-impl Sourceable<Duration> for CsvFile {
-    fn source<S: Scope<Timestamp = Duration>>(
+impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
+    fn source(
         &self,
         scope: &mut S,
         t0: Instant,
