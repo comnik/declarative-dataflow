@@ -99,7 +99,7 @@ impl Serialize for Value {
             Value::Eid(eid) => serializer.serialize_u64(*eid),
             Value::Instant(i) => serializer.serialize_newtype_variant("Value", 6, "Instant", i),
             #[cfg(feature = "uuid")]
-            Value::Uuid(uuid) => uuid.serialize(serializer),
+            Value::Uuid(uuid) => serializer.serialize_newtype_variant("Value", 7, "Uuid", &uuid),
         }
     }
 }
