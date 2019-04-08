@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 use std::ops::Sub;
 
-use timely::dataflow::operators::aggregation::StateMachine;
 use timely::dataflow::operators::Map;
 use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::order::TotalOrder;
@@ -16,6 +15,7 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
+use crate::operators::CardinalitySingle;
 use crate::{Aid, Error, Time, TxData, Value};
 use crate::{AttributeConfig, CollectionIndex, InputSemantics, RelationConfig, RelationHandle};
 
@@ -77,43 +77,7 @@ where
 
             tuples = match config.input_semantics {
                 InputSemantics::Raw => tuples,
-                InputSemantics::CardinalityOne => {
-                    tuples
-                        .inner
-                        .map(|((e, next_v), t, diff)| (e, (next_v, t, diff)))
-                        .state_machine(
-                            |e, (next_v, t, diff), v| {
-                                match v {
-                                    None => {
-                                        assert!(diff > 0, "Received a retraction of a new key on a CardinalityOne attribute");
-                                        *v = Some(next_v.clone());
-                                        (false, vec![((e.clone(), next_v), t, 1)])
-                                    }
-                                    Some(old_v) => {
-                                        let old_v = old_v.clone();
-                                        if diff > 0 {
-                                            *v = Some(next_v.clone());
-                                            (false, vec![
-                                                ((e.clone(), old_v), t.clone(), -1),
-                                                ((e.clone(), next_v), t, 1),
-                                            ])
-                                        } else {
-                                            // Retraction received. Can clean up state.
-                                            (true, vec![((e.clone(), old_v), t, -1)])
-                                        }
-                                    }
-                                }
-                            },
-                            |e| {
-                                if let Value::Eid(eid) = e {
-                                    *eid as u64
-                                } else {
-                                    panic!("Expected an eid.");
-                                }
-                            }
-                        )
-                        .as_collection()
-                }
+                InputSemantics::CardinalityOne => tuples.inner.cardinality_single().as_collection(),
                 InputSemantics::CardinalityMany => {
                     // Ensure that redundant (e,v) pairs don't cause
                     // misleading proposals during joining.
