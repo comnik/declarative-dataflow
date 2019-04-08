@@ -20,9 +20,9 @@ fn test_serialization() {
         "{\"Instant\":0}".to_string()
     );
 
-    let uuid = Uuid::parse_str("71828aae-4fc8-421b-82ca-68c5f4981d74").unwrap();
+    let uuid = Value::Uuid(Uuid::parse_str("71828aae-4fc8-421b-82ca-68c5f4981d74").unwrap());
     assert_eq!(
         to_string(&uuid).unwrap(),
-        "\"71828aae-4fc8-421b-82ca-68c5f4981d74\"".to_string(),
+        "{\"Uuid\":\"71828aae-4fc8-421b-82ca-68c5f4981d74\"}".to_string(),
     );
 }
