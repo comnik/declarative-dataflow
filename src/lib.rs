@@ -44,6 +44,11 @@ use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::{Collection, Data};
 
+use serde::{Serialize, Serializer};
+
+#[cfg(feature = "uuid")]
+pub use uuid::Uuid;
+
 pub use num_rational::Rational32;
 
 pub use binding::{AsBinding, AttributeBinding, Binding};
@@ -59,7 +64,7 @@ pub type Aid = String; // u32
 ///
 /// This enum captures the currently supported data types, and is the
 /// least common denominator for the types of records moved around.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Deserialize)]
 pub enum Value {
     /// An attribute identifier
     Aid(Aid),
@@ -76,7 +81,27 @@ pub enum Value {
     /// Milliseconds since midnight, January 1, 1970 UTC
     Instant(u64),
     /// A 16 byte unique identifier.
-    Uuid([u8; 16]),
+    #[cfg(feature = "uuid")]
+    Uuid(Uuid),
+}
+
+impl Serialize for Value {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Value::Aid(aid) => serializer.serialize_newtype_variant("Value", 0, "Aid", &aid),
+            Value::String(s) => serializer.serialize_str(&s),
+            Value::Bool(b) => serializer.serialize_bool(*b),
+            Value::Number(n) => serializer.serialize_i64(*n),
+            Value::Rational32(r) => r.serialize(serializer),
+            Value::Eid(eid) => serializer.serialize_u64(*eid),
+            Value::Instant(i) => serializer.serialize_newtype_variant("Value", 6, "Instant", i),
+            #[cfg(feature = "uuid")]
+            Value::Uuid(uuid) => uuid.serialize(serializer),
+        }
+    }
 }
 
 impl std::convert::From<Value> for Eid {
