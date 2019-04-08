@@ -9,7 +9,7 @@ edition = "2018"
 jemallocator = "0.1.8"
 timely = { version = "0.9.0", features = ["bincode"] }
 differential-dataflow = { version = "0.9.0" }
-declarative-dataflow = { path = "../" }
+declarative-dataflow = { path = "../", features = ["uuid"] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
