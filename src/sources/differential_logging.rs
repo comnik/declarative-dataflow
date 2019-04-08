@@ -27,8 +27,8 @@ pub struct DifferentialLogging {
     pub attributes: Vec<Aid>,
 }
 
-impl Sourceable<Duration> for DifferentialLogging {
-    fn source<S: Scope<Timestamp = Duration>>(
+impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DifferentialLogging {
+    fn source(
         &self,
         scope: &mut S,
         _t0: Instant,

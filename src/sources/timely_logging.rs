@@ -25,8 +25,8 @@ pub struct TimelyLogging {
     pub attributes: Vec<Aid>,
 }
 
-impl Sourceable<Duration> for TimelyLogging {
-    fn source<S: Scope<Timestamp = Duration>>(
+impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
+    fn source(
         &self,
         scope: &mut S,
         _t0: Instant,

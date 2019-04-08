@@ -409,11 +409,12 @@ where
     }
 }
 
+#[cfg(not(feature = "real-time"))]
 impl<Token: Hash + Eq + Copy> Server<u64, Token> {
     /// Handle a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = u64>>(
         &mut self,
-        source: Source,
+        source: Box<dyn Sourceable<S>>,
         scope: &mut S,
     ) -> Result<(), Error> {
         let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
@@ -431,7 +432,7 @@ impl<Token: Hash + Eq + Copy> Server<std::time::Duration, Token> {
     /// Handle a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = std::time::Duration>>(
         &mut self,
-        source: Source,
+        source: Box<dyn Sourceable<S>>,
         scope: &mut S,
     ) -> Result<(), Error> {
         let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));

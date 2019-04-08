@@ -4,7 +4,6 @@
 use std::collections::HashMap;
 use std::ops::Sub;
 
-use timely::dataflow::operators::Map;
 use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::order::TotalOrder;
 use timely::progress::Timestamp;
