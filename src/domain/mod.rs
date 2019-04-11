@@ -114,7 +114,8 @@ where
                 .as_collection()
                 // Ensure that redundant (e,v) pairs don't cause
                 // misleading proposals during joining.
-                .distinct();
+                .distinct()
+                .probe_with(&mut self.probe);
 
             let forward = CollectionIndex::index(&name, &tuples);
             let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
@@ -231,6 +232,24 @@ where
             }
 
             Ok(())
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Advances all handles of the domain to its current frontier.
+    pub fn advance_domain_to_source(&mut self) -> Result<(), Error> {
+        let frontier: T = self.probe.with_frontier(|frontier| frontier[0].clone());
+
+        if !self.now_at.eq(&frontier) {
+        self.now_at = frontier.clone();
+
+        for handle in self.input_sessions.values_mut() {
+            handle.advance_to(frontier.clone());
+            handle.flush();
+        }
+        
+        Ok(())
         } else {
             Ok(())
         }
