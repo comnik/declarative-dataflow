@@ -64,10 +64,7 @@ where
         name: &str,
         config: AttributeConfig,
         scope: &mut S,
-    ) -> Result<(), Error>
-    where
-        T: TotalOrder,
-    {
+    ) -> Result<(), Error> {
         if self.forward.contains_key(name) {
             Err(Error {
                 category: "df.error.category/conflict",

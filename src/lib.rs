@@ -28,7 +28,7 @@ use std::time::Duration;
 use timely::dataflow::operators::CapabilitySet;
 use timely::dataflow::scopes::child::{Child, Iterative};
 use timely::dataflow::*;
-use timely::order::{Product, TotalOrder};
+use timely::order::Product;
 use timely::progress::timestamp::Refines;
 use timely::progress::Timestamp;
 
@@ -561,7 +561,7 @@ pub struct Rule {
 trait Relation<'a, G, I>: AsBinding
 where
     G: Scope,
-    G::Timestamp: Lattice + Data + TotalOrder,
+    G::Timestamp: Lattice + Data,
     I: ImplContext<G::Timestamp>,
 {
     /// A collection containing all tuples.
@@ -633,7 +633,7 @@ where
 impl<'a, G, I> Relation<'a, G, I> for CollectionRelation<'a, G>
 where
     G: Scope,
-    G::Timestamp: Lattice + Data + TotalOrder,
+    G::Timestamp: Lattice + Data,
     I: ImplContext<G::Timestamp>,
 {
     fn tuples(
@@ -964,7 +964,7 @@ pub fn q(target_variables: Vec<Var>, bindings: Vec<Binding>) -> Plan {
 /// the specified names. Includes the specified names.
 pub fn collect_dependencies<T, I>(context: &I, names: &[&str]) -> Result<Vec<Rule>, Error>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    T: Timestamp + Lattice,
     I: ImplContext<T>,
 {
     let mut seen = HashSet::new();
@@ -1034,7 +1034,7 @@ pub fn implement<T, I, S>(
     Error,
 >
 where
-    T: Timestamp + Lattice + TotalOrder + Default,
+    T: Timestamp + Lattice + Default,
     I: ImplContext<T>,
     S: Scope<Timestamp = T>,
 {
@@ -1138,7 +1138,7 @@ pub fn implement_neu<T, I, S>(
     Error,
 >
 where
-    T: Timestamp + Lattice + TotalOrder + Default,
+    T: Timestamp + Lattice + Default,
     I: ImplContext<T>,
     S: Scope<Timestamp = T>,
 {
