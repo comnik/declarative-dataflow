@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 use std::ops::Sub;
 
-use timely::dataflow::{ProbeHandle, Scope, Stream};
+use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
 use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 
@@ -20,7 +20,7 @@ use crate::{AttributeConfig, CollectionIndex, InputSemantics, RelationConfig, Re
 
 /// A domain manages attributes (and their inputs) that share a
 /// timestamp semantics (e.g. come from the same logical source).
-pub struct Domain<T: Timestamp + Lattice + TotalOrder> {
+pub struct Domain<T: Timestamp + Lattice> {
     /// The current timestamp.
     now_at: T,
     /// Input handles to attributes in this domain.
@@ -41,7 +41,7 @@ pub struct Domain<T: Timestamp + Lattice + TotalOrder> {
 
 impl<T> Domain<T>
 where
-    T: Timestamp + Lattice + TotalOrder + Sub<Output = T> + std::convert::From<Time>,
+    T: Timestamp + Lattice + Sub<Output = T> + std::convert::From<Time>,
 {
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
