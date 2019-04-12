@@ -44,6 +44,9 @@ type T = u64;
 #[cfg(feature = "real-time")]
 type T = Duration;
 
+// use declarative_dataflow::timestamp::pair::Pair;
+// type T = Pair<Duration, u64>;
+
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
 const TENANT_RESULTS: Token = Token(usize::MAX - 3);

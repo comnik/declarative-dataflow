@@ -3,12 +3,12 @@
 
 use std::collections::HashMap;
 
+use timely::dataflow::operators::UnorderedInput;
 use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
 use timely::order::TotalOrder;
 use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
 
-use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
@@ -18,13 +18,16 @@ use crate::operators::CardinalitySingle;
 use crate::{Aid, Error, Rewind, TxData, Value};
 use crate::{AttributeConfig, CollectionIndex, InputSemantics, RelationConfig, RelationHandle};
 
+mod unordered_session;
+use unordered_session::UnorderedSession;
+
 /// A domain manages attributes (and their inputs) that share a
 /// timestamp semantics (e.g. come from the same logical source).
 pub struct Domain<T: Timestamp + Lattice> {
     /// The current timestamp.
     now_at: T,
     /// Input handles to attributes in this domain.
-    input_sessions: HashMap<String, InputSession<T, (Value, Value), isize>>,
+    input_sessions: HashMap<String, UnorderedSession<T, (Value, Value), isize>>,
     /// The probe keeping track of source progress in this domain.
     input_probe: ProbeHandle<T>,
     /// Configurations for attributes in this domain.
@@ -71,11 +74,12 @@ where
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let (handle, pairs) = scope.new_collection::<(Value, Value), isize>();
+            let ((handle, cap), tuples) = scope.new_unordered_input::<((Value, Value), T, isize)>();
+            let session = UnorderedSession::from(handle, cap);
 
-            self.input_sessions.insert(name.to_string(), handle);
+            self.input_sessions.insert(name.to_string(), session);
 
-            self.create_sourced_attribute(name, config, &pairs.inner)?;
+            self.create_sourced_attribute(name, config, &tuples)?;
 
             Ok(())
         }
