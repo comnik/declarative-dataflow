@@ -362,21 +362,17 @@ where
         name: &str,
         collection: &Collection<G, (K, V), isize>,
     ) -> Self {
-        let mut count_trace = collection
+        let count_trace = collection
             .map(|(k, _v)| (k, ()))
             .arrange_named(&format!("Counts({})", name))
             .trace;
-        let mut propose_trace = collection
+        let propose_trace = collection
             .arrange_named(&format!("Proposals({})", &name))
             .trace;
-        let mut validate_trace = collection
+        let validate_trace = collection
             .map(|t| (t, ()))
             .arrange_named(&format!("Validations({})", &name))
             .trace;
-
-        count_trace.distinguish_since(&[]);
-        propose_trace.distinguish_since(&[]);
-        validate_trace.distinguish_since(&[]);
 
         CollectionIndex {
             name: name.to_string(),
@@ -425,11 +421,20 @@ where
         (index, shutdown_handle)
     }
 
-    /// Advances the traces maintained in this index.
+    /// Allows Differential to logically compact trace batches on this
+    /// attribute, up to frontier.
     pub fn advance_by(&mut self, frontier: &[T]) {
         self.count_trace.advance_by(frontier);
         self.propose_trace.advance_by(frontier);
         self.validate_trace.advance_by(frontier);
+    }
+
+    /// Allows Differential to physically merge trace batches on this
+    /// attribute, up to frontier.
+    pub fn distinguish_since(&mut self, frontier: &[T]) {
+        self.count_trace.distinguish_since(frontier);
+        self.propose_trace.distinguish_since(frontier);
+        self.validate_trace.distinguish_since(frontier);
     }
 }
 

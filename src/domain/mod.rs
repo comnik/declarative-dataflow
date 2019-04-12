@@ -127,12 +127,8 @@ where
         &mut self,
         name: String,
         config: RelationConfig<T>,
-        mut trace: RelationHandle<T>,
+        trace: RelationHandle<T>,
     ) {
-        // decline the capability for that trace handle to subset its
-        // view of the data
-        trace.distinguish_since(&[]);
-
         self.relations.insert(name.clone(), config);
         self.arrangements.insert(name, trace);
     }
@@ -195,19 +191,19 @@ where
                 if let Some(ref trace_slack) = config.trace_slack {
                     let frontier = &[next.clone() - trace_slack.clone().into()];
 
-                    self.forward
-                        .get_mut(aid)
-                        .unwrap_or_else(|| {
-                            panic!("Configuration available for unknown attribute {}", aid)
-                        })
-                        .advance_by(frontier);
+                    let forward_index = self.forward.get_mut(aid).unwrap_or_else(|| {
+                        panic!("Configuration available for unknown attribute {}", aid)
+                    });
 
-                    self.reverse
-                        .get_mut(aid)
-                        .unwrap_or_else(|| {
-                            panic!("Configuration available for unknown attribute {}", aid)
-                        })
-                        .advance_by(frontier);
+                    forward_index.advance_by(frontier);
+                    forward_index.distinguish_since(frontier);
+
+                    let reverse_index = self.reverse.get_mut(aid).unwrap_or_else(|| {
+                        panic!("Configuration available for unknown attribute {}", aid)
+                    });
+
+                    reverse_index.advance_by(frontier);
+                    reverse_index.distinguish_since(frontier);
                 }
             }
 
@@ -215,12 +211,12 @@ where
                 if let Some(ref trace_slack) = config.trace_slack {
                     let frontier = &[next.clone() - trace_slack.clone()];
 
-                    self.arrangements
-                        .get_mut(name)
-                        .unwrap_or_else(|| {
-                            panic!("Configuration available for unknown relation {}", name)
-                        })
-                        .advance_by(frontier);
+                    let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {
+                        panic!("Configuration available for unknown relation {}", name)
+                    });
+
+                    trace.advance_by(frontier);
+                    trace.distinguish_since(frontier);
                 }
             }
 
