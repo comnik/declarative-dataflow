@@ -11,6 +11,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 
 use crate::server::scheduler::Scheduler;
+use crate::AttributeConfig;
 use crate::{Aid, Value};
 
 #[cfg(feature = "csv-source")]
@@ -36,7 +37,11 @@ where
         scope: &mut S,
         t0: Instant,
         scheduler: Weak<RefCell<Scheduler>>,
-    ) -> Vec<(Aid, Stream<S, ((Value, Value), S::Timestamp, isize)>)>;
+    ) -> Vec<(
+        Aid,
+        AttributeConfig,
+        Stream<S, ((Value, Value), S::Timestamp, isize)>,
+    )>;
 }
 
 /// Supported external data sources.
@@ -60,7 +65,11 @@ impl<S: Scope<Timestamp = std::time::Duration>> Sourceable<S> for Source {
         scope: &mut S,
         t0: Instant,
         scheduler: Weak<RefCell<Scheduler>>,
-    ) -> Vec<(Aid, Stream<S, ((Value, Value), std::time::Duration, isize)>)> {
+    ) -> Vec<(
+        Aid,
+        AttributeConfig,
+        Stream<S, ((Value, Value), std::time::Duration, isize)>,
+    )> {
         match *self {
             Source::TimelyLogging(ref source) => source.source(scope, t0, scheduler),
             Source::DifferentialLogging(ref source) => source.source(scope, t0, scheduler),
@@ -78,7 +87,11 @@ impl<S: Scope<Timestamp = u64>> Sourceable<S> for Source {
         _scope: &mut S,
         _t0: Instant,
         _scheduler: Weak<RefCell<Scheduler>>,
-    ) -> Vec<(Aid, Stream<S, ((Value, Value), u64, isize)>)> {
+    ) -> Vec<(
+        Aid,
+        AttributeConfig,
+        Stream<S, ((Value, Value), u64, isize)>,
+    )> {
         match *self {
             // Source::TimelyLogging(ref source) => source.source(scope, t0),
             // Source::DifferentialLogging(ref source) => source.source(scope, t0),
