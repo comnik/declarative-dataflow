@@ -12,6 +12,7 @@ use timely::dataflow::{Scope, Stream};
 use crate::server::scheduler::Scheduler;
 use crate::sources::Sourceable;
 use crate::{Aid, Eid, Value};
+use crate::{AttributeConfig, InputSemantics};
 
 /// A local filesystem data source.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -41,7 +42,11 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
         scope: &mut S,
         t0: Instant,
         scheduler: Weak<RefCell<Scheduler>>,
-    ) -> Vec<(Aid, Stream<S, ((Value, Value), Duration, isize)>)> {
+    ) -> Vec<(
+        Aid,
+        AttributeConfig,
+        Stream<S, ((Value, Value), Duration, isize)>,
+    )> {
         let filename = self.path.clone();
 
         // The following is mostly the innards of
@@ -179,7 +184,11 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
         let mut out = Vec::with_capacity(streams.len());
         for (idx, stream) in streams.drain(..).enumerate() {
             let aid = self.schema[idx].0.clone();
-            out.push((aid.to_string(), stream));
+            out.push((
+                aid.to_string(),
+                AttributeConfig::real_time(InputSemantics::CardinalityMany),
+                stream,
+            ));
         }
 
         out

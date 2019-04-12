@@ -65,43 +65,31 @@ where
         name: &str,
         config: AttributeConfig,
         scope: &mut S,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        T: TotalOrder,
+    {
         if self.forward.contains_key(name) {
             Err(Error {
                 category: "df.error.category/conflict",
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let (handle, mut tuples) = scope.new_collection::<(Value, Value), isize>();
-
-            tuples = match config.input_semantics {
-                InputSemantics::Raw => tuples,
-                InputSemantics::CardinalityOne => tuples.inner.cardinality_single().as_collection(),
-                InputSemantics::CardinalityMany => {
-                    // Ensure that redundant (e,v) pairs don't cause
-                    // misleading proposals during joining.
-                    tuples.distinct()
-                }
-            };
-
-            self.attributes.insert(name.to_string(), config);
-
-            let forward = CollectionIndex::index(name, &tuples);
-            let reverse = CollectionIndex::index(name, &tuples.map(|(e, v)| (v, e)));
-
-            self.forward.insert(name.to_string(), forward);
-            self.reverse.insert(name.to_string(), reverse);
+            let (handle, tuples) = scope.new_collection::<(Value, Value), isize>();
 
             self.input_sessions.insert(name.to_string(), handle);
+
+            self.create_source(name, config, &tuples.inner)?;
 
             Ok(())
         }
     }
 
     /// Creates attributes from an external datoms source.
-    pub fn create_source<S: Scope<Timestamp = T>>(
+    pub fn create_source<S: Scope + ScopeParent<Timestamp = T>>(
         &mut self,
         name: &str,
+        config: AttributeConfig,
         datoms: &Stream<S, ((Value, Value), T, isize)>,
     ) -> Result<(), Error> {
         if self.forward.contains_key(name) {
@@ -110,11 +98,17 @@ where
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let tuples = datoms
-                .as_collection()
-                // Ensure that redundant (e,v) pairs don't cause
-                // misleading proposals during joining.
-                .distinct();
+            let tuples = match config.input_semantics {
+                InputSemantics::Raw => datoms.as_collection(),
+                InputSemantics::CardinalityOne => datoms.cardinality_single().as_collection(),
+                InputSemantics::CardinalityMany => {
+                    // Ensure that redundant (e,v) pairs don't cause
+                    // misleading proposals during joining.
+                    datoms.as_collection().distinct()
+                }
+            };
+
+            self.attributes.insert(name.to_string(), config);
 
             let forward = CollectionIndex::index(&name, &tuples);
             let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
@@ -122,7 +116,7 @@ where
             self.forward.insert(name.to_string(), forward);
             self.reverse.insert(name.to_string(), reverse);
 
-            info!("Created source {}", name);
+            info!("Created attribute {}", name);
 
             Ok(())
         }
