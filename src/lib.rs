@@ -310,7 +310,7 @@ impl AttributeConfig {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
 pub struct RelationConfig<T>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    T: Timestamp + Lattice,
 {
     /// How close the arranged trace should follow the computation
     /// frontier.
@@ -566,7 +566,7 @@ pub struct Rule {
 /// to the variable offsets), or by an existing arrangement.
 trait Relation<'a, G: Scope>: AsBinding
 where
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + Data + TotalOrder,
 {
     /// A collection containing all tuples.
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
@@ -629,7 +629,7 @@ where
 
 impl<'a, G: Scope> Relation<'a, G> for CollectionRelation<'a, G>
 where
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + Data + TotalOrder,
 {
     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
         self.tuples
