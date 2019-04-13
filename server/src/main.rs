@@ -760,7 +760,7 @@ fn main() {
                     let next = next_tx as u64;
 
                     #[cfg(feature = "real-time")]
-                    let next = Instant::now().duration_since(worker.timer());
+                    let next = Duration::new(Instant::now().duration_since(worker.timer()).as_secs(), 0);
 
                     if let Err(error) = server.advance_domain(None, next) {
                         send_errors.send((Token(client), error, last_tx)).unwrap();
