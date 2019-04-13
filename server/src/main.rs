@@ -1,5 +1,5 @@
-#[global_allocator]
-static ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
+// #[global_allocator]
+// static ALLOCATOR: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 #[macro_use]
 extern crate serde_derive;
