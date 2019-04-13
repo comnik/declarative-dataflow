@@ -46,7 +46,7 @@ pub struct SourcingContext {
 pub trait Sourceable<S>
 where
     S: Scope,
-    S::Timestamp: Timestamp + Lattice + TotalOrder,
+    S::Timestamp: Timestamp + Lattice,
 {
     /// Conjures from thin air (or from wherever the source lives) one
     /// or more timely streams feeding directly into attributes.

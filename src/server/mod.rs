@@ -473,7 +473,6 @@ where
             Ok(relation) => relation.probe_with(&mut self.probe),
         }
     }
-}
 
 impl<Token> Server<Duration, Token>
 where
