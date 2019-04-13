@@ -1,8 +1,5 @@
 //! Timer-based management of operator activators.
 
-use std::rc::Rc;
-use std::rc::Weak;
-
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
 use std::rc::{Rc, Weak};

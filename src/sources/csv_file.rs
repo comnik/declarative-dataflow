@@ -47,7 +47,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
         AttributeConfig,
         Stream<S, ((Value, Value), Duration, isize)>,
     )> {
-        let filename = self.path.clone();
+        let directory = self.path.clone();
 
         // The following is mostly the innards of
         // `generic::source`. We use a builder directly, because we
@@ -203,12 +203,12 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                         cap.downgrade(&time);
                     }
                     // We want to drop the borrow directly
-                    {scheduler.upgrade().unwrap().borrow_mut().schedule(Rc::downgrade(&activator))}
+                    {scheduler.upgrade().unwrap().borrow_mut().schedule_now(Rc::downgrade(&activator))}
                 } else {
                     for cap in capabilities.iter_mut() {
                         cap.downgrade(&time);
                     }
-                    {scheduler.upgrade().unwrap().borrow_mut().schedule(Rc::downgrade(&activator))}
+                    {scheduler.upgrade().unwrap().borrow_mut().schedule_now(Rc::downgrade(&activator))}
                 }
             }
         });
