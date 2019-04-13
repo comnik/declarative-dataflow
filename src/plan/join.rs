@@ -2,7 +2,6 @@
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
-use timely::order::Product;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;

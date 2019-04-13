@@ -7,7 +7,6 @@ use std::time::{Duration, Instant};
 use timely::dataflow::operators::capture::event::link::EventLink;
 use timely::dataflow::{Scope, Stream};
 use timely::logging::TimelyEvent;
-use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;

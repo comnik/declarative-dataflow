@@ -62,6 +62,7 @@ use differential_dataflow::Data;
 /// }
 /// ```
 pub struct UnorderedSession<T: Timestamp + Clone, D: Data, R: Monoid> {
+    time: T,
     cap: ActivateCapability<T>,
     buffer: Vec<(D, T, R)>,
     handle: UnorderedHandle<T, (D, T, R)>,
@@ -71,6 +72,7 @@ impl<T: Timestamp + Clone, D: Data, R: Monoid> UnorderedSession<T, D, R> {
     /// Creates a new session from a reference to an input handle.
     pub fn from(handle: UnorderedHandle<T, (D, T, R)>, cap: ActivateCapability<T>) -> Self {
         UnorderedSession {
+            time: cap.time().clone(),
             cap,
             buffer: Vec::new(),
             handle,
@@ -120,6 +122,10 @@ impl<T: Timestamp + Clone, D: Data, R: Monoid> UnorderedSession<T, D, R> {
         self.handle
             .session(self.cap.clone())
             .give_iterator(self.buffer.drain(..));
+
+        if self.cap.time().less_than(&self.time) {
+            self.cap = self.cap.delayed(&self.time);
+        }
     }
 
     /// Advances the logical time for future records.
@@ -131,16 +137,19 @@ impl<T: Timestamp + Clone, D: Data, R: Monoid> UnorderedSession<T, D, R> {
     /// the session has just been flushed.
     #[inline]
     pub fn advance_to(&mut self, time: T) {
-        self.cap = self.cap.delayed(&time);
+        assert!(self.epoch().less_equal(&time));
+        assert!(&self.time.less_equal(&time));
+
+        self.time = time;
     }
 
     /// Reveals the current time of the session.
     pub fn epoch(&self) -> &T {
-        &self.cap.time()
+        &self.time
     }
     /// Reveals the current time of the session.
     pub fn time(&self) -> &T {
-        &self.cap.time()
+        &self.time
     }
 
     /// Closes the input, flushing and sealing the wrapped timely input.
