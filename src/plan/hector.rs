@@ -317,6 +317,136 @@ impl IndexNode<Value> for Vec<Value> {
     }
 }
 
+impl Hector {
+    // @TODO pass single binding as argument?
+    // @TODO make these static and take variables as well?
+
+    fn implement_single_binding<'b, T, I, S>(
+        &self,
+        nested: &mut Iterative<'b, S, u64>,
+        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        context: &mut I,
+    ) -> (Implemented<'b, S>, ShutdownHandle)
+    where
+        T: Timestamp + Lattice + TotalOrder,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
+        // With only a single binding given, we don't want to do
+        // anything fancy (provided the binding is sourceable).
+
+        match self.bindings.first().unwrap() {
+            Binding::Attribute(binding) => match context.forward_index(&binding.source_attribute) {
+                None => panic!("Unknown attribute {}", &binding.source_attribute),
+                Some(index) => {
+                    let frontier: Vec<T> = index.validate_trace.advance_frontier().to_vec();
+                    let (validate, shutdown_validate) = index
+                        .validate_trace
+                        .import_core(&nested.parent, &format!("Validate({})", index.name));
+
+                    let prefix = binding.variables();
+                    let target_variables = self.variables.clone();
+                    let tuples = validate
+                        .enter_at(nested, move |_, _, time| {
+                            let mut forwarded = time.clone();
+                            forwarded.advance_by(&frontier);
+                            Product::new(forwarded, 0)
+                        })
+                        .as_collection(move |tuple, ()| {
+                            target_variables
+                                .iter()
+                                .flat_map(|x| {
+                                    Some(tuple.index(AsBinding::binds(&prefix, *x).unwrap()))
+                                })
+                                .collect()
+                        });
+
+                    let relation = CollectionRelation {
+                        variables: self.variables.clone(),
+                        tuples,
+                    };
+
+                    (
+                        Implemented::Collection(relation),
+                        ShutdownHandle::from_button(shutdown_validate),
+                    )
+                }
+            },
+            _ => {
+                panic!("Passed a single, non-sourceable binding.");
+            }
+        }
+    }
+
+    // fn two_way<'b, T, I, S>(
+    //     nested: &mut Iterative<'b, S, u64>,
+    //     _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+    //     context: &mut I,
+    //     left: Binding,
+    //     right: Binding,
+    // ) -> (Implemented<'b, S>, ShutdownHandle)
+    // where
+    //     T: Timestamp + Lattice,
+    //     I: ImplContext<T>,
+    //     S: Scope<Timestamp = T>,
+    // {
+    //     let (source, right) = match left {
+    //         Binding::Attribute(source) => (source, right),
+    //         _ => match right {
+    //             Binding::Attribute(source) => (source, left),
+    //             _ => panic!("At least one binding must be sourceable for Hector::two_way."),
+    //         }
+    //     };
+
+    //     match right {
+    //         Binding::Constant(constant_binding) => {
+    //             let match_v = constant_binding.value;
+    //             let offset = source.binds(constant_binding.variable)
+    //                 .unwrap_or_else(|| panic!("Source doesn't bind constant binding {:?}", constant_binding));
+
+    //             match offset {
+    //                 0 => {
+    //                     // [?a :edge ?b] (constant ?a x) <=> [x :edge ?b]
+
+    //                     let (index, shutdown) = context.forward_index(&source.source_attribute)
+    //                         .unwrap_or_else(|| panic!("No forward index found for attribute {}", &source.source_attribute))
+    //                         .propose_trace
+    //                         .import_core(&nested.parent, &source.source_attribute);
+
+    //                     let frontier: Vec<T> = index.trace.advance_frontier().to_vec();
+
+    //                     index
+    //                         .filter(move |e, _v| *e == match_v)
+    //                         .enter_at(&nested, move |_, _, time| {
+    //                             let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
+    //                             Product::new(forwarded, Default::default())
+    //                         })
+    //                 }
+    //                 1 => {
+    //                     // [?a :edge ?b] (constant ?b x) <=> [?a :edge x]
+
+    //                     let (index, shutdown) = context.reverse_index(&source.source_attribute)
+    //                         .unwrap_or_else(|| panic!("No reverse index found for attribute {}", &source.source_attribute))
+    //                         .propose_trace
+    //                         .import_core(&nested.parent, &source.source_attribute);
+
+    //                     let frontier: Vec<T> = index.trace.advance_frontier().to_vec();
+
+    //                     index
+    //                         .filter(move |e, _v| *e == match_v)
+    //                         .enter_at(&nested, move |_, _, time| {
+    //                             let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
+    //                             Product::new(forwarded, Default::default())
+    //                         })
+    //                 }
+    //                 other => panic!("Unexpected offset {}", other),
+    //             }
+    //         }
+    //         _ => unimplemented!(),
+    //     }
+    // }
+}
+
 impl Implementable for Hector {
     fn dependencies(&self) -> Dependencies {
         let attributes = self
@@ -357,51 +487,9 @@ impl Implementable for Hector {
         } else if self.variables.is_empty() {
             panic!("No variables requested.");
         } else if self.bindings.len() == 1 {
-            // With only a single binding given, we don't want to do
-            // anything fancy (provided the binding is sourceable).
-
-            match self.bindings.first().unwrap() {
-                Binding::Attribute(binding) => {
-                    match context.forward_index(&binding.source_attribute) {
-                        None => panic!("Unknown attribute {}", &binding.source_attribute),
-                        Some(index) => {
-                            let frontier: Vec<T> = index.validate_trace.advance_frontier().to_vec();
-                            let (validate, shutdown_validate) = index
-                                .validate_trace
-                                .import_core(&nested.parent, &format!("Validate({})", index.name));
-
-                            let prefix = binding.variables();
-                            let target_variables = self.variables.clone();
-                            let tuples = validate
-                                .enter_at(nested, move |_, _, time| {
-                                    let mut forwarded = time.clone();
-                                    forwarded.advance_by(&frontier);
-                                    Product::new(forwarded, 0)
-                                })
-                                .as_collection(move |tuple, ()| {
-                                    target_variables
-                                        .iter()
-                                        .flat_map(|x| {
-                                            Some(
-                                                tuple.index(AsBinding::binds(&prefix, *x).unwrap()),
-                                            )
-                                        })
-                                        .collect()
-                                });
-
-                            let relation = CollectionRelation {
-                                variables: self.variables.clone(),
-                                tuples,
-                            };
-
-                            (relation, ShutdownHandle::from_button(shutdown_validate))
-                        }
-                    }
-                }
-                _ => {
-                    panic!("Passed a single, non-sourceable binding.");
-                }
-            }
+            self.implement_single_binding(nested, _local_arrangements, context)
+        // } else if self.bindings.len() == 2 {
+        //     Hector::two_way(nested, _local_arrangements, context, self.bindings[0].clone(), self.bindings[1].clone())
         } else {
             // In order to avoid delta pipelines looking at each
             // other's data in naughty ways, we need to run them all
