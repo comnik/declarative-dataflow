@@ -25,7 +25,7 @@ use crate::binding::{BinaryPredicateBinding, ConstantBinding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
 use crate::{Aid, Value, Var};
-use crate::{CollectionRelation, LiveIndex, ShutdownHandle, VariableMap};
+use crate::{CollectionRelation, Implemented, LiveIndex, ShutdownHandle, VariableMap};
 
 type Extender<'a, S, P, V> = Box<(dyn PrefixExtender<S, Prefix = P, Extension = V> + 'a)>;
 
@@ -345,7 +345,7 @@ impl Implementable for Hector {
         nested: &mut Iterative<'b, S, u64>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -726,7 +726,7 @@ impl Implementable for Hector {
                 tuples: joined.distinct(),
             };
 
-            (relation, shutdown_handle)
+            (Implemented::Collection(relation), shutdown_handle)
         }
     }
 }

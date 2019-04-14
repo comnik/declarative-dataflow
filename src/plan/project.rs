@@ -10,7 +10,7 @@ use differential_dataflow::lattice::Lattice;
 use crate::binding::Binding;
 use crate::plan::{next_id, Dependencies, ImplContext, Implementable};
 use crate::{Aid, Eid, Value, Var};
-use crate::{CollectionRelation, Relation, ShutdownHandle, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, VariableMap};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of variables. Throws on unbound variables. Frontends are responsible
@@ -52,19 +52,26 @@ impl<P: Implementable> Implementable for Project<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
+        let (relation, mut shutdown_handle) =
+            self.plan.implement(nested, local_arrangements, context);
+        let tuples = {
+            let (projected, shutdown) = relation.projected(nested, context, &self.variables);
+            shutdown_handle.merge_with(shutdown);
+
+            projected
+        };
 
         let projected = CollectionRelation {
             variables: self.variables.to_vec(),
-            tuples: relation.projected(&self.variables),
+            tuples,
         };
 
-        (projected, shutdown_handle)
+        (Implemented::Collection(projected), shutdown_handle)
     }
 }

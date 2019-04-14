@@ -10,7 +10,7 @@ use differential_dataflow::operators::{Join, Threshold};
 
 use crate::binding::{AsBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
 /// variables. Throws if the sources are not union-compatible, i.e. bind
@@ -50,18 +50,27 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let (left, shutdown_left) = self
-            .left_plan
-            .implement(nested, local_arrangements, context);
-        let (right, shutdown_right) =
-            self.right_plan
+        let mut shutdown_handle = ShutdownHandle::empty();
+        let left = {
+            let (left, shutdown) = self
+                .left_plan
                 .implement(nested, local_arrangements, context);
+            shutdown_handle.merge_with(shutdown);
+            left
+        };
+        let right = {
+            let (right, shutdown) = self
+                .right_plan
+                .implement(nested, local_arrangements, context);
+            shutdown_handle.merge_with(shutdown);
+            right
+        };
 
         let variables = self
             .variables
@@ -74,14 +83,20 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
             )
             .collect();
 
+        let right_projected = {
+            let (projected, shutdown) = right.projected(nested, context, &self.variables);
+            shutdown_handle.merge_with(shutdown);
+            projected
+        };
+
         let tuples = left
             .tuples_by_variables(&self.variables)
             .distinct()
-            .antijoin(&right.projected(&self.variables).distinct())
+            .antijoin(&right_projected.distinct())
             .map(|(key, tuple)| key.iter().cloned().chain(tuple.iter().cloned()).collect());
 
-        let shutdown_handle = ShutdownHandle::merge(shutdown_left, shutdown_right);
+        let relation = CollectionRelation { variables, tuples };
 
-        (CollectionRelation { variables, tuples }, shutdown_handle)
+        (Implemented::Collection(relation), shutdown_handle)
     }
 }

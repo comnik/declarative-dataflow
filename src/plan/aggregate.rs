@@ -12,7 +12,7 @@ use differential_dataflow::operators::{Count, Reduce, Threshold};
 
 use crate::binding::{AsBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};
 
@@ -70,7 +70,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -277,6 +277,6 @@ impl<P: Implementable> Implementable for Aggregate<P> {
             }
         };
 
-        (aggregated, shutdown_handle)
+        (Implemented::Collection(aggregated), shutdown_handle)
     }
 }

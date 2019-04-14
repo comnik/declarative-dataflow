@@ -16,8 +16,8 @@ use crate::{Aid, Value};
 
 #[cfg(feature = "csv-source")]
 pub mod csv_file;
-pub mod differential_logging;
 pub mod declarative_logging;
+pub mod differential_logging;
 // pub mod json_file;
 pub mod timely_logging;
 

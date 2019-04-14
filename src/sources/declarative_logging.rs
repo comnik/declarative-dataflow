@@ -16,8 +16,8 @@ use timely::logging::BatchLogger;
 use crate::logging::DeclarativeEvent;
 use crate::server::scheduler::Scheduler;
 use crate::sources::Sourceable;
-use crate::{AttributeConfig, InputSemantics};
 use crate::{Aid, Value};
+use crate::{AttributeConfig, InputSemantics};
 use Value::{Eid, Number};
 
 /// One or more taps into Declarative logging.
@@ -33,7 +33,11 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DeclarativeLogging {
         scope: &mut S,
         _t0: Instant,
         _scheduler: Weak<RefCell<Scheduler>>,
-    ) -> Vec<(Aid, AttributeConfig, Stream<S, ((Value, Value), Duration, isize)>)> {
+    ) -> Vec<(
+        Aid,
+        AttributeConfig,
+        Stream<S, ((Value, Value), Duration, isize)>,
+    )> {
         let events = Rc::new(EventLink::new());
         let mut logger = BatchLogger::new(events.clone());
 
@@ -95,7 +99,13 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DeclarativeLogging {
 
         self.attributes
             .iter()
-            .map(|aid| (aid.to_string(), AttributeConfig::real_time(InputSemantics::Raw), streams.remove(aid).unwrap()))
+            .map(|aid| {
+                (
+                    aid.to_string(),
+                    AttributeConfig::real_time(InputSemantics::Raw),
+                    streams.remove(aid).unwrap(),
+                )
+            })
             .collect()
     }
 }

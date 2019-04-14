@@ -13,13 +13,13 @@ extern crate serde_derive;
 
 pub mod binding;
 pub mod domain;
+pub mod logging;
 pub mod operators;
 pub mod plan;
 pub mod server;
 pub mod sinks;
 pub mod sources;
 pub mod timestamp;
-pub mod logging;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;
@@ -570,35 +570,41 @@ where
     G::Timestamp: Lattice + Data + TotalOrder,
 {
     /// A collection containing all tuples.
-    fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
+    fn tuples<I>(
+        self,
+        nested: &mut Iterative<'a, G, u64>,
+        context: &mut I,
+    ) -> (
+        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        ShutdownHandle,
+    )
+    where
+        I: ImplContext<G::Timestamp>;
 
     /// A collection containing all tuples projected onto the
     /// specified variables.
-    fn projected(
+    fn projected<I>(
         self,
+        nested: &mut Iterative<'a, G, u64>,
+        context: &mut I,
         target_variables: &[Var],
-    ) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize>;
+    ) -> (
+        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        ShutdownHandle,
+    )
+    where
+        I: ImplContext<G::Timestamp>;
 
     /// A collection with tuples partitioned by `variables`.
     ///
-    /// Variables present in `variables` are collected in order and populate a first "key"
-    /// `Vec<Value>`, followed by those variables not present in `variables`.
+    /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)`
+    /// containing first exactly those variables in `variables` in that
+    /// order, followed by the remaining values in their original
+    /// order.
     fn tuples_by_variables(
         self,
         variables: &[Var],
     ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>;
-
-    /// @TODO
-    fn arrange_by_variables(
-        self,
-        variables: &[Var],
-    ) -> Arranged<
-        Iterative<'a, G, u64>,
-        Vec<Value>,
-        Vec<Value>,
-        isize,
-        TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp, u64>, isize>,
-    >;
 }
 
 /// A collection and variable bindings.
@@ -609,7 +615,7 @@ pub struct CollectionRelation<'a, G: Scope> {
 
 impl<'a, G: Scope> AsBinding for CollectionRelation<'a, G>
 where
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + Data + TotalOrder,
 {
     fn variables(&self) -> Vec<Var> {
         self.variables.clone()
@@ -632,21 +638,39 @@ impl<'a, G: Scope> Relation<'a, G> for CollectionRelation<'a, G>
 where
     G::Timestamp: Lattice + Data + TotalOrder,
 {
-    fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
-        self.tuples
+    fn tuples<I>(
+        self,
+        _nested: &mut Iterative<'a, G, u64>,
+        _context: &mut I,
+    ) -> (
+        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        ShutdownHandle,
+    )
+    where
+        I: ImplContext<G::Timestamp>,
+    {
+        (self.tuples, ShutdownHandle::empty())
     }
 
-    fn projected(
+    fn projected<I>(
         self,
+        _nested: &mut Iterative<'a, G, u64>,
+        _context: &mut I,
         target_variables: &[Var],
-    ) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
+    ) -> (
+        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        ShutdownHandle,
+    )
+    where
+        I: ImplContext<G::Timestamp>,
+    {
         if self.variables() == target_variables {
-            self.tuples
+            (self.tuples, ShutdownHandle::empty())
         } else {
             let relation_variables = self.variables();
             let target_variables = target_variables.to_vec();
 
-            self.tuples().map(move |tuple| {
+            let tuples = self.tuples.map(move |tuple| {
                 target_variables
                     .iter()
                     .map(|x| {
@@ -654,24 +678,20 @@ where
                         tuple[idx].clone()
                     })
                     .collect()
-            })
+            });
+
+            (tuples, ShutdownHandle::empty())
         }
     }
 
-    /// Separates tuple fields by those in `variables` and those not.
-    ///
-    /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)`
-    /// containing first exactly those variables in `variables` in that
-    /// order, followed by the remaining values in their original
-    /// order.
     fn tuples_by_variables(
         self,
         variables: &[Var],
     ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize> {
         if variables == &self.variables()[..] {
-            self.tuples().map(|x| (x, Vec::new()))
+            self.tuples.map(|x| (x, Vec::new()))
         } else if variables.is_empty() {
-            self.tuples().map(|x| (Vec::new(), x))
+            self.tuples.map(|x| (Vec::new(), x))
         } else {
             let key_length = variables.len();
             let values_length = self.variables().len() - key_length;
@@ -693,7 +713,7 @@ where
                 }
             }
 
-            self.tuples().map(move |tuple| {
+            self.tuples.map(move |tuple| {
                 let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
                 // @TODO second clone not really neccessary
                 let values: Vec<Value> = value_offsets
@@ -705,98 +725,181 @@ where
             })
         }
     }
+}
 
-    fn arrange_by_variables(
+impl<'a, G> Relation<'a, G> for AttributeBinding
+where
+    G: Scope,
+    G::Timestamp: Lattice + Data + TotalOrder,
+{
+    fn tuples<I>(
+        self,
+        nested: &mut Iterative<'a, G, u64>,
+        context: &mut I,
+    ) -> (
+        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        ShutdownHandle,
+    )
+    where
+        I: ImplContext<G::Timestamp>,
+    {
+        let variables = self.variables();
+        self.projected(nested, context, &variables)
+    }
+
+    fn projected<I>(
+        self,
+        nested: &mut Iterative<'a, G, u64>,
+        context: &mut I,
+        target_variables: &[Var],
+    ) -> (
+        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        ShutdownHandle,
+    )
+    where
+        I: ImplContext<G::Timestamp>,
+    {
+        match context.forward_index(&self.source_attribute) {
+            None => panic!("attribute {:?} does not exist", self.source_attribute),
+            Some(index) => {
+                let frontier = index.propose_trace.advance_frontier().to_vec();
+                let (propose, shutdown_propose) = index
+                    .propose_trace
+                    .import_core(&nested.parent, &self.source_attribute);
+
+                let tuples = propose
+                    .enter_at(nested, move |_, _, time| {
+                        let mut forwarded = time.clone();
+                        forwarded.advance_by(&frontier);
+                        Product::new(forwarded, 0)
+                    })
+                    .as_collection(|e, v| vec![e.clone(), v.clone()]);
+
+                (tuples, ShutdownHandle::from_button(shutdown_propose))
+            }
+        }
+    }
+
+    fn tuples_by_variables(
         self,
         variables: &[Var],
-    ) -> Arranged<
-        Iterative<'a, G, u64>,
-        Vec<Value>,
-        Vec<Value>,
-        isize,
-        TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp, u64>, isize>,
-    > {
-        self.tuples_by_variables(variables).arrange()
+    ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize> {
+        unimplemented!();
+    }
+}
+
+/// @TODO
+pub enum Implemented<'a, G>
+where
+    G: Scope,
+    G::Timestamp: Lattice + Data,
+{
+    /// A relation backed by an attribute.
+    Attribute(AttributeBinding),
+    /// A relation backed by a Differential collection.
+    Collection(CollectionRelation<'a, G>),
+    // Arranged(ArrangedRelation<'a, G>)
+}
+
+impl<'a, G: Scope> AsBinding for Implemented<'a, G>
+where
+    G::Timestamp: Lattice + Data + TotalOrder,
+{
+    fn variables(&self) -> Vec<Var> {
+        match self {
+            Implemented::Attribute(attribute_binding) => attribute_binding.variables(),
+            Implemented::Collection(relation) => relation.variables(),
+        }
+    }
+
+    fn binds(&self, variable: Var) -> Option<usize> {
+        match self {
+            Implemented::Attribute(attribute_binding) => attribute_binding.binds(variable),
+            Implemented::Collection(relation) => relation.binds(variable),
+        }
+    }
+
+    fn ready_to_extend(&self, prefix: &AsBinding) -> Option<Var> {
+        match self {
+            Implemented::Attribute(attribute_binding) => attribute_binding.ready_to_extend(prefix),
+            Implemented::Collection(relation) => relation.ready_to_extend(prefix),
+        }
+    }
+
+    fn required_to_extend(&self, prefix: &AsBinding, target: Var) -> Option<Option<Var>> {
+        match self {
+            Implemented::Attribute(attribute_binding) => {
+                attribute_binding.required_to_extend(prefix, target)
+            }
+            Implemented::Collection(relation) => relation.required_to_extend(prefix, target),
+        }
+    }
+}
+
+impl<'a, G: Scope> Relation<'a, G> for Implemented<'a, G>
+where
+    G::Timestamp: Lattice + Data + TotalOrder,
+{
+    fn tuples<I>(
+        self,
+        nested: &mut Iterative<'a, G, u64>,
+        context: &mut I,
+    ) -> (
+        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        ShutdownHandle,
+    )
+    where
+        I: ImplContext<G::Timestamp>,
+    {
+        match self {
+            Implemented::Attribute(attribute_binding) => attribute_binding.tuples(nested, context),
+            Implemented::Collection(relation) => relation.tuples(nested, context),
+        }
+    }
+
+    fn projected<I>(
+        self,
+        nested: &mut Iterative<'a, G, u64>,
+        context: &mut I,
+        target_variables: &[Var],
+    ) -> (
+        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        ShutdownHandle,
+    )
+    where
+        I: ImplContext<G::Timestamp>,
+    {
+        match self {
+            Implemented::Attribute(attribute_binding) => {
+                attribute_binding.projected(nested, context, target_variables)
+            }
+            Implemented::Collection(relation) => {
+                relation.projected(nested, context, target_variables)
+            }
+        }
+    }
+
+    fn tuples_by_variables(
+        self,
+        variables: &[Var],
+    ) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize> {
+        match self {
+            Implemented::Attribute(attribute_binding) => {
+                attribute_binding.tuples_by_variables(variables)
+            }
+            Implemented::Collection(relation) => relation.tuples_by_variables(variables),
+        }
     }
 }
 
 // /// A arrangement and variable bindings.
-// pub struct ArrangedRelation<'a, G: Scope>
+// struct ArrangedRelation<'a, G: Scope>
 // where
 //     G::Timestamp: Lattice+Data
 // {
 //     variables: Vec<Var>,
 //     tuples: Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
 //                      TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>,
-// }
-
-// impl<'a, G: Scope> Relation<'a, G> for ArrangedRelation<'a, G>
-// where
-//     G::Timestamp: Lattice+Data,
-// {
-//     fn variables(&self) -> &[Var] { &self.variables }
-
-//     fn tuples(self) -> Collection<Iterative<'a, G, u64>, Vec<Value>, isize> {
-//         unimplemented!()
-//     }
-
-//     /// Separates tuple fields by those in `variables` and those not.
-//     ///
-//     /// Each tuple is mapped to a pair `(Vec<Value>, Vec<Value>)`
-//     /// containing first exactly those variables in `variables` in that
-//     /// order, followed by the remaining values in their original
-//     /// order.
-//     fn tuples_by_variables
-//         (self, variables: &[Var]) -> Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>
-//     {
-//         // self.arrange_by_variables(variables).as_collection(|key,rest| (key,rest))
-//         unimplemented!();
-//     }
-
-//     fn arrange_by_variables (
-//         self,
-//         variables: &[Var]
-//     ) -> Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize, TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>
-//     {
-//         if variables == self.variables.as_slice() {
-//             self.tuples.map(|x| (x, Vec::new()))
-//         } else if variables.is_empty() {
-//             self.tuples().map(|x| (Vec::new(), x))
-//         } else {
-//             let key_length = variables.len();
-//             let values_length = self.variables().len() - key_length;
-
-//             let mut key_offsets: Vec<usize> = Vec::with_capacity(key_length);
-//             let mut value_offsets: Vec<usize> = Vec::with_capacity(values_length);
-//             let variable_set: HashSet<Var> = variables.iter().cloned().collect();
-
-//             // It is important to preserve the key variables in the order
-//             // they were specified.
-//             for variable in variables.iter() {
-//                 key_offsets.push(self.variables().iter().position(|&v| *variable == v).unwrap());
-//             }
-
-//             // Values we'll just take in the order they were.
-//             for (idx, variable) in self.variables().iter().enumerate() {
-//                 if !variable_set.contains(variable) {
-//                     value_offsets.push(idx);
-//                 }
-//             }
-
-//             // let debug_keys: Vec<String> = key_offsets.iter().map(|x| x.to_string()).collect();
-//             // let debug_values: Vec<String> = value_offsets.iter().map(|x| x.to_string()).collect();
-//             // println!("key offsets: {:?}", debug_keys);
-//             // println!("value offsets: {:?}", debug_values);
-
-//             self.tuples().map(move |tuple| {
-//                 let key: Vec<Value> = key_offsets.iter().map(|i| tuple[*i].clone()).collect();
-//                 // @TODO second clone not really neccessary
-//                 let values: Vec<Value> = value_offsets.iter().map(|i| tuple[*i].clone()).collect();
-
-//                 (key, values)
-//             })
-//         }
-//     }
 // }
 
 /// Helper function to create a query plan. The resulting query will
@@ -958,11 +1061,14 @@ where
                     });
                 }
                 Some(variable) => {
+                    let (tuples, shutdown) = execution.tuples(nested, context);
+                    shutdown_handle.merge_with(shutdown);
+
                     #[cfg(feature = "set-semantics")]
-                    variable.set(&execution.tuples().distinct());
+                    variable.set(&tuples.distinct());
 
                     #[cfg(not(feature = "set-semantics"))]
-                    variable.set(&execution.tuples().consolidate());
+                    variable.set(&tuples.consolidate());
                 }
             }
         }
@@ -1070,11 +1176,14 @@ where
                     });
                 }
                 Some(variable) => {
+                    let (tuples, shutdown) = execution.tuples(nested, context);
+                    shutdown_handle.merge_with(shutdown);
+
                     #[cfg(feature = "set-semantics")]
-                    variable.set(&execution.tuples().distinct());
+                    variable.set(&tuples.distinct());
 
                     #[cfg(not(feature = "set-semantics"))]
-                    variable.set(&execution.tuples().consolidate());
+                    variable.set(&tuples.consolidate());
                 }
             }
         }

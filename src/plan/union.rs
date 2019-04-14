@@ -10,7 +10,7 @@ use differential_dataflow::operators::Threshold;
 
 use crate::binding::Binding;
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, ShutdownHandle, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -46,7 +46,7 @@ impl<P: Implementable> Implementable for Union<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -59,11 +59,20 @@ impl<P: Implementable> Implementable for Union<P> {
         let mut shutdown_handle = ShutdownHandle::empty();
 
         let streams = self.plans.iter().map(|plan| {
-            let (relation, shutdown) = plan.implement(&mut scope, local_arrangements, context);
+            let relation = {
+                let (relation, shutdown) = plan.implement(&mut scope, local_arrangements, context);
+                shutdown_handle.merge_with(shutdown);
+                relation
+            };
 
-            shutdown_handle.merge_with(shutdown);
+            let projected = {
+                let (projected, shutdown) =
+                    relation.projected(&mut scope, context, &self.variables);
+                shutdown_handle.merge_with(shutdown);
+                projected
+            };
 
-            relation.projected(&self.variables).inner
+            projected.inner
         });
 
         let concat = nested.concatenate(streams).as_collection();
@@ -73,6 +82,6 @@ impl<P: Implementable> Implementable for Union<P> {
             tuples: concat.distinct(),
         };
 
-        (concatenated, shutdown_handle)
+        (Implemented::Collection(concatenated), shutdown_handle)
     }
 }

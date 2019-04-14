@@ -14,9 +14,10 @@ fn pull_level() {
         let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
-        let (e,) = (1,);
+        let (e, a, v) = (1, 2, 3);
         let plan = Plan::PullLevel(PullLevel {
-            variables: vec![],
+            variables: vec![e, a, v],
+            pull_variable: e,
             plan: Box::new(Plan::MatchAV(e, "admin?".to_string(), Bool(false))),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
             path_attributes: vec![],
@@ -109,9 +110,10 @@ fn pull_children() {
         let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
-        let (parent, child) = (1, 2);
+        let (parent, child, a, v) = (1, 2, 3, 4);
         let plan = Plan::PullLevel(PullLevel {
-            variables: vec![],
+            variables: vec![parent, child, a, v],
+            pull_variable: child,
             plan: Box::new(Plan::MatchA(parent, "parent/child".to_string(), child)),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
             path_attributes: vec!["parent/child".to_string()],
@@ -233,6 +235,7 @@ fn pull() {
             paths: vec![
                 PullLevel {
                     variables: vec![],
+                    pull_variable: b,
                     plan: Box::new(Plan::MatchA(a, "join/binding".to_string(), b)),
                     pull_attributes: vec![
                         "pattern/e".to_string(),
@@ -243,6 +246,7 @@ fn pull() {
                 },
                 PullLevel {
                     variables: vec![],
+                    pull_variable: c,
                     plan: Box::new(Plan::MatchA(a, "name".to_string(), c)),
                     pull_attributes: vec![],
                     path_attributes: vec!["name".to_string()],

@@ -15,7 +15,7 @@ use timely::dataflow::{Scope, Stream};
 
 use crate::server::scheduler::Scheduler;
 use crate::sources::Sourceable;
-use crate::AttributeConfig;
+use crate::{AttributeConfig, InputSemantics};
 use crate::{Aid, Eid, Value};
 use Value::{Bool, Number};
 

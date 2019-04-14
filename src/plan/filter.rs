@@ -11,7 +11,7 @@ pub use crate::binding::{
     AsBinding, BinaryPredicate as Predicate, BinaryPredicateBinding, Binding,
 };
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 #[inline(always)]
 fn lt(a: &Value, b: &Value) -> bool {
@@ -76,13 +76,14 @@ impl<P: Implementable> Implementable for Filter<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
+        let (relation, mut shutdown_handle) =
+            self.plan.implement(nested, local_arrangements, context);
 
         let key_offsets: Vec<usize> = self
             .variables
@@ -99,29 +100,34 @@ impl<P: Implementable> Implementable for Filter<P> {
             Predicate::NEQ => neq,
         };
 
+        let variables = relation.variables();
+        let projected = {
+            let (projected, shutdown) = relation.projected(nested, context, &variables);
+            shutdown_handle.merge_with(shutdown);
+            projected
+        };
+
         let filtered = if let Some(constant) = self.constants[0].clone() {
             CollectionRelation {
-                variables: relation.variables().to_vec(),
-                tuples: relation
-                    .tuples()
+                variables,
+                tuples: projected
                     .filter(move |tuple| binary_predicate(&constant, &tuple[key_offsets[0]])),
             }
         } else if let Some(constant) = self.constants[1].clone() {
             CollectionRelation {
-                variables: relation.variables().to_vec(),
-                tuples: relation
-                    .tuples()
+                variables,
+                tuples: projected
                     .filter(move |tuple| binary_predicate(&tuple[key_offsets[0]], &constant)),
             }
         } else {
             CollectionRelation {
-                variables: relation.variables().to_vec(),
-                tuples: relation.tuples().filter(move |tuple| {
+                variables,
+                tuples: projected.filter(move |tuple| {
                     binary_predicate(&tuple[key_offsets[0]], &tuple[key_offsets[1]])
                 }),
             }
         };
 
-        (filtered, shutdown_handle)
+        (Implemented::Collection(filtered), shutdown_handle)
     }
 }

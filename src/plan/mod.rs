@@ -12,11 +12,12 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::trace::TraceReader;
 
-use crate::binding::{AsBinding, Binding};
+use crate::binding::{AsBinding, AttributeBinding, Binding};
 use crate::Rule;
 use crate::{Aid, Eid, Value, Var};
 use crate::{
-    CollectionIndex, CollectionRelation, Relation, RelationHandle, ShutdownHandle, VariableMap,
+    CollectionIndex, CollectionRelation, Implemented, Relation, RelationHandle, ShutdownHandle,
+    VariableMap,
 };
 
 #[cfg(feature = "set-semantics")]
@@ -164,7 +165,7 @@ pub trait Implementable {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -328,7 +329,7 @@ impl Implementable for Plan {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
@@ -346,44 +347,34 @@ impl Implementable for Plan {
             Plan::Hector(ref hector) => hector.implement(nested, local_arrangements, context),
             Plan::Antijoin(ref antijoin) => antijoin.implement(nested, local_arrangements, context),
             Plan::Negate(ref plan) => {
-                let (relation, shutdown) = plan.implement(nested, local_arrangements, context);
-                let negated = CollectionRelation {
-                    variables: relation.variables(),
-                    tuples: relation.tuples().negate(),
+                let (relation, mut shutdown_handle) =
+                    plan.implement(nested, local_arrangements, context);
+                let variables = relation.variables();
+
+                let tuples = {
+                    let (projected, shutdown) = relation.projected(nested, context, &variables);
+                    shutdown_handle.merge_with(shutdown);
+
+                    projected.negate()
                 };
 
-                (negated, shutdown)
+                (
+                    Implemented::Collection(CollectionRelation { variables, tuples }),
+                    shutdown_handle,
+                )
             }
             Plan::Filter(ref filter) => filter.implement(nested, local_arrangements, context),
             Plan::Transform(ref transform) => {
                 transform.implement(nested, local_arrangements, context)
             }
-            Plan::MatchA(sym1, ref a, sym2) => {
-                let (tuples, shutdown_validate) = match context.forward_index(a) {
-                    None => panic!("attribute {:?} does not exist", a),
-                    Some(index) => {
-                        let frontier: Vec<T> = index.validate_trace.advance_frontier().to_vec();
-                        let (validate, shutdown_validate) =
-                            index.validate_trace.import_core(&nested.parent, a);
-
-                        let tuples = validate
-                            .enter_at(nested, move |_, _, time| {
-                                let mut forwarded = time.clone();
-                                forwarded.advance_by(&frontier);
-                                Product::new(forwarded, 0)
-                            })
-                            .as_collection(|(e, v), _| vec![e.clone(), v.clone()]);
-
-                        (tuples, shutdown_validate)
-                    }
+            Plan::MatchA(e, ref a, v) => {
+                let binding = AttributeBinding {
+                    variables: (e, v),
+                    source_attribute: a.to_string(),
+                    default: None,
                 };
 
-                let relation = CollectionRelation {
-                    variables: vec![sym1, sym2],
-                    tuples,
-                };
-
-                (relation, ShutdownHandle::from_button(shutdown_validate))
+                (Implemented::Attribute(binding), ShutdownHandle::empty())
             }
             Plan::MatchEA(match_e, ref a, sym1) => {
                 let (tuples, shutdown_propose) = match context.forward_index(a) {
@@ -411,7 +402,10 @@ impl Implementable for Plan {
                     tuples,
                 };
 
-                (relation, ShutdownHandle::from_button(shutdown_propose))
+                (
+                    Implemented::Collection(relation),
+                    ShutdownHandle::from_button(shutdown_propose),
+                )
             }
             Plan::MatchAV(sym1, ref a, ref match_v) => {
                 let (tuples, shutdown_propose) = match context.reverse_index(a) {
@@ -440,7 +434,10 @@ impl Implementable for Plan {
                     tuples,
                 };
 
-                (relation, ShutdownHandle::from_button(shutdown_propose))
+                (
+                    Implemented::Collection(relation),
+                    ShutdownHandle::from_button(shutdown_propose),
+                )
             }
             Plan::NameExpr(ref syms, ref name) => {
                 if context.is_underconstrained(name) {
@@ -452,7 +449,7 @@ impl Implementable for Plan {
                                 tuples: named.deref().clone(), // @TODO re-use variable directly?
                             };
 
-                            (relation, ShutdownHandle::empty())
+                            (Implemented::Collection(relation), ShutdownHandle::empty())
                         }
                     }
                 } else {
@@ -481,7 +478,10 @@ impl Implementable for Plan {
                                     .as_collection(|tuple, _| tuple.clone()),
                             };
 
-                            (relation, ShutdownHandle::from_button(shutdown_button))
+                            (
+                                Implemented::Collection(relation),
+                                ShutdownHandle::from_button(shutdown_button),
+                            )
                         }
                     }
                 }

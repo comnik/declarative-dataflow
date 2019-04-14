@@ -9,7 +9,7 @@ use differential_dataflow::lattice::Lattice;
 
 use crate::binding::{AsBinding, Binding};
 use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::{CollectionRelation, Relation, ShutdownHandle, Value, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 /// Permitted functions.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -54,13 +54,14 @@ impl<P: Implementable> Implementable for Transform<P> {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
         T: Timestamp + Lattice + TotalOrder,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
+        let (relation, mut shutdown_handle) =
+            self.plan.implement(nested, local_arrangements, context);
 
         let key_offsets: Vec<usize> = self
             .variables
@@ -73,10 +74,16 @@ impl<P: Implementable> Implementable for Transform<P> {
 
         let constants_local = self.constants.clone();
 
+        let tuples = {
+            let (tuples, shutdown) = relation.tuples(nested, context);
+            shutdown_handle.merge_with(shutdown);
+            tuples
+        };
+
         let transformed = match self.function {
             Function::TRUNCATE => CollectionRelation {
                 variables,
-                tuples: relation.tuples().map(move |tuple| {
+                tuples: tuples.map(move |tuple| {
                     let mut t = match tuple[key_offsets[0]] {
                         Value::Instant(inst) => inst as u64,
                         _ => panic!("TRUNCATE can only be applied to timestamps"),
@@ -104,7 +111,7 @@ impl<P: Implementable> Implementable for Transform<P> {
             },
             Function::ADD => CollectionRelation {
                 variables,
-                tuples: relation.tuples().map(move |tuple| {
+                tuples: tuples.map(move |tuple| {
                     let mut result = 0;
 
                     // summands (vars)
@@ -136,7 +143,7 @@ impl<P: Implementable> Implementable for Transform<P> {
             },
             Function::SUBTRACT => CollectionRelation {
                 variables,
-                tuples: relation.tuples().map(move |tuple| {
+                tuples: tuples.map(move |tuple| {
                     // minuend is either variable or variable, depending on
                     // position in transform
 
@@ -183,6 +190,6 @@ impl<P: Implementable> Implementable for Transform<P> {
             },
         };
 
-        (transformed, shutdown_handle)
+        (Implemented::Collection(transformed), shutdown_handle)
     }
 }
