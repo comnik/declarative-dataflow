@@ -11,12 +11,13 @@ use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 use timely::order::{Product, TotalOrder};
 use timely::progress::Timestamp;
+use timely::worker::AsWorker;
 use timely::PartialOrder;
 
 use timely_sort::Unsigned;
 
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::Threshold;
+use differential_dataflow::operators::{Consolidate, Count, Threshold};
 use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{AsCollection, Collection, Data, Hashable};
 
@@ -688,8 +689,27 @@ impl Implementable for Hector {
                                         prefix.push(*target);
 
                                         // @TODO impl ProposeExtensionMethod for Arranged
-                                        source = source
-                                            .extend(&mut extenders[..])
+                                        let extended = source.extend(&mut extenders[..]);
+
+                                        // Attempt to acquire a logger for tuple counts.
+                                        {
+                                            use crate::logging::{DeclarativeEvent, JoinTuplesEvent};
+
+                                            let register = scope.parent.log_register();
+                                            if let Some(logger) = register.get::<DeclarativeEvent>("declarative") {
+                                                extended
+                                                    .map(|_| ())
+                                                    .consolidate()
+                                                    .count()
+                                                    .inspect(move |((_, count), _, _)| {
+                                                        logger.log(JoinTuplesEvent {
+                                                            cardinality: (*count) as i64,
+                                                        });
+                                                    });
+                                            }
+                                        }
+
+                                        source = extended
                                             .map(|(tuple,v)| {
                                                 let mut out = Vec::with_capacity(tuple.len() + 1);
                                                 out.append(&mut tuple.clone());
