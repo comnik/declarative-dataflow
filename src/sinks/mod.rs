@@ -101,6 +101,11 @@ impl Sinkable<Duration> for Sink {
 
                         if input.frontier.is_empty() {
                             println!("[{:?}] inputs to void sink ceased", t0.elapsed());
+
+                            if let Some(ref mut writer) = &mut writer {
+                                writeln!(writer, "{},{:?}", t0.elapsed().as_millis(), last)
+                                    .unwrap();
+                            }
                         } else if received_input && !input.frontier.frontier().less_equal(&last) {
                             if let Some(ref mut writer) = &mut writer {
                                 writeln!(writer, "{},{:?}", t0.elapsed().as_millis(), last)
