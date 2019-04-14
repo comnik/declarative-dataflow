@@ -19,6 +19,7 @@ pub mod server;
 pub mod sinks;
 pub mod sources;
 pub mod timestamp;
+pub mod logging;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::hash::Hash;

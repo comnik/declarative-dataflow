@@ -17,6 +17,7 @@ use crate::{Aid, Value};
 #[cfg(feature = "csv-source")]
 pub mod csv_file;
 pub mod differential_logging;
+pub mod declarative_logging;
 // pub mod json_file;
 pub mod timely_logging;
 
@@ -51,6 +52,8 @@ pub enum Source {
     TimelyLogging(timely_logging::TimelyLogging),
     /// Differential logging streams
     DifferentialLogging(differential_logging::DifferentialLogging),
+    /// Declarative logging streams
+    DeclarativeLogging(declarative_logging::DeclarativeLogging),
     /// CSV files
     #[cfg(feature = "csv-source")]
     CsvFile(CsvFile),
@@ -73,6 +76,7 @@ impl<S: Scope<Timestamp = std::time::Duration>> Sourceable<S> for Source {
         match *self {
             Source::TimelyLogging(ref source) => source.source(scope, t0, scheduler),
             Source::DifferentialLogging(ref source) => source.source(scope, t0, scheduler),
+            Source::DeclarativeLogging(ref source) => source.source(scope, t0, scheduler),
             #[cfg(feature = "csv-source")]
             Source::CsvFile(ref source) => source.source(scope, t0, scheduler),
             _ => unimplemented!(),

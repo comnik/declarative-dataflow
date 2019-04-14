@@ -1,5 +1,5 @@
 //! Operator and utilities to source data from the underlying
-//! Differential logging streams.
+//! Declarative logging streams.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -13,45 +13,40 @@ use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
 use timely::dataflow::{Scope, Stream};
 use timely::logging::BatchLogger;
 
-use differential_dataflow::logging::DifferentialEvent;
-
+use crate::logging::DeclarativeEvent;
 use crate::server::scheduler::Scheduler;
 use crate::sources::Sourceable;
-use crate::{Aid, Value};
 use crate::{AttributeConfig, InputSemantics};
+use crate::{Aid, Value};
 use Value::{Eid, Number};
 
-/// One or more taps into Differential logging.
+/// One or more taps into Declarative logging.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct DifferentialLogging {
+pub struct DeclarativeLogging {
     /// The log attributes that should be materialized.
     pub attributes: Vec<Aid>,
 }
 
-impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DifferentialLogging {
+impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DeclarativeLogging {
     fn source(
         &self,
         scope: &mut S,
         _t0: Instant,
         _scheduler: Weak<RefCell<Scheduler>>,
-    ) -> Vec<(
-        Aid,
-        AttributeConfig,
-        Stream<S, ((Value, Value), Duration, isize)>,
-    )> {
+    ) -> Vec<(Aid, AttributeConfig, Stream<S, ((Value, Value), Duration, isize)>)> {
         let events = Rc::new(EventLink::new());
         let mut logger = BatchLogger::new(events.clone());
 
         scope
             .log_register()
-            .insert::<DifferentialEvent, _>("differential/arrange", move |time, data| {
+            .insert::<DeclarativeEvent, _>("declarative", move |time, data| {
                 logger.publish_batch(time, data)
             });
 
         let input = Some(events).replay_into(scope);
 
         let mut demux =
-            OperatorBuilder::new("Differential Logging Demux".to_string(), scope.clone());
+            OperatorBuilder::new("Declarative Logging Demux".to_string(), scope.clone());
 
         let mut input = demux.new_input(&input, Pipeline);
 
@@ -82,30 +77,16 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DifferentialLogging {
                         sessions.insert(aid.to_string(), handle.session(&time));
                     }
 
-                    for (time, _worker, datum) in demux_buffer.drain(..) {
+                    for (time, worker, datum) in demux_buffer.drain(..) {
                         match datum {
-                            DifferentialEvent::Batch(x) => {
-                                let operator = Eid((x.operator as u64).into());
-                                let length = Number(x.length as i64);
+                            DeclarativeEvent::JoinTuples(x) => {
+                                let worker = Eid(worker as u64);
+                                let cardinality = Number(x.cardinality as i64);
 
                                 sessions
-                                    .get_mut("differential.event/size")
-                                    .map(|s| s.give(((operator, length), time, 1)));
+                                    .get_mut("declarative.event.join/tuples")
+                                    .map(|s| s.give(((worker, cardinality), time, 1)));
                             }
-                            DifferentialEvent::Merge(x) => {
-                                trace!("[DIFFERENTIAL] {:?}", x);
-
-                                if let Some(complete_size) = x.complete {
-                                    let operator = Eid((x.operator as u64).into());
-                                    let size_diff =
-                                        (complete_size as i64) - (x.length1 + x.length2) as i64;
-
-                                    sessions
-                                        .get_mut("differential.event/size")
-                                        .map(|s| s.give(((operator, Number(size_diff)), time, 1)));
-                                }
-                            }
-                            _ => {}
                         }
                     }
                 });
@@ -114,13 +95,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DifferentialLogging {
 
         self.attributes
             .iter()
-            .map(|aid| {
-                (
-                    aid.to_string(),
-                    AttributeConfig::real_time(InputSemantics::Raw),
-                    streams.remove(aid).unwrap(),
-                )
-            })
+            .map(|aid| (aid.to_string(), AttributeConfig::real_time(InputSemantics::Raw), streams.remove(aid).unwrap()))
             .collect()
     }
 }

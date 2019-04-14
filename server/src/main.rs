@@ -34,6 +34,7 @@ use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
 use declarative_dataflow::sinks::Sinkable;
+use declarative_dataflow::logging::DeclarativeEvent;
 use declarative_dataflow::{Eid, Error, ResultDiff};
 
 /// Server timestamp type.
@@ -787,5 +788,10 @@ fn main() {
         worker
             .log_register()
             .insert::<DifferentialEvent,_>("differential/arrange", move |_time, _data| { });
+
+        worker
+            .log_register()
+            .insert::<DeclarativeEvent,_>("declarative", move |_time, _data| { });
+        
     }).expect("Timely computation did not exit cleanly");
 }
