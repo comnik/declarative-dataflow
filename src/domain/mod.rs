@@ -41,7 +41,7 @@ pub struct Domain<T: Timestamp + Lattice> {
 
 impl<T> Domain<T>
 where
-    T: Timestamp + Lattice + Sub<Output = T> + std::convert::From<Time>,
+    T: Timestamp + Lattice,
 {
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
@@ -169,7 +169,10 @@ where
 
     /// Advances the domain to `next`. Advances all traces
     /// accordingly, depending on their configured slack.
-    pub fn advance_to(&mut self, next: T) -> Result<(), Error> {
+    pub fn advance_to(&mut self, next: T) -> Result<(), Error>
+    where
+        T: Sub<Output = T> + std::convert::From<Time>,
+    {
         if !self.now_at.less_equal(&next) {
             // We can't rewind time.
             Err(Error {
