@@ -23,6 +23,7 @@ use differential_dataflow::{AsCollection, Collection, Data, Hashable};
 
 use crate::binding::{AsBinding, BinaryPredicate, Binding};
 use crate::binding::{BinaryPredicateBinding, ConstantBinding};
+use crate::logging::DeclarativeEvent;
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
 use crate::{Aid, Value, Var};
@@ -506,6 +507,12 @@ impl Implementable for Hector {
                 let mut forward_cache = HashMap::new();
                 let mut reverse_cache = HashMap::new();
 
+                // Attempt to acquire a logger for tuple counts.
+                let logger = {
+                    let register = scope.parent.log_register();
+                    register.get::<DeclarativeEvent>("declarative")
+                };
+
                 // For each AttributeBinding (only AttributeBindings
                 // actually experience change), we construct a delta query
                 // driven by changes to that binding.
@@ -779,22 +786,18 @@ impl Implementable for Hector {
                                         // @TODO impl ProposeExtensionMethod for Arranged
                                         let extended = source.extend(&mut extenders[..]);
 
-                                        // Attempt to acquire a logger for tuple counts.
-                                        {
-                                            use crate::logging::{DeclarativeEvent, JoinTuplesEvent};
-
-                                            let register = scope.parent.log_register();
-                                            if let Some(logger) = register.get::<DeclarativeEvent>("declarative") {
-                                                extended
-                                                    .map(|_| ())
-                                                    .consolidate()
-                                                    .count()
-                                                    .inspect(move |((_, count), _, _)| {
-                                                        logger.log(JoinTuplesEvent {
-                                                            cardinality: (*count) as i64,
-                                                        });
-                                                    });
-                                            }
+                                        if let Some(_) = &logger {
+                                            let worker_index = scope.index();
+                                            let source_attribute = delta_binding.source_attribute.to_string();
+                                            extended
+                                                // .inspect(move |x| { println!("{} extended: {:?}", source_attribute, x); })
+                                                .map(|_| ())
+                                                .consolidate()
+                                                .count()
+                                                .map(move |(_, count)| (Value::Eid(worker_index as u64), Value::Number(count as i64)))
+                                                .leave()
+                                                .leave()
+                                                .inspect(move |x| { println!("{}: {:?}", source_attribute, x); });
                                         }
 
                                         source = extended
