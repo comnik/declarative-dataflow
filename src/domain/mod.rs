@@ -172,8 +172,7 @@ where
         }
     }
 
-    /// Advances the domain to `next`. Advances all traces
-    /// accordingly, depending on their configured slack.
+    // @DEPRECATED in favor of advance_by
     pub fn advance_to(&mut self, next: T) -> Result<(), Error> {
         if !self.now_at.less_equal(&next) {
             // We can't rewind time.
@@ -231,8 +230,77 @@ where
         }
     }
 
+    /// Advances all handles of the domain to its current frontier.
+    pub fn advance_domain_to_source(&mut self) -> Result<(), Error> {
+        let frontier = self.probe.with_frontier(|frontier| (*frontier).to_vec());
+        self.advance_by(&frontier)
+    }
+
+    /// Advances the domain up to the specified frontier. Advances all
+    /// traces accordingly, depending on their configured slack.
+    pub fn advance_by(&mut self, frontier: &[T]) -> Result<(), Error> {
+        if frontier.is_empty() {
+            self.input_sessions.clear();
+        } else if frontier.len() == 1 {
+            for handle in self.input_sessions.values_mut() {
+                handle.advance_to(frontier[0].clone());
+                handle.flush();
+            }
+        } else {
+            unimplemented!();
+        }
+
+        for (aid, config) in self.attributes.iter() {
+            if let Some(ref trace_slack) = config.trace_slack {
+                let slacking_frontier = frontier
+                    .iter()
+                    .cloned()
+                    .map(|t| t - trace_slack.clone().into())
+                    .collect::<Vec<T>>();;
+
+                let forward_index = self.forward.get_mut(aid).unwrap_or_else(|| {
+                    panic!("Configuration available for unknown attribute {}", aid)
+                });
+
+                forward_index.advance_by(&slacking_frontier);
+                forward_index.distinguish_since(&slacking_frontier);
+
+                let reverse_index = self.reverse.get_mut(aid).unwrap_or_else(|| {
+                    panic!("Configuration available for unknown attribute {}", aid)
+                });
+
+                reverse_index.advance_by(&slacking_frontier);
+                reverse_index.distinguish_since(&slacking_frontier);
+            }
+        }
+
+        for (name, config) in self.relations.iter() {
+            if let Some(ref trace_slack) = config.trace_slack {
+                let slacking_frontier = frontier
+                    .iter()
+                    .cloned()
+                    .map(|t| t - trace_slack.clone().into())
+                    .collect::<Vec<T>>();
+
+                let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {
+                    panic!("Configuration available for unknown relation {}", name)
+                });
+
+                trace.advance_by(&slacking_frontier);
+                trace.distinguish_since(&slacking_frontier);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Reports the current timestamp.
     pub fn time(&self) -> &T {
         &self.now_at
+    }
+
+    /// Returns a handle to the domain's input probe.
+    pub fn probe(&self) -> &ProbeHandle<T> {
+        &self.probe
     }
 }
