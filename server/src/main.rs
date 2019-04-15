@@ -733,7 +733,7 @@ fn main() {
                         }
                         Request::CreateAttribute(CreateAttribute { name, config }) => {
                             worker.dataflow::<T, _, _>(|scope| {
-                                if let Err(error) = server.context.internal.create_attribute(&name, config, scope) {
+                                if let Err(error) = server.context.internal.create_transactable_attribute(&name, config, scope) {
                                     send_errors.send((Token(client), error, last_tx)).unwrap();
                                 }
                             });

@@ -19,7 +19,7 @@ fn match_ea_after_input() {
             server
                 .context
                 .internal
-                .create_attribute(":name", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute(":name", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
         });
 
@@ -74,12 +74,16 @@ fn join_after_input() {
             server
                 .context
                 .internal
-                .create_attribute(":transfer/from", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute(
+                    ":transfer/from",
+                    AttributeConfig::tx_time(Raw),
+                    scope,
+                )
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute(":user/id", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute(":user/id", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
         });
 

@@ -420,7 +420,9 @@ impl<Token: Hash + Eq + Copy> Server<u64, Token> {
         let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
 
         for (aid, config, datoms) in attribute_streams.drain(..) {
-            self.context.internal.create_source(&aid, config, &datoms)?;
+            self.context
+                .internal
+                .create_sourced_attribute(&aid, config, &datoms)?;
         }
 
         Ok(())
@@ -438,7 +440,9 @@ impl<Token: Hash + Eq + Copy> Server<std::time::Duration, Token> {
         let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
 
         for (aid, config, datoms) in attribute_streams.drain(..) {
-            self.context.internal.create_source(&aid, config, &datoms)?;
+            self.context
+                .internal
+                .create_sourced_attribute(&aid, config, &datoms)?;
         }
 
         Ok(())

@@ -89,7 +89,11 @@ fn run_transform_cases() {
                     server
                         .context
                         .internal
-                        .create_attribute(dep, AttributeConfig::tx_time(InputSemantics::Raw), scope)
+                        .create_transactable_attribute(
+                            dep,
+                            AttributeConfig::tx_time(InputSemantics::Raw),
+                            scope,
+                        )
                         .unwrap();
                 }
 

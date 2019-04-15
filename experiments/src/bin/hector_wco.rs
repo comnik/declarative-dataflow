@@ -84,7 +84,7 @@ fn main() {
             server
                 .context
                 .internal
-                .create_attribute("edge", AttributeConfig::tx_time(InputSemantics::Raw), scope)
+                .create_transactable_attribute("edge", AttributeConfig::tx_time(InputSemantics::Raw), scope)
                 .unwrap();
 
             server

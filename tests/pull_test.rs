@@ -27,17 +27,17 @@ fn pull_level() {
             server
                 .context
                 .internal
-                .create_attribute("admin?", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("admin?", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("name", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("name", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("age", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("age", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
 
             server
@@ -123,17 +123,17 @@ fn pull_children() {
             server
                 .context
                 .internal
-                .create_attribute("parent/child", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("parent/child", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("name", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("name", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("age", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("age", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
 
             server
@@ -258,27 +258,27 @@ fn pull() {
             server
                 .context
                 .internal
-                .create_attribute("name", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("name", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("join/binding", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("join/binding", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("pattern/e", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("pattern/e", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("pattern/a", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("pattern/a", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("pattern/v", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute("pattern/v", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
 
             server

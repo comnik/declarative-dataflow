@@ -41,7 +41,7 @@ pub struct Domain<T: Timestamp + Lattice> {
 
 impl<T> Domain<T>
 where
-    T: Timestamp + Lattice,
+    T: Timestamp + Lattice + Sub<Output = T> + std::convert::From<Time>,
 {
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
@@ -57,10 +57,9 @@ where
         }
     }
 
-    /// Creates a new collection of (e,v) tuples and indexes it in
-    /// various ways. Stores forward, and reverse indices, as well as
-    /// the input handle in the server state.
-    pub fn create_attribute<S: Scope<Timestamp = T>>(
+    /// Creates a new attribute that can be transacted upon by
+    /// clients.
+    pub fn create_transactable_attribute<S: Scope<Timestamp = T>>(
         &mut self,
         name: &str,
         config: AttributeConfig,
@@ -75,22 +74,24 @@ where
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let (handle, tuples) = scope.new_collection::<(Value, Value), isize>();
+            let (handle, pairs) = scope.new_collection::<(Value, Value), isize>();
 
             self.input_sessions.insert(name.to_string(), handle);
 
-            self.create_source(name, config, &tuples.inner)?;
+            self.create_sourced_attribute(name, config, &pairs.inner)?;
 
             Ok(())
         }
     }
 
-    /// Creates attributes from an external datoms source.
-    pub fn create_source<S: Scope + ScopeParent<Timestamp = T>>(
+    /// Creates attributes from a stream of (entity,value)
+    /// pairs. Attributes created this way can not be transacted upon
+    /// by clients.
+    pub fn create_sourced_attribute<S: Scope + ScopeParent<Timestamp = T>>(
         &mut self,
         name: &str,
         config: AttributeConfig,
-        datoms: &Stream<S, ((Value, Value), T, isize)>,
+        pairs: &Stream<S, ((Value, Value), T, isize)>,
     ) -> Result<(), Error> {
         if self.forward.contains_key(name) {
             Err(Error {
@@ -98,14 +99,18 @@ where
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let tuples = match config.input_semantics {
-                InputSemantics::Raw => datoms.as_collection(),
-                InputSemantics::CardinalityOne => datoms.cardinality_single().as_collection(),
-                InputSemantics::CardinalityMany => {
-                    // Ensure that redundant (e,v) pairs don't cause
-                    // misleading proposals during joining.
-                    datoms.as_collection().distinct()
-                }
+            let tuples = {
+                let unprobed = match config.input_semantics {
+                    InputSemantics::Raw => pairs.as_collection(),
+                    InputSemantics::CardinalityOne => pairs.cardinality_single().as_collection(),
+                    InputSemantics::CardinalityMany => {
+                        // Ensure that redundant (e,v) pairs don't cause
+                        // misleading proposals during joining.
+                        pairs.as_collection().distinct()
+                    }
+                };
+
+                unprobed.probe_with(&mut self.probe)
             };
 
             self.attributes.insert(name.to_string(), config);
@@ -169,10 +174,7 @@ where
 
     /// Advances the domain to `next`. Advances all traces
     /// accordingly, depending on their configured slack.
-    pub fn advance_to(&mut self, next: T) -> Result<(), Error>
-    where
-        T: Sub<Output = T> + std::convert::From<Time>,
-    {
+    pub fn advance_to(&mut self, next: T) -> Result<(), Error> {
         if !self.now_at.less_equal(&next) {
             // We can't rewind time.
             Err(Error {
