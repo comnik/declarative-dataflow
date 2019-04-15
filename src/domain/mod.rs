@@ -74,12 +74,12 @@ where
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let ((handle, cap), tuples) = scope.new_unordered_input::<((Value, Value), T, isize)>();
+            let ((handle, cap), pairs) = scope.new_unordered_input::<((Value, Value), T, isize)>();
             let session = UnorderedSession::from(handle, cap);
 
             self.input_sessions.insert(name.to_string(), session);
 
-            self.create_sourced_attribute(name, config, &tuples)?;
+            self.create_sourced_attribute(name, config, &pairs)?;
 
             Ok(())
         }
