@@ -151,6 +151,66 @@ fn base_patterns() {
 }
 
 #[test]
+fn base_projections() {
+    let data = vec![
+        TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),
+        TxData(1, 100, ":name".to_string(), String("Alias".to_string())),
+        TxData(1, 200, ":name".to_string(), String("Mabel".to_string())),
+    ];
+
+    run_cases(vec![
+        Case {
+            description: "[:find ?e :where [?e :name ?n]]",
+            plan: Plan::Project(Project {
+                variables: vec![0],
+                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![(vec![Eid(100)], 0, 2), (vec![Eid(200)], 0, 1)]],
+        },
+        Case {
+            description: "[:find ?n :where [?e :name ?n]]",
+            plan: Plan::Project(Project {
+                variables: vec![1],
+                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![String("Dipper".to_string())], 0, 1),
+                (vec![String("Alias".to_string())], 0, 1),
+                (vec![String("Mabel".to_string())], 0, 1),
+            ]],
+        },
+        Case {
+            description: "[:find ?e ?n :where [?e :name ?n]]",
+            plan: Plan::Project(Project {
+                variables: vec![0, 1],
+                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![Eid(100), String("Dipper".to_string())], 0, 1),
+                (vec![Eid(100), String("Alias".to_string())], 0, 1),
+                (vec![Eid(200), String("Mabel".to_string())], 0, 1),
+            ]],
+        },
+        Case {
+            description: "[:find ?n ?e :where [?e :name ?n]]",
+            plan: Plan::Project(Project {
+                variables: vec![1, 0],
+                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+            }),
+            transactions: vec![data.clone()],
+            expectations: vec![vec![
+                (vec![String("Dipper".to_string()), Eid(100)], 0, 1),
+                (vec![String("Alias".to_string()), Eid(100)], 0, 1),
+                (vec![String("Mabel".to_string()), Eid(200)], 0, 1),
+            ]],
+        },
+    ]);
+}
+
+#[test]
 fn wco_base_patterns() {
     let data = vec![
         TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),

@@ -767,15 +767,26 @@ where
                     .propose_trace
                     .import_core(&nested.parent, &self.source_attribute);
 
-                let tuples = propose
-                    .enter_at(nested, move |_, _, time| {
-                        let mut forwarded = time.clone();
-                        forwarded.advance_by(&frontier);
-                        Product::new(forwarded, 0)
-                    })
-                    .as_collection(|e, v| vec![e.clone(), v.clone()]);
+                let tuples = propose.enter_at(nested, move |_, _, time| {
+                    let mut forwarded = time.clone();
+                    forwarded.advance_by(&frontier);
+                    Product::new(forwarded, 0)
+                });
 
-                (tuples, ShutdownHandle::from_button(shutdown_propose))
+                let (e, v) = self.variables;
+                let projected = if target_variables == &[e, v] {
+                    tuples.as_collection(|e, v| vec![e.clone(), v.clone()])
+                } else if target_variables == &[v, e] {
+                    tuples.as_collection(|e, v| vec![v.clone(), e.clone()])
+                } else if target_variables == &[e] {
+                    tuples.as_collection(|e, _v| vec![e.clone()])
+                } else if target_variables == &[v] {
+                    tuples.as_collection(|_e, v| vec![v.clone()])
+                } else {
+                    panic!("invalid projection")
+                };
+
+                (projected, ShutdownHandle::from_button(shutdown_propose))
             }
         }
     }
