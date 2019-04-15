@@ -172,7 +172,7 @@ where
         }
     }
 
-    // @DEPRECATED in favor of advance_by
+    /// @DEPRECATED in favor of advance_by
     pub fn advance_to(&mut self, next: T) -> Result<(), Error> {
         if !self.now_at.less_equal(&next) {
             // We can't rewind time.
