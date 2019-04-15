@@ -89,8 +89,13 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
             projected
         };
 
-        let tuples = left
-            .tuples_by_variables(&self.variables)
+        let left_arranged = {
+            let (arranged, shutdown) = left.tuples_by_variables(nested, context, &self.variables);
+            shutdown_handle.merge_with(shutdown);
+            arranged
+        };
+
+        let tuples = left_arranged
             .distinct()
             .antijoin(&right_projected.distinct())
             .map(|(key, tuple)| key.iter().cloned().chain(tuple.iter().cloned()).collect());

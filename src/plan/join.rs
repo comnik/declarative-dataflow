@@ -121,15 +121,20 @@ where
     (Implemented::Collection(relation), shutdown_handle)
 }
 
-fn collection_collection<'b, T, S>(
+fn collection_collection<'b, T, S, I>(
+    nested: &mut Iterative<'b, S, u64>,
+    context: &mut I,
     target_variables: &[Var],
     left: CollectionRelation<'b, S>,
     right: CollectionRelation<'b, S>,
 ) -> (Implemented<'b, S>, ShutdownHandle)
 where
     T: Timestamp + Lattice + TotalOrder,
+    I: ImplContext<T>,
     S: Scope<Timestamp = T>,
 {
+    let mut shutdown_handle = ShutdownHandle::empty();
+
     let variables = target_variables
         .iter()
         .cloned()
@@ -152,7 +157,11 @@ where
         Vec<Value>,
         isize,
         TraceValHandle<Vec<Value>, Vec<Value>, Product<S::Timestamp, u64>, isize>,
-    > = left.tuples_by_variables(&target_variables).arrange();
+    > = {
+        let (arranged, shutdown) = left.tuples_by_variables(nested, context, &target_variables);
+        shutdown_handle.merge_with(shutdown);
+        arranged.arrange()
+    };
 
     let right_arranged: Arranged<
         Iterative<'b, S, u64>,
@@ -160,7 +169,11 @@ where
         Vec<Value>,
         isize,
         TraceValHandle<Vec<Value>, Vec<Value>, Product<S::Timestamp, u64>, isize>,
-    > = right.tuples_by_variables(&target_variables).arrange();
+    > = {
+        let (arranged, shutdown) = right.tuples_by_variables(nested, context, &target_variables);
+        shutdown_handle.merge_with(shutdown);
+        arranged.arrange()
+    };
 
     let tuples = left_arranged.join_core(&right_arranged, |key: &Vec<Value>, v1, v2| {
         Some(
@@ -174,7 +187,7 @@ where
 
     let relation = CollectionRelation { variables, tuples };
 
-    (Implemented::Collection(relation), ShutdownHandle::empty())
+    (Implemented::Collection(relation), shutdown_handle)
 }
 
 fn collection_attribute<'b, T, S, I>(
@@ -217,7 +230,7 @@ where
     };
 
     let (implemented, mut shutdown_handle) =
-        collection_collection(target_variables, left, right_collected);
+        collection_collection(nested, context, target_variables, left, right_collected);
 
     shutdown_handle.add_button(shutdown_validate);
 
@@ -353,7 +366,7 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
                     collection_attribute(nested, context, &self.variables, left, right)
                 }
                 Implemented::Collection(right) => {
-                    collection_collection(&self.variables, left, right)
+                    collection_collection(nested, context, &self.variables, left, right)
                 }
             },
         };
