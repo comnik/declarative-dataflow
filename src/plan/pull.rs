@@ -103,7 +103,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
             } else {
                 let path_attributes = self.path_attributes.clone();
                 let tuples = {
-                    let (tuples, shutdown) = input.projected(nested, context, &self.variables);
+                    let (tuples, shutdown) = input.tuples(nested, context);
                     shutdown_handle.merge_with(shutdown);
 
                     tuples.map(move |tuple| interleave(&tuple, &path_attributes))
@@ -219,14 +219,13 @@ impl<P: Implementable> Implementable for Pull<P> {
                 relation
             };
 
-            let projected = {
-                let (projected, shutdown) =
-                    relation.projected(&mut scope, context, &self.variables);
+            let tuples = {
+                let (tuples, shutdown) = relation.tuples(&mut scope, context);
                 shutdown_handle.merge_with(shutdown);
-                projected
+                tuples
             };
 
-            projected.inner
+            tuples.inner
         });
 
         let tuples = nested.concatenate(streams).as_collection();

@@ -16,7 +16,7 @@ fn pull_level() {
 
         let (e, a, v) = (1, 2, 3);
         let plan = Plan::PullLevel(PullLevel {
-            variables: vec![e, a, v],
+            variables: vec![],
             pull_variable: e,
             plan: Box::new(Plan::MatchAV(e, "admin?".to_string(), Bool(false))),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
@@ -112,7 +112,7 @@ fn pull_children() {
 
         let (parent, child, a, v) = (1, 2, 3, 4);
         let plan = Plan::PullLevel(PullLevel {
-            variables: vec![parent, child, a, v],
+            variables: vec![],
             pull_variable: child,
             plan: Box::new(Plan::MatchA(parent, "parent/child".to_string(), child)),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
