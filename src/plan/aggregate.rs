@@ -76,10 +76,16 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let (relation, shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
+        let (relation, mut shutdown_handle) =
+            self.plan.implement(nested, local_arrangements, context);
 
         // We split the incoming tuples into their (key, value) parts.
-        let tuples = relation.tuples_by_variables(&self.key_variables);
+        let tuples = {
+            let (tuples, shutdown) =
+                relation.tuples_by_variables(nested, context, &self.key_variables);
+            shutdown_handle.merge_with(shutdown);
+            tuples
+        };
 
         // For each aggregation function that is to be applied, we
         // need to determine the index (into the value part of each
