@@ -3,7 +3,6 @@
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
-use std::ops::Sub;
 use std::rc::Rc;
 use std::time::Instant;
 
@@ -22,7 +21,7 @@ use crate::Rule;
 use crate::{
     implement, implement_neu, AttributeConfig, CollectionIndex, RelationHandle, ShutdownHandle,
 };
-use crate::{Aid, Error, Time, TxData, Value};
+use crate::{Aid, Error, Rewind, Time, TxData, Value};
 
 pub mod scheduler;
 use self::scheduler::Scheduler;
@@ -197,7 +196,7 @@ where
 
 impl<T, Token> Server<T, Token>
 where
-    T: Timestamp + Lattice + TotalOrder + Default + Sub<Output = T> + std::convert::From<Time>,
+    T: Timestamp + Lattice + TotalOrder + Default + Rewind,
     Token: Hash + Eq + Copy,
 {
     /// Creates a new server state from a configuration.

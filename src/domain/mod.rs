@@ -2,7 +2,6 @@
 //! semantics.
 
 use std::collections::HashMap;
-use std::ops::Sub;
 
 use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
 use timely::order::TotalOrder;
@@ -15,7 +14,7 @@ use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
 use crate::operators::CardinalitySingle;
-use crate::{Aid, Error, Time, TxData, Value};
+use crate::{Aid, Error, Rewind, TxData, Value};
 use crate::{AttributeConfig, CollectionIndex, InputSemantics, RelationConfig, RelationHandle};
 
 /// A domain manages attributes (and their inputs) that share a
@@ -34,14 +33,14 @@ pub struct Domain<T: Timestamp + Lattice> {
     /// Reverse attribute indices v -> eid.
     pub reverse: HashMap<Aid, CollectionIndex<Value, Value, T>>,
     /// Configuration for relations in this domain.
-    pub relations: HashMap<Aid, RelationConfig<T>>,
+    pub relations: HashMap<Aid, RelationConfig>,
     /// Relation traces.
     pub arrangements: HashMap<Aid, RelationHandle<T>>,
 }
 
 impl<T> Domain<T>
 where
-    T: Timestamp + Lattice + Sub<Output = T> + std::convert::From<Time>,
+    T: Timestamp + Lattice + Rewind,
 {
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
@@ -131,7 +130,7 @@ where
     pub fn register_arrangement(
         &mut self,
         name: String,
-        config: RelationConfig<T>,
+        config: RelationConfig,
         trace: RelationHandle<T>,
     ) {
         self.relations.insert(name.clone(), config);
@@ -193,7 +192,7 @@ where
 
             for (aid, config) in self.attributes.iter() {
                 if let Some(ref trace_slack) = config.trace_slack {
-                    let frontier = &[next.clone() - trace_slack.clone().into()];
+                    let frontier = &[next.rewind(trace_slack.clone())];
 
                     let forward_index = self.forward.get_mut(aid).unwrap_or_else(|| {
                         panic!("Configuration available for unknown attribute {}", aid)
@@ -213,7 +212,7 @@ where
 
             for (name, config) in self.relations.iter() {
                 if let Some(ref trace_slack) = config.trace_slack {
-                    let frontier = &[next.clone() - trace_slack.clone()];
+                    let frontier = &[next.rewind(trace_slack.clone())];
 
                     let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {
                         panic!("Configuration available for unknown relation {}", name)
@@ -254,8 +253,7 @@ where
             if let Some(ref trace_slack) = config.trace_slack {
                 let slacking_frontier = frontier
                     .iter()
-                    .cloned()
-                    .map(|t| t - trace_slack.clone().into())
+                    .map(|t| t.rewind(trace_slack.clone()))
                     .collect::<Vec<T>>();;
 
                 let forward_index = self.forward.get_mut(aid).unwrap_or_else(|| {
@@ -278,8 +276,7 @@ where
             if let Some(ref trace_slack) = config.trace_slack {
                 let slacking_frontier = frontier
                     .iter()
-                    .cloned()
-                    .map(|t| t - trace_slack.clone().into())
+                    .map(|t| t.rewind(trace_slack.clone()))
                     .collect::<Vec<T>>();
 
                 let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {

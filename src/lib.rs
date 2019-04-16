@@ -54,6 +54,7 @@ pub use num_rational::Rational32;
 
 pub use binding::{AsBinding, AttributeBinding, Binding};
 pub use plan::{Hector, ImplContext, Implementable, Plan};
+pub use timestamp::{Rewind, Time};
 
 /// A unique entity identifier.
 pub type Eid = u64;
@@ -111,38 +112,6 @@ impl std::convert::From<Value> for Eid {
             eid
         } else {
             panic!("Value {:?} can't be converted to Eid", v);
-        }
-    }
-}
-
-/// Possible timestamp types.
-///
-/// This enum captures the currently supported timestamp types, and is
-/// the least common denominator for the types of times moved around.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum Time {
-    /// Logical transaction time or sequence numbers.
-    TxId(u64),
-    /// Real time.
-    Real(Duration),
-}
-
-impl std::convert::From<Time> for u64 {
-    fn from(t: Time) -> u64 {
-        if let Time::TxId(time) = t {
-            time
-        } else {
-            panic!("Time {:?} can't be converted to u64", t);
-        }
-    }
-}
-
-impl std::convert::From<Time> for Duration {
-    fn from(t: Time) -> Duration {
-        if let Time::Real(time) = t {
-            time
-        } else {
-            panic!("Time {:?} can't be converted to Duration", t);
         }
     }
 }
@@ -279,9 +248,10 @@ impl AttributeConfig {
     pub fn tx_time(input_semantics: InputSemantics) -> Self {
         AttributeConfig {
             input_semantics,
-            // @TODO make this 0? would have to check that no
-            // dataflows are stalled if registered after inputs are
-            // already available
+            // @TODO It's not super clear yet, whether this can be
+            // 0. There might be an off-by-one error hidden somewhere,
+            // s.t. traces advance to t+1 when we're still accepting
+            // inputs for t+1.
             trace_slack: Some(Time::TxId(1)),
         }
     }
@@ -292,8 +262,7 @@ impl AttributeConfig {
     pub fn real_time(input_semantics: InputSemantics) -> Self {
         AttributeConfig {
             input_semantics,
-            // @TODO make this 0?
-            trace_slack: Some(Time::Real(Duration::from_secs(1))),
+            trace_slack: Some(Time::Real(Duration::from_secs(0))),
         }
     }
 
@@ -309,13 +278,10 @@ impl AttributeConfig {
 
 /// Per-relation semantics.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct RelationConfig<T>
-where
-    T: Timestamp + Lattice,
-{
+pub struct RelationConfig {
     /// How close the arranged trace should follow the computation
     /// frontier.
-    pub trace_slack: Option<T>,
+    pub trace_slack: Option<Time>,
 }
 
 /// Various indices over a collection of (K, V) pairs, required to
