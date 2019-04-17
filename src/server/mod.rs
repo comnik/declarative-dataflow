@@ -4,19 +4,25 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::rc::Rc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
+use timely::communication::Allocate;
+use timely::dataflow::operators::capture::event::link::EventLink;
 use timely::dataflow::{ProbeHandle, Scope};
+use timely::logging::{BatchLogger, Logger, TimelyEvent};
 use timely::order::TotalOrder;
 use timely::progress::Timestamp;
+use timely::worker::Worker;
 
 use differential_dataflow::collection::Collection;
 use differential_dataflow::lattice::Lattice;
+use differential_dataflow::logging::DifferentialEvent;
 
 use crate::domain::Domain;
+use crate::logging::DeclarativeEvent;
 use crate::plan::{ImplContext, Implementable};
 use crate::sinks::Sink;
-use crate::sources::{Source, Sourceable};
+use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
 use crate::{
     implement, implement_neu, AttributeConfig, CollectionIndex, RelationHandle, ShutdownHandle,
@@ -33,6 +39,8 @@ pub struct Config {
     pub port: u16,
     /// Do clients have to call AdvanceDomain explicitely?
     pub manual_advance: bool,
+    /// Should logging streams be created?
+    pub enable_logging: bool,
     /// Should inputs via CLI be accepted?
     pub enable_cli: bool,
     /// Should queries use the optimizer during implementation?
@@ -46,6 +54,7 @@ impl Default for Config {
         Config {
             port: 6262,
             manual_advance: false,
+            enable_logging: false,
             enable_cli: false,
             enable_optimizer: false,
             enable_meta: false,
@@ -149,6 +158,10 @@ where
     pub probe: ProbeHandle<T>,
     /// Scheduler managing deferred operator activations.
     pub scheduler: Rc<RefCell<Scheduler>>,
+    // Link to replayable Timely logging events.
+    timely_events: Option<Rc<EventLink<Duration, (Duration, usize, TimelyEvent)>>>,
+    // Link to replayable Differential logging events.
+    differential_events: Option<Rc<EventLink<Duration, (Duration, usize, DifferentialEvent)>>>,
 }
 
 /// Implementation context.
@@ -208,6 +221,9 @@ where
     /// additionally specified beginning of the computation: an
     /// instant in relation to which all durations will be measured.
     pub fn new_at(config: Config, t0: Instant) -> Self {
+        let timely_events = Some(Rc::new(EventLink::new()));
+        let differential_events = Some(Rc::new(EventLink::new()));
+
         Server {
             config,
             t0,
@@ -221,6 +237,8 @@ where
             shutdown_handles: HashMap::new(),
             probe: ProbeHandle::new(),
             scheduler: Rc::new(RefCell::new(Scheduler::new())),
+            timely_events,
+            differential_events,
         }
     }
 
@@ -338,6 +356,53 @@ where
         Ok(())
     }
 
+    /// Handle a RegisterSource request.
+    pub fn register_source<S: Scope<Timestamp = T>>(
+        &mut self,
+        source: Box<dyn Sourceable<S>>,
+        scope: &mut S,
+    ) -> Result<(), Error> {
+        let timely_logger = scope.log_register().remove("timely");
+
+        let differential_logger = scope.log_register().remove("differential/arrange");
+
+        let context = SourcingContext {
+            t0: self.t0,
+            scheduler: Rc::downgrade(&self.scheduler),
+            timely_events: self.timely_events.clone().unwrap(),
+            differential_events: self.differential_events.clone().unwrap(),
+        };
+
+        // self.timely_events = None;
+        // self.differential_events = None;
+
+        let mut attribute_streams = source.source(scope, context);
+
+        for (aid, config, datoms) in attribute_streams.drain(..) {
+            self.context
+                .internal
+                .create_sourced_attribute(&aid, config, &datoms)?;
+        }
+
+        if let Some(logger) = timely_logger {
+            if let Ok(logger) = logger.downcast::<Logger<TimelyEvent>>() {
+                scope
+                    .log_register()
+                    .insert_logger::<TimelyEvent>("timely", *logger);
+            }
+        }
+
+        if let Some(logger) = differential_logger {
+            if let Ok(logger) = logger.downcast::<Logger<DifferentialEvent>>() {
+                scope
+                    .log_register()
+                    .insert_logger::<DifferentialEvent>("differential/arrange", *logger);
+            }
+        }
+
+        Ok(())
+    }
+
     /// Handle an AdvanceDomain request.
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
@@ -408,41 +473,44 @@ where
     }
 }
 
-#[cfg(not(feature = "real-time"))]
-impl<Token: Hash + Eq + Copy> Server<u64, Token> {
-    /// Handle a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = u64>>(
-        &mut self,
-        source: Box<dyn Sourceable<S>>,
-        scope: &mut S,
-    ) -> Result<(), Error> {
-        let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
+impl<Token> Server<Duration, Token>
+where
+    Token: Hash + Eq + Copy,
+{
+    /// Registers loggers for use in the various logging sources.
+    pub fn enable_logging<A: Allocate>(&self, worker: &mut Worker<A>) -> Result<(), Error> {
+        let mut timely_logger = BatchLogger::new(self.timely_events.clone().unwrap());
+        worker
+            .log_register()
+            .insert::<TimelyEvent, _>("timely", move |time, data| {
+                timely_logger.publish_batch(time, data)
+            });
 
-        for (aid, config, datoms) in attribute_streams.drain(..) {
-            self.context
-                .internal
-                .create_sourced_attribute(&aid, config, &datoms)?;
-        }
+        let mut differential_logger = BatchLogger::new(self.differential_events.clone().unwrap());
+        worker.log_register().insert::<DifferentialEvent, _>(
+            "differential/arrange",
+            move |time, data| {
+                println!("{:?} @ {:?}", data, time);
+                differential_logger.publish_batch(time, data)
+            },
+        );
 
         Ok(())
     }
-}
 
-#[cfg(feature = "real-time")]
-impl<Token: Hash + Eq + Copy> Server<std::time::Duration, Token> {
-    /// Handle a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = std::time::Duration>>(
-        &mut self,
-        source: Box<dyn Sourceable<S>>,
-        scope: &mut S,
-    ) -> Result<(), Error> {
-        let mut attribute_streams = source.source(scope, self.t0, Rc::downgrade(&self.scheduler));
+    /// Unregisters loggers.
+    pub fn shutdown_logging<A: Allocate>(&self, worker: &mut Worker<A>) -> Result<(), Error> {
+        worker
+            .log_register()
+            .insert::<TimelyEvent, _>("timely", move |_time, _data| {});
 
-        for (aid, config, datoms) in attribute_streams.drain(..) {
-            self.context
-                .internal
-                .create_sourced_attribute(&aid, config, &datoms)?;
-        }
+        worker
+            .log_register()
+            .insert::<DifferentialEvent, _>("differential/arrange", move |_time, _data| {});
+
+        worker
+            .log_register()
+            .insert::<DeclarativeEvent, _>("declarative", move |_time, _data| {});
 
         Ok(())
     }

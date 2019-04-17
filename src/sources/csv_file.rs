@@ -1,7 +1,6 @@
 //! Operator and utilities to source data from csv files.
 
-use std::cell::RefCell;
-use std::rc::Weak;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
@@ -9,8 +8,7 @@ use timely::dataflow::{Scope, Stream};
 
 // use chrono::DateTime;
 
-use crate::server::scheduler::Scheduler;
-use crate::sources::Sourceable;
+use crate::sources::{Sourceable, SourcingContext};
 use crate::{Aid, Eid, Value};
 use crate::{AttributeConfig, InputSemantics};
 
@@ -40,8 +38,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
     fn source(
         &self,
         scope: &mut S,
-        t0: Instant,
-        scheduler: Weak<RefCell<Scheduler>>,
+        context: SourcingContext,
     ) -> Vec<(
         Aid,
         AttributeConfig,
@@ -71,7 +68,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
         }
 
         demux.build(move |mut capabilities| {
-            let activator = scope.activator_for(&operator_info.address[..]);
+            let activator = Rc::new(scope.activator_for(&operator_info.address[..]));
 
             let worker_index = scope.index();
             let num_workers = scope.peers();

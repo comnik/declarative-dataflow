@@ -19,10 +19,8 @@ use itertools::Itertools;
 use timely::dataflow::channels::pact::Exchange;
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
-use timely::logging::TimelyEvent;
 use timely::synchronization::Sequencer;
 
-use differential_dataflow::logging::DifferentialEvent;
 use differential_dataflow::operators::Consolidate;
 
 use mio::net::TcpListener;
@@ -34,7 +32,6 @@ use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
 use declarative_dataflow::sinks::Sinkable;
-use declarative_dataflow::logging::DeclarativeEvent;
 use declarative_dataflow::{Eid, Error, ResultDiff};
 
 /// Server timestamp type.
@@ -75,6 +72,7 @@ fn main() {
         "manual-advance",
         "forces clients to call AdvanceDomain explicitely",
     );
+    opts.optflag("", "enable-logging", "enable log event sources");
     opts.optflag("", "enable-cli", "enable the CLI interface");
     opts.optflag("", "enable-history", "enable historical queries");
     opts.optflag("", "enable-optimizer", "enable WCO queries");
@@ -99,6 +97,7 @@ fn main() {
                 Config {
                     port: starting_port + (worker.index() as u16),
                     manual_advance: matches.opt_present("manual-advance"),
+                    enable_logging: matches.opt_present("enable-logging"),
                     enable_cli: matches.opt_present("enable-cli"),
                     enable_optimizer: matches.opt_present("enable-optimizer"),
                     enable_meta: matches.opt_present("enable-meta"),
@@ -108,6 +107,10 @@ fn main() {
 
         // setup interpretation context
         let mut server = Server::<T, Token>::new_at(config.clone(), worker.timer());
+
+        if config.enable_logging {
+            server.enable_logging(worker).unwrap();
+        }
 
         // The server might specify a sequence of requests for
         // setting-up built-in arrangements. We serialize those here
@@ -780,18 +783,8 @@ fn main() {
 
         drop(sequencer);
 
-        // de-register loggers s.t. logging dataflows can shut down.
-        worker
-            .log_register()
-            .insert::<TimelyEvent,_>("timely", move |_time, _data| { });
+        // Shutdown loggers s.t. logging dataflows can shut down.
+        server.shutdown_logging(worker).unwrap();
 
-        worker
-            .log_register()
-            .insert::<DifferentialEvent,_>("differential/arrange", move |_time, _data| { });
-
-        worker
-            .log_register()
-            .insert::<DeclarativeEvent,_>("declarative", move |_time, _data| { });
-        
     }).expect("Timely computation did not exit cleanly");
 }

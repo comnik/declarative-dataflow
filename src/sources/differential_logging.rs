@@ -1,22 +1,18 @@
 //! Operator and utilities to source data from the underlying
 //! Differential logging streams.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::{Rc, Weak};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
+use timely::communication::message::RefOrMut;
 use timely::dataflow::channels::pact::Pipeline;
-use timely::dataflow::operators::capture::event::link::EventLink;
 use timely::dataflow::operators::capture::Replay;
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
 use timely::dataflow::{Scope, Stream};
-use timely::logging::BatchLogger;
 
 use differential_dataflow::logging::DifferentialEvent;
 
-use crate::server::scheduler::Scheduler;
-use crate::sources::Sourceable;
+use crate::sources::{Sourceable, SourcingContext};
 use crate::{Aid, Value};
 use crate::{AttributeConfig, InputSemantics};
 use Value::{Eid, Number};
@@ -32,23 +28,13 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DifferentialLogging {
     fn source(
         &self,
         scope: &mut S,
-        _t0: Instant,
-        _scheduler: Weak<RefCell<Scheduler>>,
+        context: SourcingContext,
     ) -> Vec<(
         Aid,
         AttributeConfig,
         Stream<S, ((Value, Value), Duration, isize)>,
     )> {
-        let events = Rc::new(EventLink::new());
-        let mut logger = BatchLogger::new(events.clone());
-
-        scope
-            .log_register()
-            .insert::<DifferentialEvent, _>("differential/arrange", move |time, data| {
-                logger.publish_batch(time, data)
-            });
-
-        let input = Some(events).replay_into(scope);
+        let input = Some(context.differential_events).replay_into(scope);
 
         let mut demux =
             OperatorBuilder::new("Differential Logging Demux".to_string(), scope.clone());
@@ -74,7 +60,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DifferentialLogging {
                     handles.insert(aid.to_string(), wrapper.activate());
                 }
 
-                input.for_each(|time, data| {
+                input.for_each(|time, data: RefOrMut<Vec<_>>| {
                     data.swap(&mut demux_buffer);
 
                     let mut sessions = HashMap::with_capacity(num_interests);
