@@ -408,7 +408,7 @@ impl Implementable for Plan {
                 )
             }
             Plan::MatchAV(sym1, ref a, ref match_v) => {
-                let (tuples, shutdown_propose) = match context.reverse_index(a) {
+                let (tuples, shutdown_propose) = match context.forward_index(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(index) => {
                         let match_v = match_v.clone();
@@ -422,8 +422,8 @@ impl Implementable for Plan {
                                 forwarded.advance_by(&frontier);
                                 Product::new(forwarded, 0)
                             })
-                            .filter(move |v, _e| *v == match_v)
-                            .as_collection(|_v, e| vec![e.clone()]);
+                            .filter(move |_e, v| *v == match_v)
+                            .as_collection(|e, _v| vec![e.clone()]);
 
                         (tuples, shutdown_propose)
                     }
