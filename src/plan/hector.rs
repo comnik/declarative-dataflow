@@ -1012,9 +1012,19 @@ where
     K: Data,
     V: Data,
     F: Fn(&P) -> K,
-    TrCount: TraceReader<K, (), S::Timestamp, isize> + Clone + 'static,
-    TrPropose: TraceReader<K, V, S::Timestamp, isize> + Clone + 'static,
-    TrValidate: TraceReader<(K, V), (), S::Timestamp, isize> + Clone + 'static,
+    TrCount: TraceReader<Key = K, Val = (), Time = S::Timestamp, R = isize> + Clone + 'static,
+    TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, S::Timestamp, TrCount::R> + 'static,
+    TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, S::Timestamp, TrCount::R> + 'static,
+    TrPropose: TraceReader<Key = K, Val = V, Time = S::Timestamp, R = isize> + Clone + 'static,
+    TrPropose::Batch:
+        BatchReader<TrPropose::Key, TrPropose::Val, S::Timestamp, TrPropose::R> + 'static,
+    TrPropose::Cursor: Cursor<TrPropose::Key, TrPropose::Val, S::Timestamp, TrPropose::R> + 'static,
+    TrValidate:
+        TraceReader<Key = (K, V), Val = (), Time = S::Timestamp, R = isize> + Clone + 'static,
+    TrValidate::Batch:
+        BatchReader<TrValidate::Key, TrValidate::Val, S::Timestamp, TrValidate::R> + 'static,
+    TrValidate::Cursor:
+        Cursor<TrValidate::Key, TrValidate::Val, S::Timestamp, TrValidate::R> + 'static,
 {
     phantom: std::marker::PhantomData<P>,
     indices: LiveIndex<S, K, V, TrCount, TrPropose, TrValidate>,
@@ -1031,9 +1041,19 @@ where
     V: Data + Hash,
     P: Data,
     F: Fn(&P) -> K + 'static,
-    TrCount: TraceReader<K, (), S::Timestamp, isize> + Clone + 'static,
-    TrPropose: TraceReader<K, V, S::Timestamp, isize> + Clone + 'static,
-    TrValidate: TraceReader<(K, V), (), S::Timestamp, isize> + Clone + 'static,
+    TrCount: TraceReader<Key = K, Val = (), Time = S::Timestamp, R = isize> + Clone + 'static,
+    TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, S::Timestamp, TrCount::R> + 'static,
+    TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, S::Timestamp, TrCount::R> + 'static,
+    TrPropose: TraceReader<Key = K, Val = V, Time = S::Timestamp, R = isize> + Clone + 'static,
+    TrPropose::Batch:
+        BatchReader<TrPropose::Key, TrPropose::Val, S::Timestamp, TrPropose::R> + 'static,
+    TrPropose::Cursor: Cursor<TrPropose::Key, TrPropose::Val, S::Timestamp, TrPropose::R> + 'static,
+    TrValidate:
+        TraceReader<Key = (K, V), Val = (), Time = S::Timestamp, R = isize> + Clone + 'static,
+    TrValidate::Batch:
+        BatchReader<TrValidate::Key, TrValidate::Val, S::Timestamp, TrValidate::R> + 'static,
+    TrValidate::Cursor:
+        Cursor<TrValidate::Key, TrValidate::Val, S::Timestamp, TrValidate::R> + 'static,
 {
     type Prefix = P;
     type Extension = V;

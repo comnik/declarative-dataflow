@@ -131,16 +131,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
 
             let e_path: Arranged<
                 Iterative<S, u64>,
-                Value,
-                Vec<Value>,
-                isize,
-                TraceAgent<
-                    Value,
-                    Vec<Value>,
-                    Product<T, u64>,
-                    isize,
-                    OrdValSpine<Value, Vec<Value>, Product<T, u64>, isize>,
-                >,
+                TraceAgent<OrdValSpine<Value, Vec<Value>, Product<T, u64>, isize>>,
             > = paths.map(move |t| (t[e_offset].clone(), t)).arrange();
 
             let mut shutdown_handle = shutdown_handle;

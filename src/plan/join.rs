@@ -153,9 +153,6 @@ where
 
     let left_arranged: Arranged<
         Iterative<'b, S, u64>,
-        Vec<Value>,
-        Vec<Value>,
-        isize,
         TraceValHandle<Vec<Value>, Vec<Value>, Product<S::Timestamp, u64>, isize>,
     > = {
         let (arranged, shutdown) = left.tuples_by_variables(nested, context, &target_variables);
@@ -165,9 +162,6 @@ where
 
     let right_arranged: Arranged<
         Iterative<'b, S, u64>,
-        Vec<Value>,
-        Vec<Value>,
-        isize,
         TraceValHandle<Vec<Value>, Vec<Value>, Product<S::Timestamp, u64>, isize>,
     > = {
         let (arranged, shutdown) = right.tuples_by_variables(nested, context, &target_variables);

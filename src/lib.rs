@@ -42,7 +42,7 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
 use differential_dataflow::trace::wrappers::enter::TraceEnter;
 use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt;
-use differential_dataflow::trace::TraceReader;
+use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{Collection, Data};
 
 use serde::{Serialize, Serializer};
@@ -138,10 +138,10 @@ pub type ResultDiff<T> = (Vec<Value>, T, isize);
 pub struct Datom(pub Eid, pub Aid, pub Value);
 
 /// A trace of values indexed by self.
-pub type TraceKeyHandle<K, T, R> = TraceAgent<K, (), T, R, OrdKeySpine<K, T, R>>;
+pub type TraceKeyHandle<K, T, R> = TraceAgent<OrdKeySpine<K, T, R>>;
 
 /// A trace of (K, V) pairs indexed by key.
-pub type TraceValHandle<K, V, T, R> = TraceAgent<K, V, T, R, OrdValSpine<K, V, T, R>>;
+pub type TraceValHandle<K, V, T, R> = TraceAgent<OrdValSpine<K, V, T, R>>;
 
 /// A handle to an arranged relation.
 pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, T, isize>;
@@ -412,13 +412,22 @@ where
     G::Timestamp: Lattice + Data,
     K: Data,
     V: Data,
-    TrCount: TraceReader<K, (), G::Timestamp, isize> + Clone,
-    TrPropose: TraceReader<K, V, G::Timestamp, isize> + Clone,
-    TrValidate: TraceReader<(K, V), (), G::Timestamp, isize> + Clone,
+    TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
+    TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
+    TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
+    TrPropose: TraceReader<Key = K, Val = V, Time = G::Timestamp, R = isize> + Clone,
+    TrPropose::Batch:
+        BatchReader<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
+    TrPropose::Cursor: Cursor<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
+    TrValidate: TraceReader<Key = (K, V), Val = (), Time = G::Timestamp, R = isize> + Clone,
+    TrValidate::Batch:
+        BatchReader<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
+    TrValidate::Cursor:
+        Cursor<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
 {
-    count: Arranged<G, K, (), isize, TrCount>,
-    propose: Arranged<G, K, V, isize, TrPropose>,
-    validate: Arranged<G, (K, V), (), isize, TrValidate>,
+    count: Arranged<G, TrCount>,
+    propose: Arranged<G, TrPropose>,
+    validate: Arranged<G, TrValidate>,
 }
 
 impl<G, K, V, TrCount, TrPropose, TrValidate> Clone
@@ -428,9 +437,18 @@ where
     G::Timestamp: Lattice + Data,
     K: Data,
     V: Data,
-    TrCount: TraceReader<K, (), G::Timestamp, isize> + Clone,
-    TrPropose: TraceReader<K, V, G::Timestamp, isize> + Clone,
-    TrValidate: TraceReader<(K, V), (), G::Timestamp, isize> + Clone,
+    TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
+    TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
+    TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
+    TrPropose: TraceReader<Key = K, Val = V, Time = G::Timestamp, R = isize> + Clone,
+    TrPropose::Batch:
+        BatchReader<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
+    TrPropose::Cursor: Cursor<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
+    TrValidate: TraceReader<Key = (K, V), Val = (), Time = G::Timestamp, R = isize> + Clone,
+    TrValidate::Batch:
+        BatchReader<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
+    TrValidate::Cursor:
+        Cursor<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
 {
     fn clone(&self) -> Self {
         LiveIndex {
@@ -447,9 +465,18 @@ where
     G::Timestamp: Lattice + Data,
     K: Data,
     V: Data,
-    TrCount: TraceReader<K, (), G::Timestamp, isize> + Clone,
-    TrPropose: TraceReader<K, V, G::Timestamp, isize> + Clone,
-    TrValidate: TraceReader<(K, V), (), G::Timestamp, isize> + Clone,
+    TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
+    TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
+    TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
+    TrPropose: TraceReader<Key = K, Val = V, Time = G::Timestamp, R = isize> + Clone,
+    TrPropose::Batch:
+        BatchReader<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
+    TrPropose::Cursor: Cursor<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
+    TrValidate: TraceReader<Key = (K, V), Val = (), Time = G::Timestamp, R = isize> + Clone,
+    TrValidate::Batch:
+        BatchReader<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
+    TrValidate::Cursor:
+        Cursor<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
 {
     /// Brings the index's traces into the specified scope.
     pub fn enter<'a, TInner>(
@@ -459,9 +486,9 @@ where
         Child<'a, G, TInner>,
         K,
         V,
-        TraceEnter<K, (), G::Timestamp, isize, TrCount, TInner>,
-        TraceEnter<K, V, G::Timestamp, isize, TrPropose, TInner>,
-        TraceEnter<(K, V), (), G::Timestamp, isize, TrValidate, TInner>,
+        TraceEnter<TrCount, TInner>,
+        TraceEnter<TrPropose, TInner>,
+        TraceEnter<TrValidate, TInner>,
     >
     where
         TrCount::Batch: Clone,
@@ -490,9 +517,9 @@ where
         Child<'a, G, TInner>,
         K,
         V,
-        TraceEnterAt<K, (), G::Timestamp, isize, TrCount, TInner, FCount>,
-        TraceEnterAt<K, V, G::Timestamp, isize, TrPropose, TInner, FPropose>,
-        TraceEnterAt<(K, V), (), G::Timestamp, isize, TrValidate, TInner, FValidate>,
+        TraceEnterAt<TrCount, TInner, FCount>,
+        TraceEnterAt<TrPropose, TInner, FPropose>,
+        TraceEnterAt<TrValidate, TInner, FValidate>,
     >
     where
         TrCount::Batch: Clone,
