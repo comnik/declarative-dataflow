@@ -20,8 +20,10 @@ use timely::dataflow::channels::pact::Exchange;
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
 use timely::synchronization::Sequencer;
+use timely::logging::{Logger, TimelyEvent};
 
 use differential_dataflow::operators::Consolidate;
+use differential_dataflow::logging::DifferentialEvent;
 
 use mio::net::TcpListener;
 use mio::*;
@@ -627,9 +629,19 @@ fn main() {
                                 let send_results_handle = send_results.clone();
                                 let send_tenant_results_handle = send_tenant_results.clone();
 
+                                let disable_logging = req.disable_logging.unwrap_or(false);
+                                let mut timely_logger = None;
+                                let mut differential_logger = None;
+                                
+                                if disable_logging {
+                                    info!("Disabling logging");
+                                    timely_logger = worker.log_register().remove("timely");
+                                    differential_logger = worker.log_register().remove("differential/arrange");
+                                }
+
                                 worker.dataflow::<T, _, _>(|scope| {
                                     let name = req.name.clone();
-
+                                    
                                     match server.interest(&req.name, scope) {
                                         Err(error) => {
                                             send_errors.send((Token(client), error, last_tx)).unwrap();
@@ -719,6 +731,24 @@ fn main() {
                                         }
                                     }
                                 });
+
+                                if disable_logging {
+                                    if let Some(logger) = timely_logger {
+                                        if let Ok(logger) = logger.downcast::<Logger<TimelyEvent>>() {
+                                            worker
+                                                .log_register()
+                                                .insert_logger::<TimelyEvent>("timely", *logger);
+                                        }
+                                    }
+
+                                    if let Some(logger) = differential_logger {
+                                        if let Ok(logger) = logger.downcast::<Logger<DifferentialEvent>>() {
+                                            worker
+                                                .log_register()
+                                                .insert_logger::<DifferentialEvent>("differential/arrange", *logger);
+                                        }
+                                    }
+                                }
                             }
                         }
                         Request::Uninterest(name) => server.uninterest(Token(command.client), &name),

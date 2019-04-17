@@ -78,6 +78,8 @@ pub struct Interest {
     pub granularity: Option<u64>,
     /// An optional sink configuration.
     pub sink: Option<Sink>,
+    /// Whether or not to log events from this dataflow.
+    pub disable_logging: Option<bool>,
 }
 
 /// A request with the intent of synthesising one or more new rules
@@ -487,14 +489,11 @@ where
             });
 
         let mut differential_logger = BatchLogger::new(self.differential_events.clone().unwrap());
-        worker.log_register().insert::<DifferentialEvent, _>(
-            "differential/arrange",
-            move |time, data| {
-                println!("{:?} @ {:?}", data, time);
+        worker
+            .log_register()
+            .insert::<DifferentialEvent, _>("differential/arrange", move |time, data| {
                 differential_logger.publish_batch(time, data)
-            },
-        );
-
+            });
         Ok(())
     }
 
