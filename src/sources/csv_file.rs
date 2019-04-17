@@ -97,7 +97,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                     );
                     capabilities.drain(..);
                 } else {
-                    // let mut fuel = 256;
+                    let mut fuel = 256;
 
                     let mut handles = Vec::with_capacity(schema.len());
                     for wrapper in wrappers.iter_mut() {
@@ -109,7 +109,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                         sessions.push(handle.session(capabilities.get(idx).unwrap()));
                     }
 
-                    let time = Instant::now().duration_since(t0);
+                    let time = Instant::now().duration_since(context.t0);
 
                     info!("Ingesting at {:?}", time);
 
@@ -158,10 +158,10 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
 
                         datum_index += 1;
 
-                        // fuel -= 1;
-                        // if fuel <= 0 {
-                        //     break;
-                        // }
+                        fuel -= 1;
+                        if fuel <= 0 {
+                            break;
+                        }
                     }
 
                     if iterator.reader().is_done() {
@@ -171,7 +171,13 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                         );
                         capabilities.drain(..);
                     } else {
-                        // cap.downgrade(..);
+                        // Incorporate processing time in downgrade
+                        let time = Instant::now().duration_since(context.t0);
+
+                        for cap in capabilities.iter_mut() {
+                            cap.downgrade(&time);
+                        }
+
                         activator.activate();
                     }
                 }
