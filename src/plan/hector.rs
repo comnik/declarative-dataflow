@@ -834,7 +834,7 @@ impl Implementable for Hector {
 
             let relation = CollectionRelation {
                 variables: self.variables.clone(),
-                tuples: joined.distinct(),
+                tuples: joined,
             };
 
             (Implemented::Collection(relation), shutdown_handle)
