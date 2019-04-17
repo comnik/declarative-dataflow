@@ -19,11 +19,11 @@ use itertools::Itertools;
 use timely::dataflow::channels::pact::Exchange;
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
-use timely::synchronization::Sequencer;
 use timely::logging::{Logger, TimelyEvent};
+use timely::synchronization::Sequencer;
 
-use differential_dataflow::operators::Consolidate;
 use differential_dataflow::logging::DifferentialEvent;
+use differential_dataflow::operators::Consolidate;
 
 use mio::net::TcpListener;
 use mio::*;
@@ -632,7 +632,7 @@ fn main() {
                                 let disable_logging = req.disable_logging.unwrap_or(false);
                                 let mut timely_logger = None;
                                 let mut differential_logger = None;
-                                
+
                                 if disable_logging {
                                     info!("Disabling logging");
                                     timely_logger = worker.log_register().remove("timely");
@@ -641,7 +641,7 @@ fn main() {
 
                                 worker.dataflow::<T, _, _>(|scope| {
                                     let name = req.name.clone();
-                                    
+
                                     match server.interest(&req.name, scope) {
                                         Err(error) => {
                                             send_errors.send((Token(client), error, last_tx)).unwrap();
