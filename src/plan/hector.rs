@@ -1,4 +1,9 @@
-//! WCO expression plan, integrating the following work:
+//! Worst-case optimal, n-way joins.
+//!
+//! This is an extended implementation of Delta-BiGJoin, by Ammar, McSherry,
+//! Salihoglu, and Joglekar ([paper](https://dl.acm.org/citation.cfm?id=3199520)).
+//!
+//! The overall structure and the CollectionExtender implementation is adapted from:
 //! https://github.com/frankmcsherry/differential-dataflow/tree/master/dogsdogsdogs
 
 use std::collections::{HashMap, HashSet, VecDeque};
