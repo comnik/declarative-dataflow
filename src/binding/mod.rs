@@ -67,16 +67,6 @@ impl Binding {
         Binding::Attribute(AttributeBinding {
             variables: (e, v),
             source_attribute: name.to_string(),
-            default: None,
-        })
-    }
-
-    /// Creates an AttributeBinding with a default value.
-    pub fn optional_attribute(e: Var, name: &str, v: Var, default: Value) -> Binding {
-        Binding::Attribute(AttributeBinding {
-            variables: (e, v),
-            source_attribute: name.to_string(),
-            default: Some(default),
         })
     }
 
@@ -146,8 +136,6 @@ pub struct AttributeBinding {
     pub variables: (Var, Var),
     /// The name of a globally known attribute backing this binding.
     pub source_attribute: Aid,
-    /// Default value of this attribute.
-    pub default: Option<Value>,
 }
 
 impl AsBinding for AttributeBinding {

@@ -731,7 +731,6 @@ impl Implementable for Hector {
                                                                         phantom: std::marker::PhantomData,
                                                                         indices: forward,
                                                                         key_selector: Rc::new(move |prefix: &Vec<Value>| prefix.index(offset)),
-                                                                        fallback: other.default,
                                                                     })
                                                                 );
                                                             },
@@ -771,7 +770,6 @@ impl Implementable for Hector {
                                                                         phantom: std::marker::PhantomData,
                                                                         indices: reverse,
                                                                         key_selector: Rc::new(move |prefix: &Vec<Value>| prefix.index(offset)),
-                                                                        fallback: other.default,
                                                                     })
                                                                 );
                                                             },
@@ -1029,7 +1027,6 @@ where
     phantom: std::marker::PhantomData<P>,
     indices: LiveIndex<S, K, V, TrCount, TrPropose, TrValidate>,
     key_selector: Rc<F>,
-    fallback: Option<V>,
 }
 
 impl<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate> PrefixExtender<S>
@@ -1085,8 +1082,6 @@ where
 
         let mut buffer1 = Vec::new();
         let mut buffer2 = Vec::new();
-
-        let fallback = self.fallback.clone();
 
         // TODO: This should be a custom operator with no connection from the second input to the output.
         Some(
@@ -1159,20 +1154,6 @@ where
                                                         ));
                                                     }
                                                 }
-                                            } else if let Some(value) = &fallback {
-                                                if old_count > 1 {
-                                                    session.give((
-                                                        (prefix.clone(), 1, index),
-                                                        time.clone(),
-                                                        *diff,
-                                                    ));
-                                                } else {
-                                                    session.give((
-                                                        (prefix.clone(), old_count, old_index),
-                                                        time.clone(),
-                                                        *diff,
-                                                    ));
-                                                }
                                             }
                                             *diff = 0;
                                         }
@@ -1214,8 +1195,6 @@ where
         let exchange = Exchange::new(move |update: &(P, S::Timestamp, isize)| {
             logic1(&update.0).hashed().as_u64()
         });
-
-        let fallback = self.fallback.clone();
 
         prefixes
             .inner
@@ -1282,12 +1261,6 @@ where
                                                     cursor.step_val(&storage);
                                                 }
                                                 cursor.rewind_vals(&storage);
-                                            } else if let Some(value) = &fallback {
-                                                session.give((
-                                                    (prefix.clone(), value.clone()),
-                                                    time.clone(),
-                                                    *diff,
-                                                ));
                                             }
                                             *diff = 0;
                                         }
@@ -1336,8 +1309,6 @@ where
                 .hashed()
                 .as_u64()
         });
-
-        let fallback = self.fallback.clone();
 
         extensions
             .inner
@@ -1397,14 +1368,6 @@ where
                                                 });
                                                 // assert!(count >= 0);
                                                 if count > 0 {
-                                                    session.give((
-                                                        prefix.clone(),
-                                                        time.clone(),
-                                                        *diff,
-                                                    ));
-                                                }
-                                            } else if let Some(value) = &fallback {
-                                                if *value == prefix.1 {
                                                     session.give((
                                                         prefix.clone(),
                                                         time.clone(),

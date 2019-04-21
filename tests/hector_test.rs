@@ -164,8 +164,7 @@ fn ordering() {
 
 #[test]
 fn run_hector_cases() {
-    let mut cases: Vec<Case> =
-        vec![
+    let mut cases: Vec<Case> = vec![
         Case {
             description: "[?e :name ?n]",
             plan: Hector {
@@ -348,40 +347,16 @@ fn run_hector_cases() {
                     TxData(1, 100, ":age".to_string(), Number(12)),
                     TxData(1, 100, ":admin?".to_string(), Bool(false)),
                 ]],
-                expectations: vec![vec![
-                    (
-                        vec![
-                            Eid(100),
-                            String("Dipper".to_string()),
-                            Number(12),
-                            Bool(true),
-                        ],
-                        0,
-                        1,
-                    ),
-                ]],
-            }
-        },
-        {
-            let (e, n, admin) = (1, 2, 3);
-            Case {
-                description: "[?e :name ?n] [?e :admin? ?admin :else false]",
-                plan: Hector {
-                    variables: vec![e, n, admin],
-                    bindings: vec![
-                        Binding::attribute(e, ":name", n),
-                        Binding::optional_attribute(e, ":admin?", admin, Bool(false)),
+                expectations: vec![vec![(
+                    vec![
+                        Eid(100),
+                        String("Dipper".to_string()),
+                        Number(12),
+                        Bool(true),
                     ],
-                },
-                transactions: vec![vec![
-                    TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),
-                    TxData(1, 100, ":admin?".to_string(), Bool(true)),
-                    TxData(1, 200, ":name".to_string(), String("Mabel".to_string())),
-                ]],
-                expectations: vec![vec![
-                    (vec![Eid(100), String("Dipper".to_string()), Bool(true)], 0, 1),
-                    (vec![Eid(200), String("Mabel".to_string()), Bool(false)], 0, 1),
-                ]],
+                    0,
+                    1,
+                )]],
             }
         },
     ];

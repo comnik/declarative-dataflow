@@ -371,7 +371,6 @@ impl Implementable for Plan {
                 let binding = AttributeBinding {
                     variables: (e, v),
                     source_attribute: a.to_string(),
-                    default: None,
                 };
 
                 (Implemented::Attribute(binding), ShutdownHandle::empty())
