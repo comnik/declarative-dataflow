@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
 use timely::order::TotalOrder;
+use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
 
 use differential_dataflow::input::{Input, InputSession};
@@ -24,8 +25,8 @@ pub struct Domain<T: Timestamp + Lattice> {
     now_at: T,
     /// Input handles to attributes in this domain.
     input_sessions: HashMap<String, InputSession<T, (Value, Value), isize>>,
-    /// The probe keeping track of progress in this domain.
-    probe: ProbeHandle<T>,
+    /// The probe keeping track of source progress in this domain.
+    input_probe: ProbeHandle<T>,
     /// Configurations for attributes in this domain.
     pub attributes: HashMap<Aid, AttributeConfig>,
     /// Forward attribute indices eid -> v.
@@ -47,7 +48,7 @@ where
         Domain {
             now_at: start_at,
             input_sessions: HashMap::new(),
-            probe: ProbeHandle::new(),
+            input_probe: ProbeHandle::new(),
             attributes: HashMap::new(),
             forward: HashMap::new(),
             reverse: HashMap::new(),
@@ -109,7 +110,7 @@ where
                     }
                 };
 
-                unprobed.probe_with(&mut self.probe)
+                unprobed.probe_with(&mut self.input_probe)
             };
 
             self.attributes.insert(name.to_string(), config);
@@ -183,6 +184,13 @@ where
                 ),
             })
         } else if !self.now_at.eq(&next) {
+            trace!(
+                "Advancing domain to {:?} ({} attributes, {} handles)",
+                next,
+                self.attributes.len(),
+                self.input_sessions.len()
+            );
+
             self.now_at = next.clone();
 
             for handle in self.input_sessions.values_mut() {
@@ -231,22 +239,34 @@ where
 
     /// Advances all handles of the domain to its current frontier.
     pub fn advance_domain_to_source(&mut self) -> Result<(), Error> {
-        let frontier = self.probe.with_frontier(|frontier| (*frontier).to_vec());
+        let frontier = self
+            .input_probe
+            .with_frontier(|frontier| (*frontier).to_vec());
         self.advance_by(&frontier)
     }
 
     /// Advances the domain up to the specified frontier. Advances all
     /// traces accordingly, depending on their configured slack.
     pub fn advance_by(&mut self, frontier: &[T]) -> Result<(), Error> {
-        if frontier.is_empty() {
-            self.input_sessions.clear();
-        } else if frontier.len() == 1 {
-            for handle in self.input_sessions.values_mut() {
-                handle.advance_to(frontier[0].clone());
-                handle.flush();
+        let frontier = AntichainRef::new(frontier);
+
+        if !frontier.less_equal(&self.now_at) {
+            // Input handles have fallen behind the sources and need
+            // to be advanced, such as not to block progress.
+            if frontier.is_empty() {
+                self.input_sessions.clear();
+            } else if frontier.len() == 1 {
+                for handle in self.input_sessions.values_mut() {
+                    handle.advance_to(frontier[0].clone());
+                    handle.flush();
+                }
+                self.now_at = frontier[0].clone();
+            } else {
+                // @TODO This can only happen with partially ordered
+                // domain timestamps (e.g. bitemporal mode). We will
+                // worry about when it happens.
+                unimplemented!();
             }
-        } else {
-            unimplemented!();
         }
 
         for (aid, config) in self.attributes.iter() {
@@ -297,7 +317,7 @@ where
     }
 
     /// Returns a handle to the domain's input probe.
-    pub fn probe(&self) -> &ProbeHandle<T> {
-        &self.probe
+    pub fn input_probe(&self) -> &ProbeHandle<T> {
+        &self.input_probe
     }
 }
