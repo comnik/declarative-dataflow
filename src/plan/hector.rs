@@ -789,19 +789,19 @@ impl Implementable for Hector {
                                         // @TODO impl ProposeExtensionMethod for Arranged
                                         let extended = source.extend(&mut extenders[..]);
 
-                                        if let Some(_) = &logger {
-                                            let worker_index = scope.index();
-                                            let source_attribute = delta_binding.source_attribute.to_string();
-                                            extended
-                                                // .inspect(move |x| { println!("{} extended: {:?}", source_attribute, x); })
-                                                .map(|_| ())
-                                                .consolidate()
-                                                .count()
-                                                .map(move |(_, count)| (Value::Eid(worker_index as u64), Value::Number(count as i64)))
-                                                .leave()
-                                                .leave()
-                                                .inspect(move |x| { println!("{}: {:?}", source_attribute, x); });
-                                        }
+                                        // if let Some(_) = &logger {
+                                        //     let worker_index = scope.index();
+                                        //     let source_attribute = delta_binding.source_attribute.to_string();
+                                        //     extended
+                                        //         // .inspect(move |x| { println!("{} extended: {:?}", source_attribute, x); })
+                                        //         .map(|_| ())
+                                        //         .consolidate()
+                                        //         .count()
+                                        //         .map(move |(_, count)| (Value::Eid(worker_index as u64), Value::Number(count as i64)))
+                                        //         .leave()
+                                        //         .leave()
+                                        //         .inspect(move |x| { println!("{}: {:?}", source_attribute, x); });
+                                        // }
 
                                         source = extended
                                             .map(|(tuple,v)| {

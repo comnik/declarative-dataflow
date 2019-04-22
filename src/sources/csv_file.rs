@@ -89,7 +89,29 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
             let eid_offset = self.eid_offset;
             let timestamp_offset = self.timestamp_offset;
 
+            let mut delayed = false;
+
             move |_frontiers| {
+                if !delayed {
+                    delayed = true;
+
+                    let time =
+                        Duration::new(Instant::now().duration_since(context.t0).as_secs() + 10, 0);
+
+                    for cap in capabilities.iter_mut() {
+                        cap.downgrade(&time);
+                    }
+
+                    context
+                        .scheduler
+                        .upgrade()
+                        .unwrap()
+                        .borrow_mut()
+                        .schedule_after(Duration::from_secs(10), Rc::downgrade(&activator));
+
+                    return;
+                }
+
                 if iterator.reader().is_done() {
                     info!(
                         "[WORKER {}] read {} out of {} datums",

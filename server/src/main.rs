@@ -211,6 +211,8 @@ fn main() {
         // Sequence counter for commands.
         let mut next_tx: TxId = 0;
 
+        let mut last_advance = Instant::now();
+
         let mut shutdown = false;
 
         while !shutdown {
@@ -789,24 +791,35 @@ fn main() {
                     }
                 }
 
-                if !config.manual_advance {
-                    #[cfg(not(feature = "real-time"))]
-                    let next = next_tx as u64;
+                // if !config.manual_advance {
+                //     #[cfg(not(feature = "real-time"))]
+                //     let next = next_tx as u64;
 
-                    #[cfg(feature = "real-time")]
-                    let next = Instant::now().duration_since(worker.timer());
+                //     #[cfg(feature = "real-time")]
+                //     let next = Instant::now().duration_since(worker.timer());
 
-                    if let Err(error) = server.advance_domain(None, next) {
-                        send_errors.send((Token(client), error, last_tx)).unwrap();
-                    }
-                }
+                //     if let Err(error) = server.advance_domain(None, next) {
+                //         send_errors.send((Token(client), error, last_tx)).unwrap();
+                //     }
+                // }
+            }
+
+            if last_advance.elapsed().as_secs() >= 10 {
+                #[cfg(feature = "real-time")]
+                let next = Instant::now().duration_since(worker.timer());
+                server.advance_domain(None, next).unwrap();
+                last_advance = Instant::now();
             }
 
             // ensure work continues, even if no queries registered,
             // s.t. the sequencer continues issuing commands
             worker.step();
 
-            worker.step_while(|| server.is_any_outdated());
+            let mut step_count = 0;
+            while server.is_any_outdated() && step_count <= 10 {
+                worker.step();
+                step_count += 1;
+            }
         }
 
         info!("[WORKER {}] shutting down", worker.index());
