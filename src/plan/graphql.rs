@@ -212,3 +212,18 @@ impl Implementable for GraphQl {
 //         // squash_nested(nested)
 //     },
 //         |_key| 1)
+
+// /// Register a GraphQL query
+// pub fn register_graph_ql(&mut self, query: String, name: &str) {
+//     use crate::plan::{GraphQl, Plan};
+
+//     let req = Register {
+//         rules: vec![Rule {
+//             name: name.to_string(),
+//             plan: Plan::GraphQl(GraphQl::new(query)),
+//         }],
+//         publish: vec![name.to_string()],
+//     };
+
+//     self.register(req).unwrap();
+// }

@@ -454,22 +454,6 @@ where
         false
     }
 
-    /// Register a GraphQL query
-    #[cfg(feature = "graphql")]
-    pub fn register_graph_ql(&mut self, query: String, name: &str) {
-        use crate::plan::{GraphQl, Plan};
-
-        let req = Register {
-            rules: vec![Rule {
-                name: name.to_string(),
-                plan: Plan::GraphQl(GraphQl::new(query)),
-            }],
-            publish: vec![name.to_string()],
-        };
-
-        self.register(req).unwrap();
-    }
-
     /// Helper for registering, publishing, and indicating interest in
     /// a single, named query. Used for testing.
     pub fn test_single<S: Scope<Timestamp = T>>(
