@@ -1,10 +1,13 @@
-//! Input sessions for unordered collection updates.
+//! Translation of Differential's input sessions to unordered
+//! collection updates.
 //!
-//! Although users can directly manipulate timely dataflow streams as collection inputs,
-//! the `UnorderedSession` type can make this more efficient and less error-prone. Specifically,
-//! the type batches up updates with their logical times and ships them with coarsened
-//! timely dataflow capabilities, exposing more concurrency to the operator implementations
-//! than are evident from the logical times, which appear to execute in sequence.
+//! Although users can directly manipulate timely dataflow streams as
+//! collection inputs, the `UnorderedSession` type can make this more
+//! efficient and less error-prone. Specifically, the type batches up
+//! updates with their logical times and ships them with coarsened
+//! timely dataflow capabilities, exposing more concurrency to the
+//! operator implementations than are evident from the logical times,
+//! which appear to execute in sequence.
 
 use timely::dataflow::operators::unordered_input::{ActivateCapability, UnorderedHandle};
 use timely::progress::Timestamp;
@@ -14,53 +17,12 @@ use differential_dataflow::Data;
 
 /// An input session wrapping a single timely dataflow capability.
 ///
-/// Each timely dataflow message has a corresponding capability, which is a logical time in the
-/// timely dataflow system. Differential dataflow updates can happen at a much higher rate than
-/// timely dataflow's progress tracking infrastructure supports, because the logical times are
-/// promoted to data and updates are batched together. The `UnorderedSession` type does this batching.
-///
-/// # Examples
-///
-/// ```
-/// extern crate timely;
-/// extern crate differential_dataflow;
-///
-/// use timely::Configuration;
-/// use differential_dataflow::input::Input;
-///
-/// fn main() {
-///     ::timely::execute(Configuration::Thread, |worker| {
-///
-///			let (mut handle, probe) = worker.dataflow(|scope| {
-///				// create input handle and collection.
-///				let (handle, data) = scope.new_collection_from(0 .. 10);
-///         	let probe = data.map(|x| x * 2)
-///				            	.inspect(|x| println!("{:?}", x))
-///				            	.probe();
-///				(handle, probe)
-///     	});
-///
-///			handle.insert(3);
-///			handle.advance_to(1);
-///			handle.insert(5);
-///			handle.advance_to(2);
-///			handle.flush();
-///
-///			while probe.less_than(handle.time()) {
-///				worker.step();
-///			}
-///
-///			handle.remove(5);
-///			handle.advance_to(3);
-///			handle.flush();
-///
-///			while probe.less_than(handle.time()) {
-///				worker.step();
-///			}
-///
-///		}).unwrap();
-/// }
-/// ```
+/// Each timely dataflow message has a corresponding capability, which
+/// is a logical time in the timely dataflow system. Differential
+/// dataflow updates can happen at a much higher rate than timely
+/// dataflow's progress tracking infrastructure supports, because the
+/// logical times are promoted to data and updates are batched
+/// together. The `InputSession` type does this batching.
 pub struct UnorderedSession<T: Timestamp + Clone, D: Data, R: Monoid> {
     time: T,
     cap: ActivateCapability<T>,
