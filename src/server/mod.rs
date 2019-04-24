@@ -131,9 +131,6 @@ pub enum Request {
     Setup,
     /// Requests orderly shutdown of the system.
     Shutdown,
-    /// Register a query specified as GraphQL.
-    #[cfg(feature = "graphql")]
-    GraphQl(String, String),
 }
 
 /// Server context maintaining globally registered arrangements and
