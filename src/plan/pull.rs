@@ -75,7 +75,14 @@ fn interleave(values: &[Value], constants: &[Aid]) -> Vec<Value> {
 
 impl<P: Implementable> Implementable for PullLevel<P> {
     fn dependencies(&self) -> Dependencies {
-        Dependencies::none()
+        let mut dependencies = self.plan.dependencies();
+
+        for attribute in &self.pull_attributes {
+            let attribute_dependencies = Dependencies::attribute(&attribute);
+            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
+        }
+
+        dependencies
     }
 
     fn implement<'b, T, I, S>(
@@ -186,7 +193,12 @@ impl<P: Implementable> Implementable for PullLevel<P> {
 
 impl<P: Implementable> Implementable for Pull<P> {
     fn dependencies(&self) -> Dependencies {
-        Dependencies::none()
+        let mut dependencies = Dependencies::none();
+        for path in self.paths.iter() {
+            dependencies = Dependencies::merge(dependencies, path.dependencies());
+        }
+
+        dependencies
     }
 
     fn implement<'b, T, I, S>(
