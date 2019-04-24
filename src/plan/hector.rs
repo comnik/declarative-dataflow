@@ -334,7 +334,7 @@ impl Hector {
         context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice + TotalOrder,
+        T: Timestamp + Lattice,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {

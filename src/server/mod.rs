@@ -10,7 +10,6 @@ use timely::communication::Allocate;
 use timely::dataflow::operators::capture::event::link::EventLink;
 use timely::dataflow::{ProbeHandle, Scope};
 use timely::logging::{BatchLogger, Logger, TimelyEvent};
-use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 use timely::worker::Worker;
 
@@ -473,6 +472,7 @@ where
             Ok(relation) => relation.probe_with(&mut self.probe),
         }
     }
+}
 
 impl<Token> Server<Duration, Token>
 where
@@ -493,6 +493,7 @@ where
             .insert::<DifferentialEvent, _>("differential/arrange", move |time, data| {
                 differential_logger.publish_batch(time, data)
             });
+
         Ok(())
     }
 

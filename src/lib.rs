@@ -611,7 +611,7 @@ pub struct CollectionRelation<'a, G: Scope> {
 
 impl<'a, G: Scope> AsBinding for CollectionRelation<'a, G>
 where
-    G::Timestamp: Lattice + Data + TotalOrder,
+    G::Timestamp: Lattice + Data,
 {
     fn variables(&self) -> Vec<Var> {
         self.variables.clone()
@@ -735,7 +735,7 @@ where
 impl<'a, G, I> Relation<'a, G, I> for AttributeBinding
 where
     G: Scope,
-    G::Timestamp: Lattice + Data + TotalOrder,
+    G::Timestamp: Lattice + Data,
     I: ImplContext<G::Timestamp>,
 {
     fn tuples(
@@ -848,7 +848,7 @@ where
 
 impl<'a, G: Scope> AsBinding for Implemented<'a, G>
 where
-    G::Timestamp: Lattice + Data + TotalOrder,
+    G::Timestamp: Lattice + Data,
 {
     fn variables(&self) -> Vec<Var> {
         match self {
@@ -884,7 +884,7 @@ where
 impl<'a, G, I> Relation<'a, G, I> for Implemented<'a, G>
 where
     G: Scope,
-    G::Timestamp: Lattice + Data + TotalOrder,
+    G::Timestamp: Lattice + Data,
     I: ImplContext<G::Timestamp>,
 {
     fn tuples(

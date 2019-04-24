@@ -3,9 +3,8 @@
 
 use std::collections::HashMap;
 
-use timely::dataflow::operators::UnorderedInput;
+use timely::dataflow::operators::{Probe, UnorderedInput};
 use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
-use timely::order::TotalOrder;
 use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
 
@@ -99,7 +98,7 @@ where
             Ok(())
         }
     }
-    
+
     /// Creates an attribute that can be transacted upon by clients.
     pub fn create_transactable_attribute<S: Scope<Timestamp = T>>(
         &mut self,
@@ -107,13 +106,13 @@ where
         config: AttributeConfig,
         scope: &mut S,
     ) -> Result<(), Error> {
-        let (session, pairs) = {
+        let pairs = {
             let ((handle, cap), pairs) = scope.new_unordered_input::<((Value, Value), T, isize)>();
             let session = UnorderedSession::from(handle, cap);
 
             self.input_sessions.insert(name.to_string(), session);
 
-            (session, pairs)
+            pairs
         };
 
         // We do not want to probe transactable attributes, because
