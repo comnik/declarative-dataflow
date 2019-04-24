@@ -5,10 +5,6 @@ use std::collections::{HashMap, HashSet};
 use std::hash::Hash;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
-#[cfg(feature="graphql")]
-use std::collections::BTreeMap;
-#[cfg(feature="graphql")]
-use std::cmp::{Ordering, PartialOrd, PartialEq};
 
 use timely::communication::Allocate;
 use timely::dataflow::operators::capture::event::link::EventLink;
@@ -23,7 +19,7 @@ use differential_dataflow::logging::DifferentialEvent;
 
 use crate::domain::Domain;
 use crate::logging::DeclarativeEvent;
-use crate::plan::{ImplContext, Implementable};
+use crate::plan::{self, ImplContext, Implementable};
 use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
@@ -464,7 +460,7 @@ where
         let req = Register {
             rules: vec![Rule {
                 name: name.to_string(),
-                plan: Plan::GraphQl(plan::GraphQl::new(query)),
+                plan: plan::Plan::GraphQl(plan::GraphQl::new(query)),
             }],
             publish: vec![name.to_string()],
         };

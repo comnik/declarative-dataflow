@@ -1,9 +1,17 @@
 //! GraphQL expression plan.
 
-use graphql_parser::parse_query;
-use graphql_parser::query::{Definition, Selection, SelectionSet, OperationDefinition, Document};
+use timely::dataflow::scopes::child::Iterative;
+use timely::dataflow::Scope;
+use timely::progress::Timestamp;
 
-use crate::plan::{Plan, ImplContext, Implementable, PullLevel};
+use differential_dataflow::lattice::Lattice;
+
+use graphql_parser::parse_query;
+use graphql_parser::query::{Definition, Document, OperationDefinition, Selection, SelectionSet};
+
+use crate::plan::{Dependencies, ImplContext, Implementable};
+use crate::plan::{Plan, Pull, PullLevel};
+use crate::{Implemented, ShutdownHandle, VariableMap};
 
 /// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -70,6 +78,7 @@ fn selection_set_to_paths(
         let pull_level = PullLevel {
             pull_attributes,
             path_attributes: parent_path.to_vec(),
+            pull_variable: 0,
             variables,
             plan,
         };
@@ -114,6 +123,52 @@ fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
     result
 }
 
+/// Converts a vector of paths to a GraphQL-like nested value.
+pub fn paths_to_nested(paths: Vec<Vec<declarative_dataflow::Value>>) -> Value {
+    let mut acc = map::Map::new();
+    for mut path in paths {
+        let mut current_map = &mut acc;
+        let last_val = path.pop().unwrap();
+
+        if let declarative_dataflow::Value::Aid(last_key) = path.pop().unwrap() {
+            for attribute in path {
+                let attr: String;
+                match attribute {
+                    declarative_dataflow::Value::Aid(x) => attr = x,
+                    declarative_dataflow::Value::Eid(x) => attr = x.to_string(),
+                    _ => unreachable!(),
+                };
+
+                let entry = current_map
+                    .entry(attr)
+                    .or_insert_with(|| Value::Object(map::Map::new()));
+
+                *entry = match entry {
+                    Value::Object(m) => Value::Object(std::mem::replace(m, map::Map::new())),
+                    Value::Array(_) => unreachable!(),
+                    _ => Value::Object(map::Map::new()),
+                };
+
+                match entry {
+                    Value::Object(m) => current_map = m,
+                    _ => unreachable!(),
+                };
+            }
+
+            match current_map.get(&last_key) {
+                Some(Value::Object(_)) => (),
+                _ => {
+                    current_map.insert(last_key, json!(last_val));
+                }
+            };
+        } else {
+            unreachable!();
+        }
+    }
+
+    Value::Object(acc)
+}
+
 impl Implementable for GraphQl {
     fn dependencies(&self) -> Dependencies {
         let mut dependencies = Dependencies::none();
@@ -130,9 +185,9 @@ impl Implementable for GraphQl {
         nested: &mut Iterative<'b, S, u64>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
         context: &mut I,
-    ) -> (CollectionRelation<'b, S>, ShutdownHandle)
+    ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice + TotalOrder,
+        T: Timestamp + Lattice,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
@@ -145,3 +200,15 @@ impl Implementable for GraphQl {
         parsed.implement(nested, local_arrangements, context)
     }
 }
+
+// relation
+//     .inner
+//     .map(|x| ((), x))
+//     .inspect(|x| { println!("{:?}", x); })
+//     .aggregate::<_,Vec<_>,_,_,_>(
+//         |_key, (path, _time, _diff), acc| { acc.push(path); },
+//         |_key, paths| {
+//         paths_to_nested(paths)
+//         // squash_nested(nested)
+//     },
+//         |_key| 1)

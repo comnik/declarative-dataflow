@@ -367,6 +367,8 @@ fn pull() {
 #[cfg(feature = "graphql")]
 #[test]
 fn graph_ql() {
+    use declarative_dataflow::plan::GraphQl;
+
     timely::execute_directly(|worker| {
         let mut server = Server::<u64, u64>::new(Default::default());
         let (send_results, results) = channel();
@@ -377,17 +379,17 @@ fn graph_ql() {
             server
                 .context
                 .internal
-                .create_attribute("parent/child", Raw, scope)
+                .create_transactable_attribute("parent/child", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("name", Raw, scope)
+                .create_transactable_attribute("name", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
             server
                 .context
                 .internal
-                .create_attribute("age", Raw, scope)
+                .create_transactable_attribute("age", AttributeConfig::tx_time(Raw), scope)
                 .unwrap();
 
             server

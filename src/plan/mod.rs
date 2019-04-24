@@ -26,6 +26,8 @@ pub mod aggregate;
 pub mod aggregate_neu;
 pub mod antijoin;
 pub mod filter;
+#[cfg(feature = "graphql")]
+pub mod graphql;
 pub mod hector;
 pub mod join;
 pub mod project;
@@ -39,14 +41,14 @@ pub use self::aggregate::{Aggregate, AggregationFn};
 pub use self::aggregate_neu::{Aggregate, AggregationFn};
 pub use self::antijoin::Antijoin;
 pub use self::filter::{Filter, Predicate};
+#[cfg(feature = "graphql")]
+pub use self::graphql::GraphQl;
 pub use self::hector::Hector;
 pub use self::join::Join;
 pub use self::project::Project;
 pub use self::pull::{Pull, PullLevel};
 pub use self::transform::{Function, Transform};
 pub use self::union::Union;
-#[cfg(feature = "graphql")]
-pub use self::graphql::GraphQl;
 
 static ID: AtomicUsize = AtomicUsize::new(0);
 static SYM: AtomicUsize = AtomicUsize::new(0);
@@ -231,7 +233,7 @@ impl Plan {
             Plan::NameExpr(ref variables, ref _name) => variables.clone(),
             Plan::Pull(ref pull) => pull.variables.clone(),
             Plan::PullLevel(ref path) => path.variables.clone(),
-            Plan::GraphQl(ref q) => q.variables.clone(),
+            Plan::GraphQl(_) => unimplemented!(),
         }
     }
 }
@@ -498,7 +500,7 @@ impl Implementable for Plan {
             }
             Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
             Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
-            #[cfg(feature="graphql")]
+            #[cfg(feature = "graphql")]
             Plan::GraphQl(ref query) => query.implement(nested, local_arrangements, context),
         }
     }
