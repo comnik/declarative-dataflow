@@ -19,7 +19,7 @@ use differential_dataflow::logging::DifferentialEvent;
 
 use crate::domain::Domain;
 use crate::logging::DeclarativeEvent;
-use crate::plan::{self, ImplContext, Implementable};
+use crate::plan::{ImplContext, Implementable};
 use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
@@ -457,10 +457,12 @@ where
     /// Register a GraphQL query
     #[cfg(feature = "graphql")]
     pub fn register_graph_ql(&mut self, query: String, name: &str) {
+        use crate::plan::{GraphQl, Plan};
+
         let req = Register {
             rules: vec![Rule {
                 name: name.to_string(),
-                plan: plan::Plan::GraphQl(plan::GraphQl::new(query)),
+                plan: Plan::GraphQl(GraphQl::new(query)),
             }],
             publish: vec![name.to_string()],
         };

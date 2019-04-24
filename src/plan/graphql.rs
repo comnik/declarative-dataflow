@@ -65,22 +65,18 @@ fn selection_set_to_paths(
     // parent_path handles root path case
     if !pull_attributes.is_empty() && !parent_path.is_empty() {
         // for root, we expect a NameExpr that puts the pulled IDs in the v position
-        let plan;
-        if at_root {
-            plan = Box::new(Plan::NameExpr(
-                vec![0, 1],
-                parent_path.last().unwrap().to_string(),
-            ));
+        let plan = if at_root {
+            Plan::NameExpr(vec![0, 1], parent_path.last().unwrap().to_string())
         } else {
-            plan = Box::new(Plan::MatchA(0, parent_path.last().unwrap().to_string(), 1));
-        }
+            Plan::MatchA(0, parent_path.last().unwrap().to_string(), 1)
+        };
 
         let pull_level = PullLevel {
             pull_attributes,
             path_attributes: parent_path.to_vec(),
-            pull_variable: 0,
+            pull_variable: 1,
             variables,
-            plan,
+            plan: Box::new(plan),
         };
         result.push(pull_level);
     }
@@ -124,41 +120,45 @@ fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
 }
 
 /// Converts a vector of paths to a GraphQL-like nested value.
-pub fn paths_to_nested(paths: Vec<Vec<declarative_dataflow::Value>>) -> Value {
-    let mut acc = map::Map::new();
+pub fn paths_to_nested(paths: Vec<Vec<crate::Value>>) -> serde_json::Value {
+    use crate::Value::{Aid, Eid};
+    use serde_json::map::Map;
+
+    let mut acc = Map::new();
     for mut path in paths {
         let mut current_map = &mut acc;
         let last_val = path.pop().unwrap();
 
-        if let declarative_dataflow::Value::Aid(last_key) = path.pop().unwrap() {
+        if let Aid(last_key) = path.pop().unwrap() {
             for attribute in path {
-                let attr: String;
-                match attribute {
-                    declarative_dataflow::Value::Aid(x) => attr = x,
-                    declarative_dataflow::Value::Eid(x) => attr = x.to_string(),
+                let attr = match attribute {
+                    Aid(x) => x,
+                    Eid(x) => x.to_string(),
                     _ => unreachable!(),
                 };
 
                 let entry = current_map
                     .entry(attr)
-                    .or_insert_with(|| Value::Object(map::Map::new()));
+                    .or_insert_with(|| serde_json::Value::Object(Map::new()));
 
                 *entry = match entry {
-                    Value::Object(m) => Value::Object(std::mem::replace(m, map::Map::new())),
-                    Value::Array(_) => unreachable!(),
-                    _ => Value::Object(map::Map::new()),
+                    serde_json::Value::Object(m) => {
+                        serde_json::Value::Object(std::mem::replace(m, Map::new()))
+                    }
+                    serde_json::Value::Array(_) => unreachable!(),
+                    _ => serde_json::Value::Object(Map::new()),
                 };
 
                 match entry {
-                    Value::Object(m) => current_map = m,
+                    serde_json::Value::Object(m) => current_map = m,
                     _ => unreachable!(),
                 };
             }
 
             match current_map.get(&last_key) {
-                Some(Value::Object(_)) => (),
+                Some(serde_json::Value::Object(_)) => (),
                 _ => {
-                    current_map.insert(last_key, json!(last_val));
+                    current_map.insert(last_key, serde_json::json!(last_val));
                 }
             };
         } else {
@@ -166,7 +166,7 @@ pub fn paths_to_nested(paths: Vec<Vec<declarative_dataflow::Value>>) -> Value {
         }
     }
 
-    Value::Object(acc)
+    serde_json::Value::Object(acc)
 }
 
 impl Implementable for GraphQl {

@@ -25,18 +25,19 @@ log = "0.4"
 env_logger = "0.5.6"
 num-rational = { version = "0.2", features = ["std", "serde"] }
 timely_sort = "0.1.6"
-graphql-parser = { version = "0.2.2", optional = true }
+
 serde_json = { version = "1", optional = true }
 csv = { version = "1", optional = true }
 chrono = { version = "0.4", optional = true }
 uuid = { version = "0.7", features = ["serde"], optional = true }
+graphql-parser = { version = "0.2.2", optional = true }
 
 [features]
 real-time = []
 set-semantics = []
 csv-source = ["csv", "chrono"]
 json-source = ["serde_json", "chrono"]
-graphql = ["graphql-parser"]
+graphql = ["graphql-parser", "serde_json"]
 
 [profile.release]
 opt-level = 3

@@ -233,6 +233,7 @@ impl Plan {
             Plan::NameExpr(ref variables, ref _name) => variables.clone(),
             Plan::Pull(ref pull) => pull.variables.clone(),
             Plan::PullLevel(ref path) => path.variables.clone(),
+            #[cfg(feature = "graphql")]
             Plan::GraphQl(_) => unimplemented!(),
         }
     }
@@ -257,6 +258,7 @@ impl Implementable for Plan {
             Plan::NameExpr(_, ref name) => Dependencies::name(name),
             Plan::Pull(ref pull) => pull.dependencies(),
             Plan::PullLevel(ref path) => path.dependencies(),
+            #[cfg(feature = "graphql")]
             Plan::GraphQl(ref q) => q.dependencies(),
         }
     }
