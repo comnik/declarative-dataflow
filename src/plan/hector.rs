@@ -22,7 +22,7 @@ use timely::PartialOrder;
 use timely_sort::Unsigned;
 
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::{Consolidate, Count, Threshold};
+use differential_dataflow::operators::{Consolidate, Count};
 use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{AsCollection, Collection, Data, Hashable};
 

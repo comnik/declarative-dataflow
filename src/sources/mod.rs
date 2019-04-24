@@ -104,19 +104,12 @@ impl<S: Scope<Timestamp = u64>> Sourceable<S> for Source {
     fn source(
         &self,
         _scope: &mut S,
-        context: SourcingContext,
+        _context: SourcingContext,
     ) -> Vec<(
         Aid,
         AttributeConfig,
         Stream<S, ((Value, Value), u64, isize)>,
     )> {
-        match *self {
-            // Source::TimelyLogging(ref source) => source.source(scope, context),
-            // Source::DifferentialLogging(ref source) => source.source(scope, context),
-            // #[cfg(feature = "csv-source")]
-            // Source::CsvFile(ref source) => source.source(scope, context),
-            // Source::JsonFile(ref source) => source.source(scope, context),
-            _ => unimplemented!(),
-        }
+        unimplemented!();
     }
 }

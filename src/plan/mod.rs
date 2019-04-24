@@ -46,8 +46,8 @@ pub use self::pull::{Pull, PullLevel};
 pub use self::transform::{Function, Transform};
 pub use self::union::Union;
 
-static ID: AtomicUsize = atomic::ATOMIC_USIZE_INIT;
-static SYM: AtomicUsize = atomic::ATOMIC_USIZE_INIT;
+static ID: AtomicUsize = AtomicUsize::new(0);
+static SYM: AtomicUsize = AtomicUsize::new(0);
 
 /// @FIXME
 pub fn next_id() -> Eid {

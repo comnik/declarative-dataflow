@@ -93,7 +93,7 @@ impl Sinkable<Duration> for Sink {
                 let sunk = stream.unary_frontier(pact, "TheVoid", move |_cap, _info| {
                     move |input, _output: &mut OutputHandle<_, ResultDiff<Duration>, _>| {
                         let mut received_input = false;
-                        input.for_each(|time, data| {
+                        input.for_each(|_time, data| {
                             data.swap(&mut buffer);
                             received_input = !buffer.is_empty();
                             buffer.clear();
