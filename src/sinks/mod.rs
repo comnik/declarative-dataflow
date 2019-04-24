@@ -8,7 +8,6 @@ use timely::dataflow::channels::pact::ParallelizationContract;
 use timely::dataflow::operators::generic::Operator;
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::{Scope, Stream};
-use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
@@ -24,7 +23,7 @@ pub use self::csv_file::CsvFile;
 /// An external system that wants to receive result diffs.
 pub trait Sinkable<T>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    T: Timestamp + Lattice,
 {
     /// Creates a timely operator reading from the source andn
     /// producing inputs.

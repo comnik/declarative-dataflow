@@ -3,12 +3,11 @@
 
 use std::collections::HashMap;
 
+use timely::dataflow::operators::{Probe, UnorderedInput};
 use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
-use timely::order::TotalOrder;
 use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
 
-use differential_dataflow::input::{Input, InputSession};
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
@@ -18,13 +17,16 @@ use crate::operators::CardinalitySingle;
 use crate::{Aid, Error, Rewind, TxData, Value};
 use crate::{AttributeConfig, CollectionIndex, InputSemantics, RelationConfig, RelationHandle};
 
+mod unordered_session;
+use unordered_session::UnorderedSession;
+
 /// A domain manages attributes (and their inputs) that share a
 /// timestamp semantics (e.g. come from the same logical source).
 pub struct Domain<T: Timestamp + Lattice> {
     /// The current timestamp.
     now_at: T,
     /// Input handles to attributes in this domain.
-    input_sessions: HashMap<String, InputSession<T, (Value, Value), isize>>,
+    input_sessions: HashMap<String, UnorderedSession<T, (Value, Value), isize>>,
     /// The probe keeping track of source progress in this domain.
     input_probe: ProbeHandle<T>,
     /// Configurations for attributes in this domain.
@@ -57,37 +59,10 @@ where
         }
     }
 
-    /// Creates a new attribute that can be transacted upon by
-    /// clients.
-    pub fn create_transactable_attribute<S: Scope<Timestamp = T>>(
-        &mut self,
-        name: &str,
-        config: AttributeConfig,
-        scope: &mut S,
-    ) -> Result<(), Error>
-    where
-        T: TotalOrder,
-    {
-        if self.forward.contains_key(name) {
-            Err(Error {
-                category: "df.error.category/conflict",
-                message: format!("An attribute of name {} already exists.", name),
-            })
-        } else {
-            let (handle, pairs) = scope.new_collection::<(Value, Value), isize>();
-
-            self.input_sessions.insert(name.to_string(), handle);
-
-            self.create_sourced_attribute(name, config, &pairs.inner)?;
-
-            Ok(())
-        }
-    }
-
-    /// Creates attributes from a stream of (entity,value)
-    /// pairs. Attributes created this way can not be transacted upon
-    /// by clients.
-    pub fn create_sourced_attribute<S: Scope + ScopeParent<Timestamp = T>>(
+    /// Creates an attribute from a stream of (key,value)
+    /// pairs. Applies operators to enforce input semantics, registers
+    /// the attribute configuration, and installs appropriate indices.
+    fn create_attribute<S: Scope + ScopeParent<Timestamp = T>>(
         &mut self,
         name: &str,
         config: AttributeConfig,
@@ -99,20 +74,17 @@ where
                 message: format!("An attribute of name {} already exists.", name),
             })
         } else {
-            let tuples = {
-                let unprobed = match config.input_semantics {
-                    InputSemantics::Raw => pairs.as_collection(),
-                    InputSemantics::CardinalityOne => pairs.cardinality_single().as_collection(),
-                    InputSemantics::CardinalityMany => {
-                        // Ensure that redundant (e,v) pairs don't cause
-                        // misleading proposals during joining.
-                        pairs.as_collection().distinct()
-                    }
-                };
-
-                unprobed.probe_with(&mut self.input_probe)
+            let tuples = match config.input_semantics {
+                InputSemantics::Raw => pairs.as_collection(),
+                InputSemantics::CardinalityOne => pairs.cardinality_single().as_collection(),
+                // Ensure that redundant (e,v) pairs don't cause
+                // misleading proposals during joining.
+                InputSemantics::CardinalityMany => pairs.as_collection().distinct(),
             };
 
+            // This is crucial. If we forget to install the attribute
+            // configuration, its traces will be ignored when
+            // advancing the domain.
             self.attributes.insert(name.to_string(), config);
 
             let forward = CollectionIndex::index(&name, &tuples);
@@ -125,6 +97,46 @@ where
 
             Ok(())
         }
+    }
+
+    /// Creates an attribute that can be transacted upon by clients.
+    pub fn create_transactable_attribute<S: Scope<Timestamp = T>>(
+        &mut self,
+        name: &str,
+        config: AttributeConfig,
+        scope: &mut S,
+    ) -> Result<(), Error> {
+        let pairs = {
+            let ((handle, cap), pairs) = scope.new_unordered_input::<((Value, Value), T, isize)>();
+            let session = UnorderedSession::from(handle, cap);
+
+            self.input_sessions.insert(name.to_string(), session);
+
+            pairs
+        };
+
+        // We do not want to probe transactable attributes, because
+        // the domain epoch is authoritative for them.
+        self.create_attribute(name, config, &pairs)?;
+
+        Ok(())
+    }
+
+    /// Creates an attribute that is controlled by a source and thus
+    /// can not be transacted upon by clients.
+    pub fn create_sourced_attribute<S: Scope + ScopeParent<Timestamp = T>>(
+        &mut self,
+        name: &str,
+        config: AttributeConfig,
+        pairs: &Stream<S, ((Value, Value), T, isize)>,
+    ) -> Result<(), Error> {
+        // We need to install a probe on source-fed attributes in
+        // order to determine their progress.
+        let probed_pairs = pairs.probe_with(&mut self.input_probe);
+
+        self.create_attribute(name, config, &probed_pairs)?;
+
+        Ok(())
     }
 
     /// Inserts a new named relation.

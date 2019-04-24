@@ -6,7 +6,7 @@ use std::sync::atomic::{self, AtomicUsize};
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
-use timely::order::{Product, TotalOrder};
+use timely::order::Product;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
@@ -63,7 +63,7 @@ pub fn gensym() -> Var {
 /// implementation of plans.
 pub trait ImplContext<T>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    T: Timestamp + Lattice,
 {
     /// Returns the definition for the rule of the given name.
     fn rule(&self, name: &str) -> Option<&Rule>;
@@ -167,7 +167,7 @@ pub trait Implementable {
         context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice + TotalOrder,
+        T: Timestamp + Lattice,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>;
 }
@@ -331,7 +331,7 @@ impl Implementable for Plan {
         context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice + TotalOrder,
+        T: Timestamp + Lattice,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {

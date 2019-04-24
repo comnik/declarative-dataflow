@@ -3,7 +3,7 @@
 use timely::dataflow::operators::Concatenate;
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
-use timely::order::{Product, TotalOrder};
+use timely::order::Product;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
@@ -85,7 +85,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
         context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice + TotalOrder,
+        T: Timestamp + Lattice,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
@@ -196,7 +196,7 @@ impl<P: Implementable> Implementable for Pull<P> {
         context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice + TotalOrder,
+        T: Timestamp + Lattice,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {

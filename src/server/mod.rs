@@ -10,7 +10,6 @@ use timely::communication::Allocate;
 use timely::dataflow::operators::capture::event::link::EventLink;
 use timely::dataflow::{ProbeHandle, Scope};
 use timely::logging::{BatchLogger, Logger, TimelyEvent};
-use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 use timely::worker::Worker;
 
@@ -138,7 +137,7 @@ pub enum Request {
 /// input handles.
 pub struct Server<T, Token>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    T: Timestamp + Lattice,
     Token: Hash + Eq + Copy,
 {
     /// Server configuration.
@@ -169,7 +168,7 @@ where
 /// Implementation context.
 pub struct Context<T>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    T: Timestamp + Lattice,
 {
     /// Representation of named rules.
     pub rules: HashMap<Aid, Rule>,
@@ -181,7 +180,7 @@ where
 
 impl<T> ImplContext<T> for Context<T>
 where
-    T: Timestamp + Lattice + TotalOrder,
+    T: Timestamp + Lattice,
 {
     fn rule(&self, name: &str) -> Option<&Rule> {
         self.rules.get(name)
@@ -211,7 +210,7 @@ where
 
 impl<T, Token> Server<T, Token>
 where
-    T: Timestamp + Lattice + TotalOrder + Default + Rewind,
+    T: Timestamp + Lattice + Default + Rewind,
     Token: Hash + Eq + Copy,
 {
     /// Creates a new server state from a configuration.
@@ -494,6 +493,7 @@ where
             .insert::<DifferentialEvent, _>("differential/arrange", move |time, data| {
                 differential_logger.publish_batch(time, data)
             });
+
         Ok(())
     }
 

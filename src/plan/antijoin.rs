@@ -2,7 +2,6 @@
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
-use timely::order::TotalOrder;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
@@ -52,7 +51,7 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
         context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice + TotalOrder,
+        T: Timestamp + Lattice,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {

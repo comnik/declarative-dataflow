@@ -44,6 +44,9 @@ type T = u64;
 #[cfg(feature = "real-time")]
 type T = Duration;
 
+// use declarative_dataflow::timestamp::pair::Pair;
+// type T = Pair<Duration, u64>;
+
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
 const TENANT_RESULTS: Token = Token(usize::MAX - 3);
@@ -111,6 +114,7 @@ fn main() {
         let mut server = Server::<T, Token>::new_at(config.clone(), worker.timer());
 
         if config.enable_logging {
+            #[cfg(feature = "real-time")]
             server.enable_logging(worker).unwrap();
         }
 
@@ -814,6 +818,7 @@ fn main() {
         drop(sequencer);
 
         // Shutdown loggers s.t. logging dataflows can shut down.
+        #[cfg(feature = "real-time")]
         server.shutdown_logging(worker).unwrap();
 
     }).expect("Timely computation did not exit cleanly");
