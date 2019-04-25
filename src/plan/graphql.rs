@@ -33,6 +33,14 @@ impl GraphQl {
     }
 }
 
+/// Takes a GraphQL `SelectionSet` and recursively transforms it into `PullLevel`s.
+///
+/// A `SelectionSet` consists of multiple items. We're interested in items of type
+/// `Field`, which might contain a nested `SelectionSet` themselves. We iterate through
+/// each field and construct (1) a parent path, which describes how to traverse to the
+/// current nesting level ("vertical"), and (2) pull attributes, which describe the
+/// attributes pulled at the current nesting level ("horizontal"); only attributes at
+/// the lowest nesting level can be part of a `PullLevel`'s `pull_attributes`.
 fn selection_set_to_paths(
     selection_set: &SelectionSet,
     parent_path: &Vec<String>,
@@ -42,16 +50,21 @@ fn selection_set_to_paths(
     let mut pull_attributes = vec![];
     let variables = vec![];
 
+    // 1. Collect Fields and potentially recur.
     for item in &selection_set.items {
         match item {
             Selection::Field(field) => {
+                // at lowest nesting level
                 if field.selection_set.items.is_empty() {
+                    // "horizontal" path
                     pull_attributes.push(field.name.to_string());
                 }
 
+                // "vertical" path to this nesting level
                 let mut new_parent_path = parent_path.to_vec();
                 new_parent_path.push(field.name.to_string());
 
+                // recur
                 result.extend(selection_set_to_paths(
                     &field.selection_set,
                     &new_parent_path,
@@ -62,12 +75,14 @@ fn selection_set_to_paths(
         }
     }
 
-    // parent_path handles root path case
+    // 2. Construct the current level's `PullLevel`.
     if !pull_attributes.is_empty() && !parent_path.is_empty() {
-        // for root, we expect a NameExpr that puts the pulled IDs in the v position
         let plan = if at_root {
+            // If we're looking at the root of the GraphQL query, we need to push
+            // the pulled IDs into the v position.
             Plan::NameExpr(vec![0, 1], parent_path.last().unwrap().to_string())
         } else {
+            // Otherwise, we transform into a simple [?e a ?v] clause.
             Plan::MatchA(0, parent_path.last().unwrap().to_string(), 1)
         };
 
@@ -84,7 +99,9 @@ fn selection_set_to_paths(
     result
 }
 
-/// converts an ast to paths
+/// Inbound direction: Parse the provided GraphQL query ast into
+/// pull paths, which will then be used downstream to query data.
+///
 /// The structure of a typical parsed ast looks like this:
 /// ```
 /// Document {
@@ -119,18 +136,34 @@ fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
     result
 }
 
-/// Converts a vector of paths to a GraphQL-like nested value.
+/// Outbound direction: Transform the provided query result paths into a
+/// GraphQL-like / JSONy nested value to be provided to the user.
 pub fn paths_to_nested(paths: Vec<Vec<crate::Value>>) -> serde_json::Value {
     use crate::Value::{Aid, Eid};
     use serde_json::map::Map;
 
     let mut acc = Map::new();
+
+    // `paths` has the structure `[[aid/eid val aid/eid val last-aid last-val], ...]`
+    // Starting from the result map `acc`, for each path, we want to navigate down the
+    // map, optionally creating intermediate map levels if they don't exist yet, and finally
+    // insert `last-val` at the lowest level.
+    //
+    // In short: We're rebuilding Clojure's `assoc-in` here: `(assoc-in acc (pop path) (peek path))`
     for mut path in paths {
         let mut current_map = &mut acc;
         let last_val = path.pop().unwrap();
 
         if let Aid(last_key) = path.pop().unwrap() {
+
+            // If there are already values for the looked at attribute, we obtain
+            // a reference to it. Otherwise, we create a new `Map` and obtain a
+            // reference to it, which will be used in the next iteration.
+            // We repeat this process of traversing down the map and optionally creating
+            // new map levels until we've run out of intermediate attributes.
             for attribute in path {
+                // keys have to be `String`s and are either `Aid`s (such as "age")
+                // or `Eid`s (linking to a lower `PullPath`)
                 let attr = match attribute {
                     Aid(x) => x,
                     Eid(x) => x.to_string(),
@@ -155,6 +188,7 @@ pub fn paths_to_nested(paths: Vec<Vec<crate::Value>>) -> serde_json::Value {
                 };
             }
 
+            // At the lowest level, we finally insert the path's value
             match current_map.get(&last_key) {
                 Some(serde_json::Value::Object(_)) => (),
                 _ => {
