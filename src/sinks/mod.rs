@@ -16,9 +16,13 @@ use crate::{Error, ResultDiff};
 
 #[cfg(feature = "csv-source")]
 pub mod csv_file;
-
 #[cfg(feature = "csv-source")]
 pub use self::csv_file::CsvFile;
+
+// #[cfg(feature = "graphql")]
+// pub mod assoc_in;
+// #[cfg(feature = "graphql")]
+// pub use self::assoc_in::AssocIn;
 
 /// An external system that wants to receive result diffs.
 pub trait Sinkable<T>
