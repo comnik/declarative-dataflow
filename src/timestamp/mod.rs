@@ -15,6 +15,8 @@ pub enum Time {
     TxId(u64),
     /// Real time.
     Real(Duration),
+    /// Bitemporal.
+    Bi(Duration, u64),
 }
 
 impl std::convert::From<Time> for u64 {
