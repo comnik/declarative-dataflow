@@ -2,6 +2,31 @@ name: 3dfctl
 version: "0.1.0"
 author: Nikolas Göbel <me@nikolasgoebel.com>
 about: Consumer / producer CLI to 3DF.
+args:
+  - host:
+      long: host
+      value_name: HOST
+      help: hostname of a peer
+      takes_value: true
+  - port:
+      long: port
+      value_name: PORT
+      help: port at which 3DF is listening
+      takes_value: true
 subcommands:
     - ping:
         about: attempts to retrieve a heartbeat from the cluster
+    - tx:
+        about: pushes transaction data to the cluster
+        args:
+          - TXDATA:
+              help: transaction data 
+              required: false
+              index: 1
+    - gql:
+        about: subscribes to a GraphQL query
+        args:
+          - QUERY:
+              help: a GraphQL query
+              required: false
+              index: 1

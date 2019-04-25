@@ -6,7 +6,7 @@ authors = ["Nikolas Göbel <me@nikolasgoebel.com>"]
 edition = "2018"
 
 [dependencies]
-declarative-dataflow = { path = "../" }
+declarative-dataflow = { path = "../", features = ["graphql"] }
 serde = "1"
 serde_json = "1"
 rmp-serde = "0.13.7"
@@ -14,6 +14,7 @@ log = "0.4"
 env_logger = "0.5.6"
 clap = { version = "~2.33.0", features = ["yaml"] }
 ws = "*"
+uuid = { version = "0.7", features = ["serde", "v4"] }
 
 [profile.release]
 opt-level = 3
