@@ -49,14 +49,12 @@ type T = Duration;
 
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
-const TENANT_RESULTS: Token = Token(usize::MAX - 3);
-const ERRORS: Token = Token(usize::MAX - 4);
-const SYSTEM: Token = Token(usize::MAX - 5);
-const CLI: Token = Token(usize::MAX - 6);
+const SYSTEM: Token = Token(usize::MAX - 3);
+const CLI: Token = Token(usize::MAX - 4);
 
 /// A mutation of server state.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]
-pub struct Command {
+struct Command {
     /// The worker that received this command from a client originally
     /// and is therefore the one that should receive all outputs.
     pub owner: usize,
@@ -65,6 +63,20 @@ pub struct Command {
     pub client: usize,
     /// Requests issued by the client.
     pub requests: Vec<Request>,
+}
+
+enum Output {
+    /// A batch of (tuple, time, diff) triples as returned by Datalog
+    /// queries.
+    QueryDiff(String, Vec<ResultDiff<T>>),
+    /// An output diff on a multi-tenant query.
+    TenantDiff(String, Token, Vec<ResultDiff<T>>),
+    // /// A hash-map as returned by GraphQL queries.
+    // Map(serde_json::map::Map<String, serde_json::Value>, T, isize),
+    /// A message forwarded to a specific client.
+    Message(Token, serde_json::Value),
+    /// An error forwarded to a specific client.
+    Error(Token, Error, TxId),
 }
 
 fn main() {
@@ -143,13 +155,7 @@ fn main() {
         let (send_cli, recv_cli) = mio_extras::channel::channel();
 
         // setup results channel
-        let (send_results, recv_results) = mio_extras::channel::channel::<(String, Vec<ResultDiff<T>>)>();
-
-        // setup tenant results channel
-        let (send_tenant_results, recv_tenant_results) = mio_extras::channel::channel::<(String, Token, Vec<ResultDiff<T>>)>();
-
-        // setup errors channel
-        let (send_errors, recv_errors) = mio_extras::channel::channel::<(Token, Error, TxId)>();
+        let (send_results, recv_results) = mio_extras::channel::channel::<Output>();
 
         // setup server socket
         // let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
@@ -185,20 +191,6 @@ fn main() {
         poll.register(
             &recv_results,
             RESULTS,
-            Ready::readable(),
-            PollOpt::edge() | PollOpt::oneshot(),
-        ).unwrap();
-
-        poll.register(
-            &recv_tenant_results,
-            TENANT_RESULTS,
-            Ready::readable(),
-            PollOpt::edge() | PollOpt::oneshot(),
-        ).unwrap();
-
-        poll.register(
-            &recv_errors,
-            ERRORS,
             Ready::readable(),
             PollOpt::edge() | PollOpt::oneshot(),
         ).unwrap();
@@ -337,41 +329,76 @@ fn main() {
                         }
                     }
                     RESULTS => {
-                        while let Ok((query_name, results)) = recv_results.try_recv() {
-                            info!("[WORKER {}] {} {} results", worker.index(), query_name, results.len());
+                        while let Ok(out) = recv_results.try_recv() {
+                            let (tokens, serialized): (Box<dyn Iterator<Item=Token>>, _) = match out {
+                                Output::QueryDiff(name, results) => {
+                                    info!("[WORKER {}] {} {} results", worker.index(), name, results.len());
 
-                            match server.interests.get(&query_name) {
-                                None => {
-                                    warn!("result on query {} w/o interested clients", query_name);
-                                }
-                                Some(tokens) => {
-                                    let serialized = serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(
-                                        &(query_name, results)
-                                    ).expect("failed to serialize outputs");
-                                    let msg = ws::Message::text(serialized);
-
-                                    for token in tokens {
-                                        match connections.get_mut((*token).into()) {
-                                            None => {
-                                                warn!("client {:?} has gone away undetected, notifying", token);
-                                                sequencer.push(Command {
-                                                    owner: worker.index(),
-                                                    client: (*token).into(),
-                                                    requests: vec![Request::Disconnect],
-                                                });
-                                            }
-                                            Some(conn) => {
-                                                conn.send_message(msg.clone())
-                                                    .expect("failed to send message");
-
-                                                poll.reregister(
-                                                    conn.socket(),
-                                                    conn.token(),
-                                                    conn.events(),
-                                                    PollOpt::edge() | PollOpt::oneshot(),
-                                                ).unwrap();
-                                            }
+                                    match server.interests.get(&name) {
+                                        None => {
+                                            warn!("result on query {} w/o interested clients", name);
+                                            (Box::new(std::iter::empty()), None)
                                         }
+                                        Some(tokens) => {
+                                            let serialized =
+                                                serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(&(name, results))
+                                                .expect("failed to serialize outputs");
+
+                                            (Box::new(tokens.iter().cloned()), Some(serialized))
+                                        }
+                                    }
+                                }
+                                Output::TenantDiff(name, token, results) => {
+                                    info!("[WORKER {}] {} results for tenant {:?} on query {}", worker.index(), results.len(), token, name);
+
+                                    let serialized =
+                                        serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(&(name, results))
+                                        .expect("failed to serialize outputs");
+
+                                    (Box::new(std::iter::once(token)), Some(serialized))
+                                }
+                                Output::Message(token, msg) => {
+                                    info!("[WORKER {}] {:?}", worker.index(), msg);
+
+                                    (Box::new(std::iter::once(token)), Some(msg.to_string()))
+                                }
+                                Output::Error(token, error, tx_id) => {
+                                    error!("[WORKER {}] {:?}", worker.index(), error);
+
+                                    let mut serializable = serde_json::Map::new();
+                                    serializable.insert("df.error/category".to_string(), serde_json::Value::String(error.category.to_string()));
+                                    serializable.insert("df.error/message".to_string(), serde_json::Value::String(error.message.to_string()));
+
+                                    let serialized = serde_json::to_string::<(&'static str, Vec<(serde_json::Map<_,_>, TxId)>)>(
+                                        &("df.error", vec![(serializable, tx_id)])
+                                    ).expect("failed to serialize errors");
+
+                                    (Box::new(std::iter::once(token)), Some(serialized))
+                                }
+                            };
+
+                            let msg = ws::Message::text(serialized.expect("nothing to send"));
+
+                            for token in tokens {
+                                match connections.get_mut(token.into()) {
+                                    None => {
+                                        warn!("client {:?} has gone away undetected, notifying", token);
+                                        sequencer.push(Command {
+                                            owner: worker.index(),
+                                            client: token.into(),
+                                            requests: vec![Request::Disconnect],
+                                        });
+                                    }
+                                    Some(conn) => {
+                                        conn.send_message(msg.clone())
+                                            .expect("failed to send message");
+
+                                        poll.reregister(
+                                            conn.socket(),
+                                            conn.token(),
+                                            conn.events(),
+                                            PollOpt::edge() | PollOpt::oneshot(),
+                                        ).unwrap();
                                     }
                                 }
                             }
@@ -380,87 +407,6 @@ fn main() {
                         poll.reregister(
                             &recv_results,
                             RESULTS,
-                            Ready::readable(),
-                            PollOpt::edge() | PollOpt::oneshot(),
-                        ).unwrap();
-                    }
-                    TENANT_RESULTS => {
-                        while let Ok((query_name, token, results)) = recv_tenant_results.try_recv() {
-                            info!("[WORKER {}] {} results for tenant {:?} on query {}", worker.index(), results.len(), token, query_name);
-
-                            let serialized = serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(&(query_name, results)).expect("failed to serialize outputs");
-                            let msg = ws::Message::text(serialized);
-
-                            match connections.get_mut(token.into()) {
-                                None => {
-                                    warn!("sent results to tenant who has gone away undetected, notifying");
-                                    sequencer.push(Command {
-                                        owner: worker.index(),
-                                        client: token.into(),
-                                        requests: vec![Request::Disconnect],
-                                    });
-                                }
-                                Some(conn) => {
-                                    conn.send_message(msg.clone())
-                                        .expect("failed to send message");
-
-                                    poll.reregister(
-                                        conn.socket(),
-                                        conn.token(),
-                                        conn.events(),
-                                        PollOpt::edge() | PollOpt::oneshot(),
-                                    ).unwrap();
-                                }
-                            }
-                        }
-
-                        poll.reregister(
-                            &recv_tenant_results,
-                            TENANT_RESULTS,
-                            Ready::readable(),
-                            PollOpt::edge() | PollOpt::oneshot(),
-                        ).unwrap();
-                    }
-                    ERRORS => {
-                        while let Ok((token, error, tx_id)) = recv_errors.try_recv() {
-                            error!("[WORKER {}] {:?}", worker.index(), error);
-
-                            let mut serializable = serde_json::Map::new();
-                            serializable.insert("df.error/category".to_string(), serde_json::Value::String(error.category.to_string()));
-                            serializable.insert("df.error/message".to_string(), serde_json::Value::String(error.message.to_string()));
-
-                            let serialized = serde_json::to_string::<(&'static str, Vec<(serde_json::Map<_,_>, TxId)>)>(
-                                &("df.error", vec![(serializable, tx_id)])
-                            ).expect("failed to serialize errors");
-
-                            let msg = ws::Message::text(serialized);
-
-                            match connections.get_mut(token.into()) {
-                                None => {
-                                    warn!("sent error to client who has gone away undetected, notifying");
-                                    sequencer.push(Command {
-                                        owner: worker.index(),
-                                        client: token.into(),
-                                        requests: vec![Request::Disconnect],
-                                    });
-                                }
-                                Some(conn) => {
-                                    conn.send_message(msg.clone())
-                                        .expect("failed to send message");
-
-                                    poll.reregister(
-                                        conn.socket(),
-                                        conn.token(),
-                                        conn.events(),
-                                        PollOpt::edge() | PollOpt::oneshot(),
-                                    ).unwrap();
-                                }
-                            }
-                        }
-
-                        poll.reregister(
-                            &recv_errors,
-                            ERRORS,
                             Ready::readable(),
                             PollOpt::edge() | PollOpt::oneshot(),
                         ).unwrap();
@@ -497,7 +443,7 @@ fn main() {
                                                                         message: serde_error.to_string(),
                                                                     };
 
-                                                                    send_errors.send((token, error, next_tx - 1)).unwrap();
+                                                                    send_results.send(Output::Error(token, error, next_tx - 1)).unwrap();
                                                                 }
                                                                 Ok(requests) => {
                                                                     sequencer.push(
@@ -518,7 +464,7 @@ fn main() {
                                                                         message: rmp_error.to_string(),
                                                                     };
 
-                                                                    send_errors.send((token, error, next_tx - 1)).unwrap();
+                                                                    send_results.send(Output::Error(token, error, next_tx - 1)).unwrap();
                                                                 }
                                                                 Ok(requests) => {
                                                                     sequencer.push(
@@ -607,7 +553,7 @@ fn main() {
                     match req {
                         Request::Transact(req) => {
                             if let Err(error) = server.transact(req, owner, worker.index()) {
-                                send_errors.send((Token(client), error, last_tx)).unwrap();
+                                send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
                             }
                         }
                         Request::Interest(req) => {
@@ -631,7 +577,6 @@ fn main() {
 
                             if was_first {
                                 let send_results_handle = send_results.clone();
-                                let send_tenant_results_handle = send_tenant_results.clone();
 
                                 let disable_logging = req.disable_logging.unwrap_or(false);
                                 let mut timely_logger = None;
@@ -648,7 +593,7 @@ fn main() {
 
                                     match server.interest(&req.name, scope) {
                                         Err(error) => {
-                                            send_errors.send((Token(client), error, last_tx)).unwrap();
+                                            send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
                                         }
                                         Ok(relation) => {
                                             let delayed = match req.granularity {
@@ -694,8 +639,8 @@ fn main() {
                                                                             });
 
                                                                         for (tenant, batch) in &per_tenant {
-                                                                            send_tenant_results_handle
-                                                                                .send((name.clone(), Token(tenant), batch.collect()))
+                                                                            send_results_handle
+                                                                                .send(Output::TenantDiff(name.clone(), Token(tenant), batch.collect()))
                                                                                 .unwrap();
                                                                         }
                                                                     });
@@ -722,7 +667,7 @@ fn main() {
 
                                                                     input.for_each(|_time, data| {
                                                                         send_results_handle
-                                                                            .send((name.clone(), data.to_vec()))
+                                                                            .send(Output::QueryDiff(name.clone(), data.to_vec()))
                                                                             .unwrap();
                                                                     });
                                                                 }
@@ -758,35 +703,43 @@ fn main() {
                         Request::Uninterest(name) => server.uninterest(Token(command.client), &name),
                         Request::Register(req) => {
                             if let Err(error) = server.register(req) {
-                                send_errors.send((Token(client), error, last_tx)).unwrap();
+                                send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
                             }
                         }
                         Request::RegisterSource(source) => {
                             worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.register_source(Box::new(source), scope) {
-                                    send_errors.send((Token(client), error, last_tx)).unwrap();
+                                    send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
                                 }
                             });
                         }
                         Request::CreateAttribute(CreateAttribute { name, config }) => {
                             worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.context.internal.create_transactable_attribute(&name, config, scope) {
-                                    send_errors.send((Token(client), error, last_tx)).unwrap();
+                                    send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
                                 }
                             });
                         }
                         Request::AdvanceDomain(name, next) => {
                             if let Err(error) = server.advance_domain(name, next.into()) {
-                                send_errors.send((Token(client), error, last_tx)).unwrap();
+                                send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
                             }
                         }
                         Request::CloseInput(name) => {
                             if let Err(error) = server.context.internal.close_input(name) {
-                                send_errors.send((Token(client), error, last_tx)).unwrap();
+                                send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
                             }
                         }
                         Request::Disconnect => server.disconnect_client(Token(command.client)),
                         Request::Setup => unimplemented!(),
+                        Request::Status => {
+                            let status = serde_json::json!({
+                                "category": "df/status",
+                                "message": "running",
+                            });
+
+                            send_results.send(Output::Message(Token(client), status)).unwrap();
+                        }
                         Request::Shutdown => {
                             shutdown = true
                         }
@@ -801,7 +754,7 @@ fn main() {
                     let next = Instant::now().duration_since(worker.timer());
 
                     if let Err(error) = server.advance_domain(None, next) {
-                        send_errors.send((Token(client), error, last_tx)).unwrap();
+                        send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
                     }
                 }
             }
