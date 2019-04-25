@@ -129,6 +129,8 @@ pub enum Request {
     /// Requests any setup logic that needs to be executed
     /// deterministically across all workers.
     Setup,
+    /// Requests a heartbeat containing status information.
+    Status,
     /// Requests orderly shutdown of the system.
     Shutdown,
 }
