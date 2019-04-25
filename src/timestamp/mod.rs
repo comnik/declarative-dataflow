@@ -39,6 +39,16 @@ impl std::convert::From<Time> for Duration {
     }
 }
 
+impl std::convert::From<Time> for pair::Pair<Duration, u64> {
+    fn from(t: Time) -> Self {
+        if let Time::Bi(sys, event) = t {
+            Self::new(sys, event)
+        } else {
+            panic!("Time {:?} can't be converted to Pair", t);
+        }
+    }
+}
+
 /// Extension trait for timestamp types that can be safely re-wound to
 /// an earlier time. This is required for automatically advancing
 /// traces according to their configured slack.
@@ -67,6 +77,17 @@ impl Rewind for Duration {
             None => *self,
             Some(rewound) => rewound,
         }
+    }
+}
+
+impl Rewind for pair::Pair<Duration, u64> {
+    fn rewind(&self, slack: Time) -> Self {
+        let slack_pair: Self = slack.into();
+
+        let first_rewound = self.first.rewind(Time::Real(slack_pair.first));
+        let second_rewound = self.second.rewind(Time::TxId(slack_pair.second));
+
+        Self::new(first_rewound, second_rewound)
     }
 }
 
