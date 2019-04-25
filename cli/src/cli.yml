@@ -1,0 +1,7 @@
+name: 3dfctl
+version: "0.1.0"
+author: Nikolas Göbel <me@nikolasgoebel.com>
+about: Consumer / producer CLI to 3DF.
+subcommands:
+    - ping:
+        about: attempts to retrieve a heartbeat from the cluster
