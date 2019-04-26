@@ -4,7 +4,8 @@ use std::collections::HashMap;
 
 use timely::dataflow::channels::pact::ParallelizationContract;
 use timely::dataflow::operators::generic::Operator;
-use timely::dataflow::{Scope, Stream};
+use timely::dataflow::operators::{Probe, Inspect};
+use timely::dataflow::{Scope, Stream, ProbeHandle};
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
@@ -25,7 +26,8 @@ where
         &self,
         stream: &Stream<S, ResultDiff<T>>,
         pact: P,
-    ) -> Result<Stream<S, ResultDiff<T>>, Error>
+        probe: &mut ProbeHandle<T>,
+    ) -> Result<(), Error>
     where
         S: Scope<Timestamp = T>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<T>>,
@@ -33,16 +35,15 @@ where
         let mut paths = HashMap::new();
         let mut vector = Vec::new();
 
-        let sunk = stream
+        stream
             .unary_notify(pact, "AssocIn", vec![], move |input, output, notificator| {
                 input.for_each(|cap, data| {
                     data.swap(&mut vector);
 
-                    let mut paths_at_time = paths
+                    paths
                         .entry(cap.time().clone())
-                        .or_insert_with(Vec::new);
-
-                    paths_at_time.extend(vector.drain(..).map(|(x,_t,diff)| (x, diff)));
+                        .or_insert_with(Vec::new)
+                        .extend(vector.drain(..).map(|(x,_t,diff)| (x, diff)));
                     
                     notificator.notify_at(cap.retain());
                 });
@@ -55,9 +56,11 @@ where
                             .give(paths_to_nested(paths_at_time));
                     }
                 });
-            });
+            })
+            .inspect(|x| { println!("{:?}", x); })
+            .probe_with(probe);
 
-        Ok(sunk)
+        Ok(())
     }
 }
 

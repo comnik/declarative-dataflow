@@ -621,8 +621,11 @@ fn main() {
                                                     tenant_owner.borrow().get(&Token(tenant as usize)).unwrap().clone()
                                                 });
 
-                                                let sunk = match req.sink {
-                                                    Some(sink) => sink.sink(&delayed.inner, pact).expect("sinking failed"),
+                                                match req.sink {
+                                                    Some(sink) => {
+                                                        sink.sink(&delayed.inner, pact, &mut server.probe)
+                                                            .expect("sinking failed");
+                                                    }
                                                     None => {
                                                         delayed
                                                             .inner
@@ -646,15 +649,17 @@ fn main() {
                                                                     });
                                                                 }
                                                             })
+                                                            .probe_with(&mut server.probe);
                                                     }
-                                                };
-
-                                                sunk.probe_with(&mut server.probe);
+                                                }
                                             } else {
                                                 let pact = Exchange::new(move |_| owner as u64);
 
-                                                let sunk = match req.sink {
-                                                    Some(sink) => sink.sink(&delayed.inner, pact).expect("sinking failed"),
+                                                match req.sink {
+                                                    Some(sink) => {
+                                                        sink.sink(&delayed.inner, pact, &mut server.probe)
+                                                            .expect("sinking failed");
+                                                    }
                                                     None => {
                                                         delayed
                                                             .inner
@@ -672,10 +677,9 @@ fn main() {
                                                                     });
                                                                 }
                                                             })
+                                                            .probe_with(&mut server.probe);
                                                     }
-                                                };
-
-                                                sunk.probe_with(&mut server.probe);
+                                                }
                                             }
                                         }
                                     }
