@@ -16,6 +16,13 @@ args:
 subcommands:
     - ping:
         about: attempts to retrieve a heartbeat from the cluster
+    - req:
+        about: pushes arbitrary requests to the cluster
+        args:
+          - REQUEST:
+              help: request description in json
+              required: false
+              index: 1
     - tx:
         about: pushes transaction data to the cluster
         args:

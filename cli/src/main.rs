@@ -13,7 +13,8 @@ use uuid::Uuid;
 use ws::{connect, CloseCode};
 
 use declarative_dataflow::plan::{GraphQl, Plan};
-use declarative_dataflow::server::{Register, Request};
+use declarative_dataflow::server::{Interest, Register, Request};
+use declarative_dataflow::sinks::{AssocIn, Sink};
 use declarative_dataflow::{Rule, TxData};
 
 fn main() {
@@ -29,7 +30,36 @@ fn main() {
     if let Some(matches) = matches.subcommand_matches("ping") {
         connect(addr.clone(), |out| {
             let req = serde_json::to_string::<Vec<Request>>(&vec![Request::Status])
-                .expect("failed to serialize request");
+                .expect("failed to serialize requests");
+
+            out.send(req).unwrap();
+
+            move |msg| {
+                info!("{:?}", msg);
+                out.close(CloseCode::Normal)
+            }
+        })
+        .expect("failed to connect");
+    }
+
+    if let Some(matches) = matches.subcommand_matches("req") {
+        connect(addr.clone(), |out| {
+            let reqs: Vec<Request> = match matches.value_of("REQUEST") {
+                None => {
+                    let mut buf = String::new();
+                    std::io::stdin()
+                        .read_to_string(&mut buf)
+                        .expect("failed to read from stdin");
+
+                    serde_json::from_str(&buf).expect("failed to parse requests")
+                }
+                Some(arg) => serde_json::from_str(arg).expect("failed to parse requests"),
+            };
+
+            let req =
+                serde_json::to_string::<Vec<Request>>(&reqs).expect("failed to serialize requests");
+
+            debug!("{:?}", req);
 
             out.send(req).unwrap();
 
@@ -56,7 +86,7 @@ fn main() {
             };
 
             let req = serde_json::to_string::<Vec<Request>>(&vec![Request::Transact(tx_data)])
-                .expect("failed to serialize request");
+                .expect("failed to serialize requests");
 
             debug!("{:?}", req);
 
@@ -86,14 +116,23 @@ fn main() {
 
             let name = Uuid::new_v4();
 
-            let req = serde_json::to_string::<Vec<Request>>(&vec![Request::Register(Register {
-                rules: vec![Rule {
+            let req = serde_json::to_string::<Vec<Request>>(&vec![
+                Request::Register(Register {
+                    rules: vec![Rule {
+                        name: name.to_string(),
+                        plan: Plan::GraphQl(GraphQl::new(query)),
+                    }],
+                    publish: vec![name.to_string()],
+                }),
+                Request::Interest(Interest {
                     name: name.to_string(),
-                    plan: Plan::GraphQl(GraphQl::new(query)),
-                }],
-                publish: vec![name.to_string()],
-            })])
-            .expect("failed to serialize request");
+                    tenant: None,
+                    granularity: None,
+                    sink: Some(Sink::AssocIn(AssocIn {})),
+                    disable_logging: None,
+                }),
+            ])
+            .expect("failed to serialize requests");
 
             debug!("{:?}", req);
 
