@@ -132,9 +132,17 @@ where
     ) -> Result<(), Error> {
         // We need to install a probe on source-fed attributes in
         // order to determine their progress.
-        let probed_pairs = pairs.probe_with(&mut self.input_probe);
 
-        self.create_attribute(name, config, &probed_pairs)?;
+        // We do not want to probe timeless attributes.
+        // Sources of timeless attributes either are not able to or do not
+        // want to provide valid domain timestamps.
+        let source_pairs = if config.timeless {
+            pairs.to_owned()
+        } else {
+            pairs.probe_with(&mut self.input_probe)
+        };
+
+        self.create_attribute(name, config, &source_pairs)?;
 
         Ok(())
     }

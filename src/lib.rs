@@ -239,6 +239,10 @@ pub struct AttributeConfig {
     /// How close indexed traces should follow the computation
     /// frontier.
     pub trace_slack: Option<Time>,
+    /// Does this attribute care about its respective time
+    /// dimension? Timeless attributes do not have an
+    /// influence on the overall progress in the system.
+    pub timeless: bool,
 }
 
 impl AttributeConfig {
@@ -253,6 +257,7 @@ impl AttributeConfig {
             // s.t. traces advance to t+1 when we're still accepting
             // inputs for t+1.
             trace_slack: Some(Time::TxId(1)),
+            timeless: false,
         }
     }
 
@@ -263,6 +268,7 @@ impl AttributeConfig {
         AttributeConfig {
             input_semantics,
             trace_slack: Some(Time::Real(Duration::from_secs(0))),
+            timeless: false,
         }
     }
 
@@ -272,6 +278,7 @@ impl AttributeConfig {
         AttributeConfig {
             input_semantics,
             trace_slack: None,
+            timeless: false,
         }
     }
 }
