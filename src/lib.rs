@@ -83,6 +83,9 @@ pub enum Value {
     /// A 16 byte unique identifier.
     #[cfg(feature = "uuid")]
     Uuid(Uuid),
+    /// A fixed-precision real number.
+    #[cfg(feature = "real")]
+    Real(fixed::types::I16F16),
 }
 
 // use serde::{Serialize, Serializer};

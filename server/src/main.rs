@@ -7,10 +7,8 @@ extern crate serde_derive;
 extern crate log;
 
 use std::collections::{HashSet, VecDeque};
-use std::io::BufRead;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
-use std::{thread, usize};
 
 use getopts::Options;
 
@@ -47,9 +45,9 @@ type T = Duration;
 // use declarative_dataflow::timestamp::pair::Pair;
 // type T = Pair<Duration, u64>;
 
-const SERVER: Token = Token(usize::MAX - 1);
-const RESULTS: Token = Token(usize::MAX - 2);
-const SYSTEM: Token = Token(usize::MAX - 3);
+const SERVER: Token = Token(std::usize::MAX - 1);
+const RESULTS: Token = Token(std::usize::MAX - 2);
+const SYSTEM: Token = Token(std::usize::MAX - 3);
 
 /// A mutation of server state.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]

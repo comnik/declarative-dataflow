@@ -31,6 +31,7 @@ csv = { version = "1", optional = true }
 chrono = { version = "0.4", optional = true }
 uuid = { version = "0.7", features = ["serde"], optional = true }
 graphql-parser = { version = "0.2.2", optional = true }
+fixed = { version = "0.3.2", optional = true, features = ["serde"] }
 
 [features]
 real-time = []
@@ -38,6 +39,7 @@ set-semantics = []
 csv-source = ["csv", "chrono"]
 json-source = ["serde_json", "chrono"]
 graphql = ["graphql-parser", "serde_json"]
+real = ["fixed"]
 
 [profile.release]
 opt-level = 3
