@@ -35,6 +35,21 @@ impl Scheduler {
             false
         }
     }
+    /// Returns the duration until the next activation in `activator_queue`
+    /// from `now()`. Defaults to 100 ms, if there are no activations.
+    pub fn until_next(&self) -> Duration {
+        if let Some(ref timed_activator) = self.activator_queue.peek() {
+            // timed_activator.at.check_duration_since(Instant::now()).unwrap_or(Duration::from_millies(0))
+            let now = Instant::now();
+            if timed_activator.at > now {
+                timed_activator.at.duration_since(now)
+            } else {
+               Duration::from_millis(0) 
+            }
+        } else {
+            Duration::from_millis(100)
+        }
+    }
 
     /// Schedule activation at the specified instant. No hard
     /// guarantees on when the activator will actually be triggered.
