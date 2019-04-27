@@ -24,6 +24,15 @@ pub mod assoc_in;
 #[cfg(feature = "graphql")]
 pub use self::assoc_in::AssocIn;
 
+/// A struct encapsulating any state required to create sinks.
+pub struct SinkingContext {
+    /// The name of the dataflow feeding this sink.
+    pub name: String,
+    /// Granularity (in seconds or tx ids) at which to send
+    /// results. None indicates no delay.
+    pub granularity: Option<u64>,
+}
+
 /// An external system that wants to receive result diffs.
 pub trait Sinkable<T>
 where
@@ -36,6 +45,7 @@ where
         stream: &Stream<S, ResultDiff<T>>,
         pact: P,
         probe: &mut ProbeHandle<T>,
+        context: SinkingContext,
     ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
     where
         S: Scope<Timestamp = T>,
@@ -61,6 +71,7 @@ impl Sinkable<u64> for Sink {
         stream: &Stream<S, ResultDiff<u64>>,
         pact: P,
         probe: &mut ProbeHandle<u64>,
+        context: SinkingContext,
     ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
     where
         S: Scope<Timestamp = u64>,
@@ -76,6 +87,7 @@ impl Sinkable<Duration> for Sink {
         stream: &Stream<S, ResultDiff<Duration>>,
         pact: P,
         probe: &mut ProbeHandle<Duration>,
+        context: SinkingContext,
     ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
     where
         S: Scope<Timestamp = Duration>,
@@ -128,7 +140,7 @@ impl Sinkable<Duration> for Sink {
 
                 Ok(None)
             }
-            Sink::AssocIn(ref sink) => sink.sink(stream, pact, probe),
+            Sink::AssocIn(ref sink) => sink.sink(stream, pact, probe, context),
             _ => unimplemented!(),
         }
     }

@@ -33,7 +33,7 @@ use slab::Slab;
 use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
-use declarative_dataflow::sinks::Sinkable;
+use declarative_dataflow::sinks::{Sinkable, SinkingContext};
 use declarative_dataflow::{Eid, Error, Output, ResultDiff};
 
 /// Server timestamp type.
@@ -557,7 +557,7 @@ fn main() {
                                 }
 
                                 worker.dataflow::<T, _, _>(|scope| {
-                                    let name = req.name.clone();
+                                    let sink_context: SinkingContext = (&req).into();
 
                                     match server.interest(&req.name, scope) {
                                         Err(error) => {
@@ -591,7 +591,7 @@ fn main() {
 
                                                 match req.sink {
                                                     Some(sink) => {
-                                                        sink.sink(&delayed.inner, pact, &mut server.probe)
+                                                        sink.sink(&delayed.inner, pact, &mut server.probe, sink_context)
                                                             .expect("sinking failed");
                                                     }
                                                     None => {
@@ -611,7 +611,7 @@ fn main() {
 
                                                                         for (tenant, batch) in &per_tenant {
                                                                             send_results_handle
-                                                                                .send(Output::TenantDiff(name.clone(), tenant, batch.collect()))
+                                                                                .send(Output::TenantDiff(sink_context.name.clone(), tenant, batch.collect()))
                                                                                 .unwrap();
                                                                         }
                                                                     });
@@ -625,7 +625,7 @@ fn main() {
 
                                                 match req.sink {
                                                     Some(sink) => {
-                                                        let sunk = sink.sink(&delayed.inner, pact, &mut server.probe)
+                                                        let sunk = sink.sink(&delayed.inner, pact, &mut server.probe, sink_context)
                                                             .expect("sinking failed");
 
                                                         if let Some(sunk) = sunk {
@@ -658,7 +658,7 @@ fn main() {
 
                                                                     input.for_each(|_time, data| {
                                                                         send_results_handle
-                                                                            .send(Output::QueryDiff(name.clone(), data.to_vec()))
+                                                                            .send(Output::QueryDiff(sink_context.name.clone(), data.to_vec()))
                                                                             .unwrap();
                                                                     });
                                                                 }

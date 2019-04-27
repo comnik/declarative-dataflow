@@ -81,6 +81,15 @@ pub struct Interest {
     pub disable_logging: Option<bool>,
 }
 
+impl std::convert::From<&Interest> for crate::sinks::SinkingContext {
+    fn from(interest: &Interest) -> Self {
+        Self {
+            name: interest.name.clone(),
+            granularity: interest.granularity.clone(),
+        }
+    }
+}
+
 /// A request with the intent of synthesising one or more new rules
 /// and optionally publishing one or more of them.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]

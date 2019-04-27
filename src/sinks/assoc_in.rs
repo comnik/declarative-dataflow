@@ -4,7 +4,6 @@ use std::collections::HashMap;
 
 use timely::dataflow::channels::pact::ParallelizationContract;
 use timely::dataflow::operators::generic::Operator;
-use timely::dataflow::operators::{Inspect, Probe};
 use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::progress::Timestamp;
 
@@ -12,14 +11,11 @@ use differential_dataflow::lattice::Lattice;
 
 use crate::{Error, Output, ResultDiff};
 
-use super::Sinkable;
+use super::{Sinkable, SinkingContext};
 
 /// A nested hash-map sink.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct AssocIn {
-    /// Query name.
-    pub name: String,
-}
+pub struct AssocIn {}
 
 impl<T> Sinkable<T> for AssocIn
 where
@@ -29,7 +25,8 @@ where
         &self,
         stream: &Stream<S, ResultDiff<T>>,
         pact: P,
-        probe: &mut ProbeHandle<T>,
+        _probe: &mut ProbeHandle<T>,
+        context: SinkingContext,
     ) -> Result<Option<Stream<S, Output<T>>>, Error>
     where
         S: Scope<Timestamp = T>,
@@ -38,42 +35,38 @@ where
         let mut paths = HashMap::new();
         let mut vector = Vec::new();
 
-        let name = self.name.to_string();
+        let name = context.name;
 
-        let sunk = stream
-            .unary_notify(
-                pact,
-                "AssocIn",
-                vec![],
-                move |input, output, notificator| {
-                    input.for_each(|cap, data| {
-                        data.swap(&mut vector);
+        let sunk = stream.unary_notify(
+            pact,
+            "AssocIn",
+            vec![],
+            move |input, output, notificator| {
+                input.for_each(|cap, data| {
+                    data.swap(&mut vector);
 
-                        paths
-                            .entry(cap.time().clone())
-                            .or_insert_with(Vec::new)
-                            .extend(vector.drain(..).map(|(x, _t, diff)| (x, diff)));
+                    paths
+                        .entry(cap.time().clone())
+                        .or_insert_with(Vec::new)
+                        .extend(vector.drain(..).map(|(x, _t, diff)| (x, diff)));
 
-                        notificator.notify_at(cap.retain());
-                    });
+                    notificator.notify_at(cap.retain());
+                });
 
-                    // pop completed views
-                    notificator.for_each(|cap, _, _| {
-                        if let Some(paths_at_time) = paths.remove(cap.time()) {
-                            let map = paths_to_nested(paths_at_time);
-                            output.session(&cap).give(Output::Json(
-                                name.clone(),
-                                map,
-                                cap.time().clone(),
-                                1,
-                            ));
-                        }
-                    });
-                },
-            )
-            .inspect(|x| {
-                println!("{:?}", x);
-            });
+                // pop completed views
+                notificator.for_each(|cap, _, _| {
+                    if let Some(paths_at_time) = paths.remove(cap.time()) {
+                        let map = paths_to_nested(paths_at_time);
+                        output.session(&cap).give(Output::Json(
+                            name.clone(),
+                            map,
+                            cap.time().clone(),
+                            1,
+                        ));
+                    }
+                });
+            },
+        );
 
         Ok(Some(sunk))
     }
