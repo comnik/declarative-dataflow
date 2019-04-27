@@ -45,8 +45,6 @@ use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt
 use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{Collection, Data};
 
-use serde::{Serialize, Serializer};
-
 #[cfg(feature = "uuid")]
 pub use uuid::Uuid;
 
@@ -87,6 +85,7 @@ pub enum Value {
     Uuid(Uuid),
 }
 
+// use serde::{Serialize, Serializer};
 // impl Serialize for Value {
 //     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
 //     where
@@ -120,8 +119,10 @@ impl std::convert::From<Value> for Eid {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Error {
     /// Error category.
+    #[serde(rename = "df.error/category")]
     pub category: String,
     /// Free-frorm description.
+    #[serde(rename = "df.error/message")]
     pub message: String,
 }
 

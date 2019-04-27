@@ -311,71 +311,47 @@ fn main() {
                     }
                     RESULTS => {
                         while let Ok(out) = recv_results.try_recv() {
-                            let (tokens, serialized): (Box<dyn Iterator<Item=Token>>, _) = match out {
-                                Output::QueryDiff(name, results) => {
+                            let tokens: Box<dyn Iterator<Item=Token>> = match &out {
+                                &Output::QueryDiff(ref name, ref results) => {
                                     info!("[WORKER {}] {} {} results", worker.index(), name, results.len());
 
-                                    match server.interests.get(&name) {
+                                    match server.interests.get(name) {
                                         None => {
                                             warn!("result on query {} w/o interested clients", name);
-                                            (Box::new(std::iter::empty()), None)
+                                            Box::new(std::iter::empty())
                                         }
-                                        Some(tokens) => {
-                                            let serialized =
-                                                serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(&(name, results))
-                                                .expect("failed to serialize outputs");
-
-                                            (Box::new(tokens.iter().cloned()), Some(serialized))
-                                        }
+                                        Some(tokens) => Box::new(tokens.iter().cloned()),
                                     }
                                 }
-                                Output::TenantDiff(name, client, results) => {
+                                &Output::TenantDiff(ref name, client, ref results) => {
                                     info!("[WORKER {}] {} results for tenant {:?} on query {}", worker.index(), results.len(), client, name);
-
-                                    let serialized =
-                                        serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(&(name, results))
-                                        .expect("failed to serialize outputs");
-
-                                    (Box::new(std::iter::once(client.into())), Some(serialized))
+                                    Box::new(std::iter::once(client.into()))
                                 }
-                                Output::Json(name, value, t, diff) => {
+                                &Output::Json(ref name, _, _, _) => {
                                     info!("[WORKER {}] json on query {}", worker.index(), name);
 
-                                    match server.interests.get(&name) {
+                                    match server.interests.get(name) {
                                         None => {
                                             warn!("result on query {} w/o interested clients", name);
-                                            (Box::new(std::iter::empty()), None)
+                                            Box::new(std::iter::empty())
                                         }
-                                        Some(tokens) => {
-                                            let serialized =
-                                                serde_json::to_string::<(String, Vec<(serde_json::Value, T, isize)>)>(&(name, vec![(value, t, diff)]))
-                                                .expect("failed to serialize outputs");
-
-                                            (Box::new(tokens.iter().cloned()), Some(serialized))
-                                        }
+                                        Some(tokens) => Box::new(tokens.iter().cloned()),
                                     }
                                 }
-                                Output::Message(client, msg) => {
+                                &Output::Message(client, ref msg) => {
                                     info!("[WORKER {}] {:?}", worker.index(), msg);
-
-                                    (Box::new(std::iter::once(client.into())), Some(msg.to_string()))
+                                    Box::new(std::iter::once(client.into()))
                                 }
-                                Output::Error(client, error, tx_id) => {
+                                &Output::Error(client, ref error, _) => {
                                     error!("[WORKER {}] {:?}", worker.index(), error);
-
-                                    let mut serializable = serde_json::Map::new();
-                                    serializable.insert("df.error/category".to_string(), serde_json::Value::String(error.category.to_string()));
-                                    serializable.insert("df.error/message".to_string(), serde_json::Value::String(error.message.to_string()));
-
-                                    let serialized = serde_json::to_string::<(&'static str, Vec<(serde_json::Map<_,_>, TxId)>)>(
-                                        &("df.error", vec![(serializable, tx_id)])
-                                    ).expect("failed to serialize errors");
-
-                                    (Box::new(std::iter::once(client.into())), Some(serialized))
+                                    Box::new(std::iter::once(client.into()))
                                 }
                             };
 
-                            let msg = ws::Message::text(serialized.expect("nothing to send"));
+                            let serialized = serde_json::to_string::<Output<T>>(&out)
+                                .expect("failed to serialize output");
+
+                            let msg = ws::Message::text(serialized);
 
                             for token in tokens {
                                 match connections.get_mut(token.into()) {
