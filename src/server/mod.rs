@@ -375,6 +375,7 @@ where
         let context = SourcingContext {
             t0: self.t0,
             scheduler: Rc::downgrade(&self.scheduler),
+            domain_probe: self.context.internal.domain_probe().clone(),
             timely_events: self.timely_events.clone().unwrap(),
             differential_events: self.differential_events.clone().unwrap(),
         };
