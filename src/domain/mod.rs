@@ -28,7 +28,7 @@ pub struct Domain<T: Timestamp + Lattice> {
     /// Input handles to attributes in this domain.
     input_sessions: HashMap<String, UnorderedSession<T, (Value, Value), isize>>,
     /// The probe keeping track of source progress in this domain.
-    input_probe: ProbeHandle<T>,
+    domain_probe: ProbeHandle<T>,
     /// Configurations for attributes in this domain.
     pub attributes: HashMap<Aid, AttributeConfig>,
     /// Forward attribute indices eid -> v.
@@ -50,7 +50,7 @@ where
         Domain {
             now_at: start_at,
             input_sessions: HashMap::new(),
-            input_probe: ProbeHandle::new(),
+            domain_probe: ProbeHandle::new(),
             attributes: HashMap::new(),
             forward: HashMap::new(),
             reverse: HashMap::new(),
@@ -139,7 +139,7 @@ where
         let source_pairs = if config.timeless {
             pairs.to_owned()
         } else {
-            pairs.probe_with(&mut self.input_probe)
+            pairs.probe_with(&mut self.domain_probe)
         };
 
         self.create_attribute(name, config, &source_pairs)?;
@@ -260,7 +260,7 @@ where
     /// Advances all handles of the domain to its current frontier.
     pub fn advance_domain_to_source(&mut self) -> Result<(), Error> {
         let frontier = self
-            .input_probe
+            .domain_probe
             .with_frontier(|frontier| (*frontier).to_vec());
         self.advance_by(&frontier)
     }
@@ -337,7 +337,7 @@ where
     }
 
     /// Returns a handle to the domain's input probe.
-    pub fn input_probe(&self) -> &ProbeHandle<T> {
-        &self.input_probe
+    pub fn domain_probe(&self) -> &ProbeHandle<T> {
+        &self.domain_probe
     }
 }
