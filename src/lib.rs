@@ -66,7 +66,7 @@ pub type Aid = String; // u32
 ///
 /// This enum captures the currently supported data types, and is the
 /// least common denominator for the types of records moved around.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Value {
     /// An attribute identifier
     Aid(Aid),
@@ -87,24 +87,24 @@ pub enum Value {
     Uuid(Uuid),
 }
 
-impl Serialize for Value {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            Value::Aid(aid) => serializer.serialize_newtype_variant("Value", 0, "Aid", &aid),
-            Value::String(s) => serializer.serialize_str(&s),
-            Value::Bool(b) => serializer.serialize_bool(*b),
-            Value::Number(n) => serializer.serialize_i64(*n),
-            Value::Rational32(r) => r.serialize(serializer),
-            Value::Eid(eid) => serializer.serialize_u64(*eid),
-            Value::Instant(i) => serializer.serialize_newtype_variant("Value", 6, "Instant", i),
-            #[cfg(feature = "uuid")]
-            Value::Uuid(uuid) => serializer.serialize_newtype_variant("Value", 7, "Uuid", &uuid),
-        }
-    }
-}
+// impl Serialize for Value {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         match self {
+//             Value::Aid(aid) => serializer.serialize_newtype_variant("Value", 0, "Aid", &aid),
+//             Value::String(s) => serializer.serialize_str(&s),
+//             Value::Bool(b) => serializer.serialize_bool(*b),
+//             Value::Number(n) => serializer.serialize_i64(*n),
+//             Value::Rational32(r) => r.serialize(serializer),
+//             Value::Eid(eid) => serializer.serialize_u64(*eid),
+//             Value::Instant(i) => serializer.serialize_newtype_variant("Value", 6, "Instant", i),
+//             #[cfg(feature = "uuid")]
+//             Value::Uuid(uuid) => serializer.serialize_newtype_variant("Value", 7, "Uuid", &uuid),
+//         }
+//     }
+// }
 
 impl std::convert::From<Value> for Eid {
     fn from(v: Value) -> Eid {
