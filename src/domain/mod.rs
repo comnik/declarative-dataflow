@@ -136,6 +136,7 @@ where
         // We do not want to probe timeless attributes.
         // Sources of timeless attributes either are not able to or do not
         // want to provide valid domain timestamps.
+        // Forcing to probe them would stall progress in the system.
         let source_pairs = if config.timeless {
             pairs.to_owned()
         } else {
