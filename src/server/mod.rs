@@ -40,8 +40,6 @@ pub struct Config {
     pub manual_advance: bool,
     /// Should logging streams be created?
     pub enable_logging: bool,
-    /// Should inputs via CLI be accepted?
-    pub enable_cli: bool,
     /// Should queries use the optimizer during implementation?
     pub enable_optimizer: bool,
     /// Should queries on the query graph be available?
@@ -54,7 +52,6 @@ impl Default for Config {
             port: 6262,
             manual_advance: false,
             enable_logging: false,
-            enable_cli: false,
             enable_optimizer: false,
             enable_meta: false,
         }

@@ -50,7 +50,6 @@ type T = Duration;
 const SERVER: Token = Token(usize::MAX - 1);
 const RESULTS: Token = Token(usize::MAX - 2);
 const SYSTEM: Token = Token(usize::MAX - 3);
-const CLI: Token = Token(usize::MAX - 4);
 
 /// A mutation of server state.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]
@@ -76,7 +75,6 @@ fn main() {
         "forces clients to call AdvanceDomain explicitely",
     );
     opts.optflag("", "enable-logging", "enable log event sources");
-    opts.optflag("", "enable-cli", "enable the CLI interface");
     opts.optflag("", "enable-history", "enable historical queries");
     opts.optflag("", "enable-optimizer", "enable WCO queries");
     opts.optflag("", "enable-meta", "enable queries on the query graph");
@@ -101,7 +99,6 @@ fn main() {
                     port: starting_port + (worker.index() as u16),
                     manual_advance: matches.opt_present("manual-advance"),
                     enable_logging: matches.opt_present("enable-logging"),
-                    enable_cli: matches.opt_present("enable-cli"),
                     enable_optimizer: matches.opt_present("enable-optimizer"),
                     enable_meta: matches.opt_present("enable-meta"),
                 }
@@ -137,9 +134,6 @@ fn main() {
             ..ws::Settings::default()
         };
 
-        // setup CLI channel
-        let (send_cli, recv_cli) = mio_extras::channel::channel();
-
         // setup results channel
         let (send_results, recv_results) = mio_extras::channel::channel::<Output<T>>();
 
@@ -153,26 +147,6 @@ fn main() {
         // setup event loop
         let poll = Poll::new().unwrap();
         let mut events = Events::with_capacity(1024);
-
-        if config.enable_cli {
-            poll.register(
-                &recv_cli,
-                CLI,
-                Ready::readable(),
-                PollOpt::edge() | PollOpt::oneshot(),
-            ).unwrap();
-
-            thread::spawn(move || {
-                info!("[CLI] accepting cli commands");
-
-                let input = std::io::stdin();
-                while let Some(line) = input.lock().lines().map(|x| x.unwrap()).next() {
-                    send_cli
-                        .send(line.to_string())
-                        .expect("failed to send command");
-                }
-            });
-        }
 
         poll.register(
             &recv_results,
@@ -239,29 +213,6 @@ fn main() {
                 );
 
                 match event.token() {
-                    CLI => {
-                        while let Ok(cli_input) = recv_cli.try_recv() {
-                            match serde_json::from_str::<Vec<Request>>(&cli_input) {
-                                Err(serde_error) => {
-                                    error!("{:?} @ {}", Error::incorrect(serde_error), next_tx - 1);
-                                }
-                                Ok(requests) => {
-                                    sequencer.push(Command {
-                                        owner: worker.index(),
-                                        client: SYSTEM.0,
-                                        requests,
-                                    });
-                                }
-                            }
-                        }
-
-                        poll.reregister(
-                            &recv_cli,
-                            CLI,
-                            Ready::readable(),
-                            PollOpt::edge() | PollOpt::oneshot(),
-                        ).unwrap();
-                    }
                     SERVER => {
                         if event.readiness().is_readable() {
                             // new connection arrived on the server socket
