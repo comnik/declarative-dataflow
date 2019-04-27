@@ -45,8 +45,6 @@ use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt
 use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{Collection, Data};
 
-use serde::{Serialize, Serializer};
-
 #[cfg(feature = "uuid")]
 pub use uuid::Uuid;
 
@@ -66,7 +64,7 @@ pub type Aid = String; // u32
 ///
 /// This enum captures the currently supported data types, and is the
 /// least common denominator for the types of records moved around.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Deserialize)]
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Value {
     /// An attribute identifier
     Aid(Aid),
@@ -87,24 +85,25 @@ pub enum Value {
     Uuid(Uuid),
 }
 
-impl Serialize for Value {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        match self {
-            Value::Aid(aid) => serializer.serialize_newtype_variant("Value", 0, "Aid", &aid),
-            Value::String(s) => serializer.serialize_str(&s),
-            Value::Bool(b) => serializer.serialize_bool(*b),
-            Value::Number(n) => serializer.serialize_i64(*n),
-            Value::Rational32(r) => r.serialize(serializer),
-            Value::Eid(eid) => serializer.serialize_u64(*eid),
-            Value::Instant(i) => serializer.serialize_newtype_variant("Value", 6, "Instant", i),
-            #[cfg(feature = "uuid")]
-            Value::Uuid(uuid) => serializer.serialize_newtype_variant("Value", 7, "Uuid", &uuid),
-        }
-    }
-}
+// use serde::{Serialize, Serializer};
+// impl Serialize for Value {
+//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+//     where
+//         S: Serializer,
+//     {
+//         match self {
+//             Value::Aid(aid) => serializer.serialize_newtype_variant("Value", 0, "Aid", &aid),
+//             Value::String(s) => serializer.serialize_str(&s),
+//             Value::Bool(b) => serializer.serialize_bool(*b),
+//             Value::Number(n) => serializer.serialize_i64(*n),
+//             Value::Rational32(r) => r.serialize(serializer),
+//             Value::Eid(eid) => serializer.serialize_u64(*eid),
+//             Value::Instant(i) => serializer.serialize_newtype_variant("Value", 6, "Instant", i),
+//             #[cfg(feature = "uuid")]
+//             Value::Uuid(uuid) => serializer.serialize_newtype_variant("Value", 7, "Uuid", &uuid),
+//         }
+//     }
+// }
 
 impl std::convert::From<Value> for Eid {
     fn from(v: Value) -> Eid {
@@ -117,12 +116,56 @@ impl std::convert::From<Value> for Eid {
 }
 
 /// A client-facing, non-exceptional error.
-#[derive(Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Error {
     /// Error category.
-    pub category: &'static str,
+    #[serde(rename = "df.error/category")]
+    pub category: String,
     /// Free-frorm description.
+    #[serde(rename = "df.error/message")]
     pub message: String,
+}
+
+impl Error {
+    /// Fix client bug.
+    pub fn incorrect<E: std::string::ToString>(error: E) -> Error {
+        Error {
+            category: "df.error.category/incorrect".to_string(),
+            message: error.to_string(),
+        }
+    }
+
+    /// Fix client noun.
+    pub fn not_found<E: std::string::ToString>(error: E) -> Error {
+        Error {
+            category: "df.error.category/not-found".to_string(),
+            message: error.to_string(),
+        }
+    }
+
+    /// Coordinate with worker.
+    pub fn conflict<E: std::string::ToString>(error: E) -> Error {
+        Error {
+            category: "df.error.category/conflict".to_string(),
+            message: error.to_string(),
+        }
+    }
+
+    /// Fix worker bug.
+    pub fn fault<E: std::string::ToString>(error: E) -> Error {
+        Error {
+            category: "df.error.category/fault".to_string(),
+            message: error.to_string(),
+        }
+    }
+
+    /// Fix client verb.
+    pub fn unsupported<E: std::string::ToString>(error: E) -> Error {
+        Error {
+            category: "df.error.category/unsupported".to_string(),
+            message: error.to_string(),
+        }
+    }
 }
 
 /// Transaction data. Conceptually a pair (Datom, diff) but it's kept
@@ -132,6 +175,27 @@ pub struct TxData(pub isize, pub Eid, pub Aid, pub Value);
 
 /// A (tuple, time, diff) triple, as sent back to clients.
 pub type ResultDiff<T> = (Vec<Value>, T, isize);
+
+/// A worker-local client connection identifier.
+pub type Client = usize;
+
+/// Anything that can be returned to clients.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub enum Output<T> {
+    /// A batch of (tuple, time, diff) triples as returned by Datalog
+    /// queries.
+    QueryDiff(String, Vec<ResultDiff<T>>),
+    /// An output diff on a multi-tenant query.
+    TenantDiff(String, Client, Vec<ResultDiff<T>>),
+    /// A JSON object, e.g. as returned by GraphQL queries.
+    #[cfg(feature = "serde_json")]
+    Json(String, serde_json::Value, T, isize),
+    /// A message forwarded to a specific client.
+    #[cfg(feature = "serde_json")]
+    Message(Client, serde_json::Value),
+    /// An error forwarded to a specific client.
+    Error(Client, Error, server::TxId),
+}
 
 /// An entity, attribute, value triple.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -974,10 +1038,7 @@ where
     for name in names {
         match context.rule(name) {
             None => {
-                return Err(Error {
-                    category: "df.error.category/not-found",
-                    message: format!("Unknown rule {}.", name),
-                });
+                return Err(Error::not_found(format!("Unknown rule {}.", name)));
             }
             Some(rule) => {
                 seen.insert(name.to_string());
@@ -992,10 +1053,7 @@ where
             if !seen.contains(dep_name) {
                 match context.rule(dep_name) {
                     None => {
-                        return Err(Error {
-                            category: "df.error.category/not-found",
-                            message: format!("Unknown rule {}", dep_name),
-                        });
+                        return Err(Error::not_found(format!("Unknown rule {}", dep_name)));
                     }
                     Some(rule) => {
                         seen.insert(dep_name.to_string());
@@ -1008,10 +1066,10 @@ where
         // Ensure all required attributes exist.
         for aid in dependencies.attributes.iter() {
             if !context.has_attribute(aid) {
-                return Err(Error {
-                    category: "df.error.category/not-found",
-                    message: format!("Rule depends on unknown attribute {}", aid),
-                });
+                return Err(Error::not_found(format!(
+                    "Rule depends on unknown attribute {}",
+                    aid
+                )));
             }
         }
 
@@ -1047,19 +1105,19 @@ where
 
         // Step 0: Canonicalize, check uniqueness of bindings.
         if rules.is_empty() {
-            return Err(Error {
-                category: "df.error.category/not-found",
-                message: format!("Couldn't find any rules for name {}.", name),
-            });
+            return Err(Error::not_found(format!(
+                "Couldn't find any rules for name {}.",
+                name
+            )));
         }
 
         rules.sort_by(|x, y| x.name.cmp(&y.name));
         for index in 1..rules.len() - 1 {
             if rules[index].name == rules[index - 1].name {
-                return Err(Error {
-                    category: "df.error.category/conflict",
-                    message: format!("Duplicate rule definitions for rule {}", rules[index].name),
-                });
+                return Err(Error::conflict(format!(
+                    "Duplicate rule definitions for rule {}",
+                    rules[index].name
+                )));
             }
         }
 
@@ -1078,10 +1136,10 @@ where
             if let Some(relation) = local_arrangements.get(name) {
                 result_map.insert(name.to_string(), relation.leave());
             } else {
-                return Err(Error {
-                    category: "df.error.category/not-found",
-                    message: format!("Attempted to publish undefined name {}.", name),
-                });
+                return Err(Error::not_found(format!(
+                    "Attempted to publish undefined name {}.",
+                    name
+                )));
             }
         }
 
@@ -1100,13 +1158,10 @@ where
         for (rule, execution) in rules.iter().zip(executions.drain(..)) {
             match local_arrangements.remove(&rule.name) {
                 None => {
-                    return Err(Error {
-                        category: "df.error.category/not-found",
-                        message: format!(
-                            "Rule {} should be in local arrangements, but isn't.",
-                            &rule.name
-                        ),
-                    });
+                    return Err(Error::not_found(format!(
+                        "Rule {} should be in local arrangements, but isn't.",
+                        &rule.name
+                    )));
                 }
                 Some(variable) => {
                     let (tuples, shutdown) = execution.tuples(nested, context);
@@ -1151,19 +1206,19 @@ where
 
         // Step 0: Canonicalize, check uniqueness of bindings.
         if rules.is_empty() {
-            return Err(Error {
-                category: "df.error.category/not-found",
-                message: format!("Couldn't find any rules for name {}.", name),
-            });
+            return Err(Error::not_found(format!(
+                "Couldn't find any rules for name {}.",
+                name
+            )));
         }
 
         rules.sort_by(|x, y| x.name.cmp(&y.name));
         for index in 1..rules.len() - 1 {
             if rules[index].name == rules[index - 1].name {
-                return Err(Error {
-                    category: "df.error.category/conflict",
-                    message: format!("Duplicate rule definitions for rule {}", rules[index].name),
-                });
+                return Err(Error::conflict(format!(
+                    "Duplicate rule definitions for rule {}",
+                    rules[index].name
+                )));
             }
         }
 
@@ -1190,10 +1245,10 @@ where
             if let Some(relation) = local_arrangements.get(name) {
                 result_map.insert(name.to_string(), relation.leave());
             } else {
-                return Err(Error {
-                    category: "df.error.category/not-found",
-                    message: format!("Attempted to publish undefined name {}.", name),
-                });
+                return Err(Error::not_found(format!(
+                    "Attempted to publish undefined name {}.",
+                    name
+                )));
             }
         }
 
@@ -1215,13 +1270,10 @@ where
         for (rule, execution) in rules.iter().zip(executions.drain(..)) {
             match local_arrangements.remove(&rule.name) {
                 None => {
-                    return Err(Error {
-                        category: "df.error.category/not-found",
-                        message: format!(
-                            "Rule {} should be in local arrangements, but isn't.",
-                            &rule.name
-                        ),
-                    });
+                    return Err(Error::not_found(format!(
+                        "Rule {} should be in local arrangements, but isn't.",
+                        &rule.name
+                    )));
                 }
                 Some(variable) => {
                     let (tuples, shutdown) = execution.tuples(nested, context);

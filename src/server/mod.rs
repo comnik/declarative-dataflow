@@ -81,6 +81,15 @@ pub struct Interest {
     pub disable_logging: Option<bool>,
 }
 
+impl std::convert::From<&Interest> for crate::sinks::SinkingContext {
+    fn from(interest: &Interest) -> Self {
+        Self {
+            name: interest.name.clone(),
+            granularity: interest.granularity.clone(),
+        }
+    }
+}
+
 /// A request with the intent of synthesising one or more new rules
 /// and optionally publishing one or more of them.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -129,6 +138,8 @@ pub enum Request {
     /// Requests any setup logic that needs to be executed
     /// deterministically across all workers.
     Setup,
+    /// Requests a heartbeat containing status information.
+    Status,
     /// Requests orderly shutdown of the system.
     Shutdown,
 }
@@ -315,13 +326,10 @@ where
             // }
 
             match rel_map.remove(name) {
-                None => Err(Error {
-                    category: "df.error.category/fault",
-                    message: format!(
-                        "Relation of interest ({}) wasn't actually implemented.",
-                        name
-                    ),
-                }),
+                None => Err(Error::fault(format!(
+                    "Relation of interest ({}) wasn't actually implemented.",
+                    name
+                ))),
                 Some(relation) => {
                     self.shutdown_handles
                         .insert(name.to_string(), shutdown_handle);
@@ -408,10 +416,7 @@ where
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
             None => self.context.internal.advance_to(next),
-            Some(_) => Err(Error {
-                category: "df.error.category/unsupported",
-                message: "Named domains are not yet supported.".to_string(),
-            }),
+            Some(_) => Err(Error::unsupported("Named domains are not yet supported.")),
         }
     }
 

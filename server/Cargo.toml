@@ -30,6 +30,7 @@ blocking = []
 real-time = ["declarative-dataflow/real-time"]
 csv-source = ["declarative-dataflow/csv-source"]
 json-source = ["declarative-dataflow/json-source"]
+graphql = ["declarative-dataflow/graphql"]
 
 [profile.release]
 opt-level = 3

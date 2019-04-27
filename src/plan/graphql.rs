@@ -136,73 +136,6 @@ fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
     result
 }
 
-/// Outbound direction: Transform the provided query result paths into a
-/// GraphQL-like / JSONy nested value to be provided to the user.
-pub fn paths_to_nested(paths: Vec<Vec<crate::Value>>) -> serde_json::Value {
-    use crate::Value::{Aid, Eid};
-    use serde_json::map::Map;
-
-    let mut acc = Map::new();
-
-    // `paths` has the structure `[[aid/eid val aid/eid val last-aid last-val], ...]`
-    // Starting from the result map `acc`, for each path, we want to navigate down the
-    // map, optionally creating intermediate map levels if they don't exist yet, and finally
-    // insert `last-val` at the lowest level.
-    //
-    // In short: We're rebuilding Clojure's `assoc-in` here: `(assoc-in acc (pop path) (peek path))`
-    for mut path in paths {
-        let mut current_map = &mut acc;
-        let last_val = path.pop().unwrap();
-
-        if let Aid(last_key) = path.pop().unwrap() {
-
-            // If there are already values for the looked at attribute, we obtain
-            // a reference to it. Otherwise, we create a new `Map` and obtain a
-            // reference to it, which will be used in the next iteration.
-            // We repeat this process of traversing down the map and optionally creating
-            // new map levels until we've run out of intermediate attributes.
-            for attribute in path {
-                // keys have to be `String`s and are either `Aid`s (such as "age")
-                // or `Eid`s (linking to a lower `PullPath`)
-                let attr = match attribute {
-                    Aid(x) => x,
-                    Eid(x) => x.to_string(),
-                    _ => unreachable!(),
-                };
-
-                let entry = current_map
-                    .entry(attr)
-                    .or_insert_with(|| serde_json::Value::Object(Map::new()));
-
-                *entry = match entry {
-                    serde_json::Value::Object(m) => {
-                        serde_json::Value::Object(std::mem::replace(m, Map::new()))
-                    }
-                    serde_json::Value::Array(_) => unreachable!(),
-                    _ => serde_json::Value::Object(Map::new()),
-                };
-
-                match entry {
-                    serde_json::Value::Object(m) => current_map = m,
-                    _ => unreachable!(),
-                };
-            }
-
-            // At the lowest level, we finally insert the path's value
-            match current_map.get(&last_key) {
-                Some(serde_json::Value::Object(_)) => (),
-                _ => {
-                    current_map.insert(last_key, serde_json::json!(last_val));
-                }
-            };
-        } else {
-            unreachable!();
-        }
-    }
-
-    serde_json::Value::Object(acc)
-}
-
 impl Implementable for GraphQl {
     fn dependencies(&self) -> Dependencies {
         let mut dependencies = Dependencies::none();
@@ -234,30 +167,3 @@ impl Implementable for GraphQl {
         parsed.implement(nested, local_arrangements, context)
     }
 }
-
-// relation
-//     .inner
-//     .map(|x| ((), x))
-//     .inspect(|x| { println!("{:?}", x); })
-//     .aggregate::<_,Vec<_>,_,_,_>(
-//         |_key, (path, _time, _diff), acc| { acc.push(path); },
-//         |_key, paths| {
-//         paths_to_nested(paths)
-//         // squash_nested(nested)
-//     },
-//         |_key| 1)
-
-// /// Register a GraphQL query
-// pub fn register_graph_ql(&mut self, query: String, name: &str) {
-//     use crate::plan::{GraphQl, Plan};
-
-//     let req = Register {
-//         rules: vec![Rule {
-//             name: name.to_string(),
-//             plan: Plan::GraphQl(GraphQl::new(query)),
-//         }],
-//         publish: vec![name.to_string()],
-//     };
-
-//     self.register(req).unwrap();
-// }
