@@ -7,6 +7,7 @@ extern crate log;
 extern crate clap;
 
 use std::io::Read;
+use std::time::Duration;
 
 use clap::App;
 use uuid::Uuid;
@@ -15,7 +16,7 @@ use ws::{connect, CloseCode};
 use declarative_dataflow::plan::{GraphQl, Plan};
 use declarative_dataflow::server::{Interest, Register, Request};
 use declarative_dataflow::sinks::{AssocIn, Sink};
-use declarative_dataflow::{Rule, TxData};
+use declarative_dataflow::{Output, Rule, TxData};
 
 fn main() {
     env_logger::init();
@@ -27,7 +28,7 @@ fn main() {
     let port = matches.value_of("port").unwrap_or("6262");
     let addr = format!("ws://{}:{}", host, port);
 
-    if let Some(matches) = matches.subcommand_matches("ping") {
+    if let Some(_) = matches.subcommand_matches("ping") {
         connect(addr.clone(), |out| {
             let req = serde_json::to_string::<Vec<Request>>(&vec![Request::Status])
                 .expect("failed to serialize requests");
@@ -35,7 +36,7 @@ fn main() {
             out.send(req).unwrap();
 
             move |msg| {
-                info!("{:?}", msg);
+                handle_message(msg)?;
                 out.close(CloseCode::Normal)
             }
         })
@@ -64,7 +65,7 @@ fn main() {
             out.send(req).unwrap();
 
             move |msg| {
-                info!("{:?}", msg);
+                handle_message(msg)?;
                 out.close(CloseCode::Normal)
             }
         })
@@ -93,7 +94,7 @@ fn main() {
             out.send(req).unwrap();
 
             move |msg| {
-                info!("{:?}", msg);
+                handle_message(msg)?;
                 out.close(CloseCode::Normal)
             }
         })
@@ -128,7 +129,7 @@ fn main() {
                     name: name.to_string(),
                     tenant: None,
                     granularity: None,
-                    sink: Some(Sink::AssocIn(AssocIn { name: name.to_string() })),
+                    sink: Some(Sink::AssocIn(AssocIn {})),
                     disable_logging: None,
                 }),
             ])
@@ -138,11 +139,31 @@ fn main() {
 
             out.send(req).unwrap();
 
-            move |msg| {
-                info!("{:?}", msg);
-                out.close(CloseCode::Normal)
-            }
+            move |msg| handle_message(msg)
         })
         .expect("failed to connect");
     }
+}
+
+fn handle_message(msg: ws::Message) -> ws::Result<()> {
+    match msg {
+        ws::Message::Text(msg) => {
+            trace!("{:?}", msg);
+
+            match serde_json::from_str::<Output<Duration>>(&msg) {
+                Err(err) => error!("{:?}", err),
+                Ok(out) => match out {
+                    Output::Json(_, v, _, _) => {
+                        let pprinted = serde_json::to_string_pretty(&v).expect("failed to pprint");
+                        info!("{}", pprinted);
+                    }
+                    Output::Error(_, err, tx_id) => error!("{:?} @ {}", err, tx_id),
+                    _ => info!("{:?}", out),
+                },
+            }
+        }
+        ws::Message::Binary(_) => unimplemented!(),
+    }
+
+    Ok(())
 }
