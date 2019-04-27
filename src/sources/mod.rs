@@ -5,7 +5,7 @@ use std::rc::{Rc, Weak};
 use std::time::{Duration, Instant};
 
 use timely::dataflow::operators::capture::event::link::EventLink;
-use timely::dataflow::{Scope, Stream};
+use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::logging::TimelyEvent;
 use timely::progress::Timestamp;
 
@@ -28,10 +28,12 @@ pub use self::csv_file::CsvFile;
 // pub use self::json_file::JsonFile;
 
 /// A struct encapsulating any state required to create sources.
-pub struct SourcingContext {
+pub struct SourcingContext<T: Timestamp> {
     /// The logical start of the computation, used by sources to
     /// compute their relative progress.
     pub t0: Instant,
+    /// A handle to the timely probe of the domain this source is created in.
+    pub domain_probe: ProbeHandle<T>,
     /// A weak handle to a scheduler, used by sources to defer their
     /// next activation when polling.
     pub scheduler: Weak<RefCell<Scheduler>>,
@@ -52,7 +54,7 @@ where
     fn source(
         &self,
         scope: &mut S,
-        context: SourcingContext,
+        context: SourcingContext<S::Timestamp>,
     ) -> Vec<(
         Aid,
         AttributeConfig,
@@ -103,7 +105,7 @@ impl<S: Scope<Timestamp = u64>> Sourceable<S> for Source {
     fn source(
         &self,
         _scope: &mut S,
-        _context: SourcingContext,
+        _context: SourcingContext<S::Timestamp>,
     ) -> Vec<(
         Aid,
         AttributeConfig,

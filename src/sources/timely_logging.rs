@@ -27,7 +27,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
     fn source(
         &self,
         scope: &mut S,
-        context: SourcingContext,
+        context: SourcingContext<S::Timestamp>,
     ) -> Vec<(
         Aid,
         AttributeConfig,
