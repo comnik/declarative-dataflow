@@ -14,14 +14,14 @@ use differential_dataflow::lattice::Lattice;
 
 use crate::{Error, Output, ResultDiff};
 
-#[cfg(feature = "csv-source")]
-pub mod csv_file;
-#[cfg(feature = "csv-source")]
-pub use self::csv_file::CsvFile;
+// #[cfg(feature = "csv-source")]
+// pub mod csv_file;
+// #[cfg(feature = "csv-source")]
+// pub use self::csv_file::CsvFile;
 
-#[cfg(feature = "graphql")]
+#[cfg(feature = "serde_json")]
 pub mod assoc_in;
-#[cfg(feature = "graphql")]
+#[cfg(feature = "serde_json")]
 pub use self::assoc_in::AssocIn;
 
 /// A struct encapsulating any state required to create sinks.
@@ -57,21 +57,21 @@ where
 pub enum Sink {
     /// /dev/null, used for benchmarking
     TheVoid(Option<String>),
-    /// CSV files
-    #[cfg(feature = "csv-source")]
-    CsvFile(CsvFile),
+    // /// CSV files
+    // #[cfg(feature = "csv-source")]
+    // CsvFile(CsvFile),
     /// Nested Hash-Maps
-    #[cfg(feature = "graphql")]
+    #[cfg(feature = "serde_json")]
     AssocIn(AssocIn),
 }
 
 impl Sinkable<u64> for Sink {
     fn sink<S, P>(
         &self,
-        stream: &Stream<S, ResultDiff<u64>>,
-        pact: P,
-        probe: &mut ProbeHandle<u64>,
-        context: SinkingContext,
+        _stream: &Stream<S, ResultDiff<u64>>,
+        _pact: P,
+        _probe: &mut ProbeHandle<u64>,
+        _context: SinkingContext,
     ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
     where
         S: Scope<Timestamp = u64>,
@@ -140,6 +140,7 @@ impl Sinkable<Duration> for Sink {
 
                 Ok(None)
             }
+            #[cfg(feature = "serde_json")]
             Sink::AssocIn(ref sink) => sink.sink(stream, pact, probe, context),
             _ => unimplemented!(),
         }

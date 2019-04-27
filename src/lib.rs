@@ -188,9 +188,10 @@ pub enum Output<T> {
     /// An output diff on a multi-tenant query.
     TenantDiff(String, Client, Vec<ResultDiff<T>>),
     /// A JSON object, e.g. as returned by GraphQL queries.
-    #[cfg(feature = "graphql")]
+    #[cfg(feature = "serde_json")]
     Json(String, serde_json::Value, T, isize),
     /// A message forwarded to a specific client.
+    #[cfg(feature = "serde_json")]
     Message(Client, serde_json::Value),
     /// An error forwarded to a specific client.
     Error(Client, Error, server::TxId),
