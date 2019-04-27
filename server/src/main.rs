@@ -700,8 +700,10 @@ fn main() {
             }
 
             // ensure work continues, even if no queries registered,
-            // s.t. the sequencer continues issuing commands
-            worker.step();
+            // s.t. the sequencer continues issuing commands.
+            // If there is nothing to do, park `until_next()` activation
+            // in scheduler is pending.
+            worker.step_or_park(Some(server.scheduler.borrow().until_next()));
 
             server.context.internal.advance().expect("failed to advance domain");
 
