@@ -7,12 +7,12 @@ use std::time::{Duration, Instant};
 use timely::dataflow::channels::pact::ParallelizationContract;
 use timely::dataflow::operators::generic::{Operator, OutputHandle};
 use timely::dataflow::operators::probe::Probe;
-use timely::dataflow::{Scope, Stream, ProbeHandle};
+use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 
-use crate::{Error, ResultDiff};
+use crate::{Error, Output, ResultDiff};
 
 #[cfg(feature = "csv-source")]
 pub mod csv_file;
@@ -36,7 +36,7 @@ where
         stream: &Stream<S, ResultDiff<T>>,
         pact: P,
         probe: &mut ProbeHandle<T>,
-    ) -> Result<(), Error>
+    ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
     where
         S: Scope<Timestamp = T>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<T>>;
@@ -61,7 +61,7 @@ impl Sinkable<u64> for Sink {
         stream: &Stream<S, ResultDiff<u64>>,
         pact: P,
         probe: &mut ProbeHandle<u64>,
-    ) -> Result<(), Error>
+    ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
     where
         S: Scope<Timestamp = u64>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<u64>>,
@@ -76,7 +76,7 @@ impl Sinkable<Duration> for Sink {
         stream: &Stream<S, ResultDiff<Duration>>,
         pact: P,
         probe: &mut ProbeHandle<Duration>,
-    ) -> Result<(), Error>
+    ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
     where
         S: Scope<Timestamp = Duration>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<Duration>>,
@@ -112,7 +112,8 @@ impl Sinkable<Duration> for Sink {
                                     writeln!(writer, "{},{:?}", t0.elapsed().as_millis(), last)
                                         .unwrap();
                                 }
-                            } else if received_input && !input.frontier.frontier().less_equal(&last) {
+                            } else if received_input && !input.frontier.frontier().less_equal(&last)
+                            {
                                 if let Some(ref mut writer) = &mut writer {
                                     writeln!(writer, "{},{:?}", t0.elapsed().as_millis(), last)
                                         .unwrap();
@@ -124,11 +125,11 @@ impl Sinkable<Duration> for Sink {
                         }
                     })
                     .probe_with(probe);
+
+                Ok(None)
             }
-            Sink::AssocIn(ref sink) => { sink.sink(stream, pact, probe)?; }
+            Sink::AssocIn(ref sink) => sink.sink(stream, pact, probe),
             _ => unimplemented!(),
         }
-
-        Ok(())
     }
 }

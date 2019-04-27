@@ -317,13 +317,10 @@ where
             // }
 
             match rel_map.remove(name) {
-                None => Err(Error {
-                    category: "df.error.category/fault",
-                    message: format!(
-                        "Relation of interest ({}) wasn't actually implemented.",
-                        name
-                    ),
-                }),
+                None => Err(Error::fault(format!(
+                    "Relation of interest ({}) wasn't actually implemented.",
+                    name
+                ))),
                 Some(relation) => {
                     self.shutdown_handles
                         .insert(name.to_string(), shutdown_handle);
@@ -410,10 +407,7 @@ where
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
             None => self.context.internal.advance_to(next),
-            Some(_) => Err(Error {
-                category: "df.error.category/unsupported",
-                message: "Named domains are not yet supported.".to_string(),
-            }),
+            Some(_) => Err(Error::unsupported("Named domains are not yet supported.")),
         }
     }
 

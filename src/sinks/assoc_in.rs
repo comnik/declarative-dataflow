@@ -4,21 +4,24 @@ use std::collections::HashMap;
 
 use timely::dataflow::channels::pact::ParallelizationContract;
 use timely::dataflow::operators::generic::Operator;
-use timely::dataflow::operators::{Probe, Inspect};
-use timely::dataflow::{Scope, Stream, ProbeHandle};
+use timely::dataflow::operators::{Inspect, Probe};
+use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 
-use crate::{Error, ResultDiff};
+use crate::{Error, Output, ResultDiff};
 
 use super::Sinkable;
 
 /// A nested hash-map sink.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct AssocIn { }
+pub struct AssocIn {
+    /// Query name.
+    pub name: String,
+}
 
-impl<T: > Sinkable<T> for AssocIn
+impl<T> Sinkable<T> for AssocIn
 where
     T: Timestamp + Lattice,
 {
@@ -27,7 +30,7 @@ where
         stream: &Stream<S, ResultDiff<T>>,
         pact: P,
         probe: &mut ProbeHandle<T>,
-    ) -> Result<(), Error>
+    ) -> Result<Option<Stream<S, Output<T>>>, Error>
     where
         S: Scope<Timestamp = T>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<T>>,
@@ -35,39 +38,50 @@ where
         let mut paths = HashMap::new();
         let mut vector = Vec::new();
 
-        stream
-            .unary_notify(pact, "AssocIn", vec![], move |input, output, notificator| {
-                input.for_each(|cap, data| {
-                    data.swap(&mut vector);
+        let name = self.name.to_string();
 
-                    paths
-                        .entry(cap.time().clone())
-                        .or_insert_with(Vec::new)
-                        .extend(vector.drain(..).map(|(x,_t,diff)| (x, diff)));
-                    
-                    notificator.notify_at(cap.retain());
-                });
+        let sunk = stream
+            .unary_notify(
+                pact,
+                "AssocIn",
+                vec![],
+                move |input, output, notificator| {
+                    input.for_each(|cap, data| {
+                        data.swap(&mut vector);
 
-                // pop completed views
-                notificator.for_each(|cap,_,_| {
-                    if let Some(paths_at_time) = paths.remove(cap.time()) {
-                        output
-                            .session(&cap)
-                            .give(paths_to_nested(paths_at_time));
-                    }
-                });
-            })
-            .inspect(|x| { println!("{:?}", x); })
-            .probe_with(probe);
+                        paths
+                            .entry(cap.time().clone())
+                            .or_insert_with(Vec::new)
+                            .extend(vector.drain(..).map(|(x, _t, diff)| (x, diff)));
 
-        Ok(())
+                        notificator.notify_at(cap.retain());
+                    });
+
+                    // pop completed views
+                    notificator.for_each(|cap, _, _| {
+                        if let Some(paths_at_time) = paths.remove(cap.time()) {
+                            let map = paths_to_nested(paths_at_time);
+                            output.session(&cap).give(Output::Json(
+                                name.clone(),
+                                map,
+                                cap.time().clone(),
+                                1,
+                            ));
+                        }
+                    });
+                },
+            )
+            .inspect(|x| {
+                println!("{:?}", x);
+            });
+
+        Ok(Some(sunk))
     }
 }
 
 /// Outbound direction: Transform the provided query result paths into
 /// a GraphQL-like / JSONy nested value to be provided to the user.
 fn paths_to_nested(paths: Vec<(Vec<crate::Value>, isize)>) -> serde_json::Value {
-    
     use serde_json::map::Map;
     use serde_json::Value::Object;
 
@@ -84,9 +98,8 @@ fn paths_to_nested(paths: Vec<(Vec<crate::Value>, isize)>) -> serde_json::Value 
     // In short: We're rebuilding Clojure's `assoc-in` here:
     // `(assoc-in acc (pop path) (peek path))`
     for (mut path, diff) in paths {
-
         // @TODO handle retractions
-        
+
         let mut current_map = &mut acc;
         let last_val = path.pop().unwrap();
 
@@ -105,9 +118,7 @@ fn paths_to_nested(paths: Vec<(Vec<crate::Value>, isize)>) -> serde_json::Value 
                     _ => unreachable!(),
                 };
 
-                let entry = current_map
-                    .entry(k)
-                    .or_insert_with(|| Object(Map::new()));
+                let entry = current_map.entry(k).or_insert_with(|| Object(Map::new()));
 
                 *entry = match entry {
                     Object(m) => Object(std::mem::replace(m, Map::new())),

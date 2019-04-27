@@ -128,7 +128,7 @@ fn main() {
                     name: name.to_string(),
                     tenant: None,
                     granularity: None,
-                    sink: Some(Sink::AssocIn(AssocIn {})),
+                    sink: Some(Sink::AssocIn(AssocIn { name: name.to_string() })),
                     disable_logging: None,
                 }),
             ])

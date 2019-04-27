@@ -37,10 +37,7 @@ impl Sinkable<u64> for CsvFile {
             .from_path(&self.path);
 
         match writer_result {
-            Err(error) => Err(Error {
-                category: "df.error.category/fault",
-                message: format!("Failed to create writer: {}", error),
-            }),
+            Err(error) => Err(Error::fault(format!("Failed to create writer: {}", error))),
             Ok(mut writer) => {
                 let mut recvd = Vec::new();
                 let mut vector = Vec::new();

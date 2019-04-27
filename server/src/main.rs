@@ -16,7 +16,7 @@ use getopts::Options;
 
 use itertools::Itertools;
 
-use timely::dataflow::channels::pact::Exchange;
+use timely::dataflow::channels::pact::{Exchange, Pipeline};
 use timely::dataflow::operators::generic::OutputHandle;
 use timely::dataflow::operators::{Operator, Probe};
 use timely::logging::{Logger, TimelyEvent};
@@ -34,7 +34,7 @@ use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
 use declarative_dataflow::sinks::Sinkable;
-use declarative_dataflow::{Eid, Error, ResultDiff};
+use declarative_dataflow::{Eid, Error, Output, ResultDiff};
 
 /// Server timestamp type.
 #[cfg(not(feature = "real-time"))]
@@ -63,20 +63,6 @@ struct Command {
     pub client: usize,
     /// Requests issued by the client.
     pub requests: Vec<Request>,
-}
-
-enum Output {
-    /// A batch of (tuple, time, diff) triples as returned by Datalog
-    /// queries.
-    QueryDiff(String, Vec<ResultDiff<T>>),
-    /// An output diff on a multi-tenant query.
-    TenantDiff(String, Token, Vec<ResultDiff<T>>),
-    // /// A hash-map as returned by GraphQL queries.
-    // Map(serde_json::map::Map<String, serde_json::Value>, T, isize),
-    /// A message forwarded to a specific client.
-    Message(Token, serde_json::Value),
-    /// An error forwarded to a specific client.
-    Error(Token, Error, TxId),
 }
 
 fn main() {
@@ -155,7 +141,7 @@ fn main() {
         let (send_cli, recv_cli) = mio_extras::channel::channel();
 
         // setup results channel
-        let (send_results, recv_results) = mio_extras::channel::channel::<Output>();
+        let (send_results, recv_results) = mio_extras::channel::channel::<Output<T>>();
 
         // setup server socket
         // let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
@@ -257,12 +243,7 @@ fn main() {
                         while let Ok(cli_input) = recv_cli.try_recv() {
                             match serde_json::from_str::<Vec<Request>>(&cli_input) {
                                 Err(serde_error) => {
-                                    let error = Error {
-                                        category: "df.error.category/incorrect",
-                                        message: serde_error.to_string(),
-                                    };
-
-                                    error!("{:?} @ {}", error, next_tx - 1);
+                                    error!("{:?} @ {}", Error::incorrect(serde_error), next_tx - 1);
                                 }
                                 Ok(requests) => {
                                     sequencer.push(Command {
@@ -348,21 +329,38 @@ fn main() {
                                         }
                                     }
                                 }
-                                Output::TenantDiff(name, token, results) => {
-                                    info!("[WORKER {}] {} results for tenant {:?} on query {}", worker.index(), results.len(), token, name);
+                                Output::TenantDiff(name, client, results) => {
+                                    info!("[WORKER {}] {} results for tenant {:?} on query {}", worker.index(), results.len(), client, name);
 
                                     let serialized =
                                         serde_json::to_string::<(String, Vec<ResultDiff<T>>)>(&(name, results))
                                         .expect("failed to serialize outputs");
 
-                                    (Box::new(std::iter::once(token)), Some(serialized))
+                                    (Box::new(std::iter::once(client.into())), Some(serialized))
                                 }
-                                Output::Message(token, msg) => {
+                                Output::Json(name, value, t, diff) => {
+                                    info!("[WORKER {}] json on query {}", worker.index(), name);
+
+                                    match server.interests.get(&name) {
+                                        None => {
+                                            warn!("result on query {} w/o interested clients", name);
+                                            (Box::new(std::iter::empty()), None)
+                                        }
+                                        Some(tokens) => {
+                                            let serialized =
+                                                serde_json::to_string::<(String, Vec<(serde_json::Value, T, isize)>)>(&(name, vec![(value, t, diff)]))
+                                                .expect("failed to serialize outputs");
+
+                                            (Box::new(tokens.iter().cloned()), Some(serialized))
+                                        }
+                                    }
+                                }
+                                Output::Message(client, msg) => {
                                     info!("[WORKER {}] {:?}", worker.index(), msg);
 
-                                    (Box::new(std::iter::once(token)), Some(msg.to_string()))
+                                    (Box::new(std::iter::once(client.into())), Some(msg.to_string()))
                                 }
-                                Output::Error(token, error, tx_id) => {
+                                Output::Error(client, error, tx_id) => {
                                     error!("[WORKER {}] {:?}", worker.index(), error);
 
                                     let mut serializable = serde_json::Map::new();
@@ -373,7 +371,7 @@ fn main() {
                                         &("df.error", vec![(serializable, tx_id)])
                                     ).expect("failed to serialize errors");
 
-                                    (Box::new(std::iter::once(token)), Some(serialized))
+                                    (Box::new(std::iter::once(client.into())), Some(serialized))
                                 }
                             };
 
@@ -438,12 +436,9 @@ fn main() {
                                                         ws::Message::Text(string) => {
                                                             match serde_json::from_str::<Vec<Request>>(&string) {
                                                                 Err(serde_error) => {
-                                                                    let error = Error {
-                                                                        category: "df.error.category/incorrect",
-                                                                        message: serde_error.to_string(),
-                                                                    };
-
-                                                                    send_results.send(Output::Error(token, error, next_tx - 1)).unwrap();
+                                                                    send_results
+                                                                        .send(Output::Error(token.into(), Error::incorrect(serde_error), next_tx - 1))
+                                                                        .unwrap();
                                                                 }
                                                                 Ok(requests) => {
                                                                     sequencer.push(
@@ -459,12 +454,9 @@ fn main() {
                                                         ws::Message::Binary(bytes) => {
                                                             match rmp_serde::decode::from_slice::<Vec<Request>>(&bytes) {
                                                                 Err(rmp_error) => {
-                                                                    let error = Error {
-                                                                        category: "df.error.category/incorrect",
-                                                                        message: rmp_error.to_string(),
-                                                                    };
-
-                                                                    send_results.send(Output::Error(token, error, next_tx - 1)).unwrap();
+                                                                    send_results
+                                                                        .send(Output::Error(token.into(), Error::incorrect(rmp_error), next_tx - 1))
+                                                                        .unwrap();
                                                                 }
                                                                 Ok(requests) => {
                                                                     sequencer.push(
@@ -553,7 +545,7 @@ fn main() {
                     match req {
                         Request::Transact(req) => {
                             if let Err(error) = server.transact(req, owner, worker.index()) {
-                                send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
+                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
                             }
                         }
                         Request::Interest(req) => {
@@ -593,7 +585,7 @@ fn main() {
 
                                     match server.interest(&req.name, scope) {
                                         Err(error) => {
-                                            send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
+                                            send_results.send(Output::Error(client, error, last_tx)).unwrap();
                                         }
                                         Ok(relation) => {
                                             let delayed = match req.granularity {
@@ -643,7 +635,7 @@ fn main() {
 
                                                                         for (tenant, batch) in &per_tenant {
                                                                             send_results_handle
-                                                                                .send(Output::TenantDiff(name.clone(), Token(tenant), batch.collect()))
+                                                                                .send(Output::TenantDiff(name.clone(), tenant, batch.collect()))
                                                                                 .unwrap();
                                                                         }
                                                                     });
@@ -657,8 +649,26 @@ fn main() {
 
                                                 match req.sink {
                                                     Some(sink) => {
-                                                        sink.sink(&delayed.inner, pact, &mut server.probe)
+                                                        let sunk = sink.sink(&delayed.inner, pact, &mut server.probe)
                                                             .expect("sinking failed");
+
+                                                        if let Some(sunk) = sunk {
+                                                            let mut vector = Vec::new();
+                                                            sunk
+                                                                .unary(Pipeline, "SinkResults", move |_cap, _info| {
+                                                                    move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
+                                                                        input.for_each(|_time, data| {
+                                                                            data.swap(&mut vector);
+
+                                                                            for out in vector.drain(..) {
+                                                                                send_results_handle.send(out)
+                                                                                    .unwrap();
+                                                                            }
+                                                                        });
+                                                                    }
+                                                                })
+                                                                .probe_with(&mut server.probe);
+                                                        }
                                                     }
                                                     None => {
                                                         delayed
@@ -707,31 +717,31 @@ fn main() {
                         Request::Uninterest(name) => server.uninterest(Token(command.client), &name),
                         Request::Register(req) => {
                             if let Err(error) = server.register(req) {
-                                send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
+                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
                             }
                         }
                         Request::RegisterSource(source) => {
                             worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.register_source(Box::new(source), scope) {
-                                    send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
+                                    send_results.send(Output::Error(client, error, last_tx)).unwrap();
                                 }
                             });
                         }
                         Request::CreateAttribute(CreateAttribute { name, config }) => {
                             worker.dataflow::<T, _, _>(|scope| {
                                 if let Err(error) = server.context.internal.create_transactable_attribute(&name, config, scope) {
-                                    send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
+                                    send_results.send(Output::Error(client, error, last_tx)).unwrap();
                                 }
                             });
                         }
                         Request::AdvanceDomain(name, next) => {
                             if let Err(error) = server.advance_domain(name, next.into()) {
-                                send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
+                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
                             }
                         }
                         Request::CloseInput(name) => {
                             if let Err(error) = server.context.internal.close_input(name) {
-                                send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
+                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
                             }
                         }
                         Request::Disconnect => server.disconnect_client(Token(command.client)),
@@ -742,7 +752,7 @@ fn main() {
                                 "message": "running",
                             });
 
-                            send_results.send(Output::Message(Token(client), status)).unwrap();
+                            send_results.send(Output::Message(client, status)).unwrap();
                         }
                         Request::Shutdown => {
                             shutdown = true
@@ -758,7 +768,7 @@ fn main() {
                     let next = Instant::now().duration_since(worker.timer());
 
                     if let Err(error) = server.advance_domain(None, next) {
-                        send_results.send(Output::Error(Token(client), error, last_tx)).unwrap();
+                        send_results.send(Output::Error(client, error, last_tx)).unwrap();
                     }
                 }
             }

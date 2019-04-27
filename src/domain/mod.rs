@@ -69,10 +69,10 @@ where
         pairs: &Stream<S, ((Value, Value), T, isize)>,
     ) -> Result<(), Error> {
         if self.forward.contains_key(name) {
-            Err(Error {
-                category: "df.error.category/conflict",
-                message: format!("An attribute of name {} already exists.", name),
-            })
+            Err(Error::conflict(format!(
+                "An attribute of name {} already exists.",
+                name
+            )))
         } else {
             let tuples = match config.input_semantics {
                 InputSemantics::Raw => pairs.as_collection(),
@@ -156,10 +156,7 @@ where
         for TxData(op, e, a, v) in tx_data {
             match self.input_sessions.get_mut(&a) {
                 None => {
-                    return Err(Error {
-                        category: "df.error.category/not-found",
-                        message: format!("Attribute {} does not exist.", a),
-                    });
+                    return Err(Error::not_found(format!("Attribute {} does not exist.", a)));
                 }
                 Some(handle) => {
                     handle.update((Value::Eid(e), v), op);
@@ -173,10 +170,7 @@ where
     /// Closes and drops an existing input.
     pub fn close_input(&mut self, name: String) -> Result<(), Error> {
         match self.input_sessions.remove(&name) {
-            None => Err(Error {
-                category: "df.error.category/not-found",
-                message: format!("Input {} does not exist.", name),
-            }),
+            None => Err(Error::not_found(format!("Input {} does not exist.", name))),
             Some(handle) => {
                 handle.close();
                 Ok(())
@@ -188,13 +182,10 @@ where
     pub fn advance_to(&mut self, next: T) -> Result<(), Error> {
         if !self.now_at.less_equal(&next) {
             // We can't rewind time.
-            Err(Error {
-                category: "df.error.category/conflict",
-                message: format!(
-                    "Domain is at {:?}, you attempted to rewind to {:?}.",
-                    &self.now_at, &next
-                ),
-            })
+            Err(Error::conflict(format!(
+                "Domain is at {:?}, you attempted to rewind to {:?}.",
+                &self.now_at, &next
+            )))
         } else if !self.now_at.eq(&next) {
             trace!(
                 "Advancing domain to {:?} ({} attributes, {} handles)",
