@@ -192,10 +192,6 @@ pub enum Output<T> {
     Error(Client, Error, server::TxId),
 }
 
-/// An entity, attribute, value triple.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct Datom(pub Eid, pub Aid, pub Value);
-
 /// A trace of values indexed by self.
 pub type TraceKeyHandle<K, T, R> = TraceAgent<OrdKeySpine<K, T, R>>;
 
