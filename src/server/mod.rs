@@ -414,7 +414,7 @@ where
     /// Handle an AdvanceDomain request.
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
-            None => self.context.internal.advance_to(next),
+            None => self.context.internal.advance_epoch(next),
             Some(_) => Err(Error::unsupported("Named domains are not yet supported.")),
         }
     }
@@ -448,11 +448,31 @@ where
     /// Returns true iff the probe is behind any input handle. Mostly
     /// used as a convenience method during testing.
     pub fn is_any_outdated(&self) -> bool {
-        if self.probe.less_than(self.context.internal.time()) {
-            return true;
-        }
+        // We must distinguish the scenario where the internal domain
+        // has no sources from one where all its internal sources have
+        // dropped their capabilities. We do this by checking the
+        // probed_source_count of the domain.
 
-        false
+        if self.probe.less_than(self.context.internal.epoch()) {
+            true
+        } else if self.context.internal.probed_source_count() > 0 {
+            self.probe.with_frontier(|out_frontier| {
+                if out_frontier.is_empty() {
+                    false
+                } else {
+                    self.context
+                        .internal
+                        .domain_probe()
+                        .with_frontier(|in_frontier| {
+                            out_frontier
+                                .iter()
+                                .any(|t_out| in_frontier.iter().all(|t_in| t_out.less_than(t_in)))
+                        })
+                }
+            })
+        } else {
+            false
+        }
     }
 
     /// Helper for registering, publishing, and indicating interest in
