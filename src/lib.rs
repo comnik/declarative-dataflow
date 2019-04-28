@@ -88,25 +88,18 @@ pub enum Value {
     Real(fixed::types::I16F16),
 }
 
-// use serde::{Serialize, Serializer};
-// impl Serialize for Value {
-//     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-//     where
-//         S: Serializer,
-//     {
-//         match self {
-//             Value::Aid(aid) => serializer.serialize_newtype_variant("Value", 0, "Aid", &aid),
-//             Value::String(s) => serializer.serialize_str(&s),
-//             Value::Bool(b) => serializer.serialize_bool(*b),
-//             Value::Number(n) => serializer.serialize_i64(*n),
-//             Value::Rational32(r) => r.serialize(serializer),
-//             Value::Eid(eid) => serializer.serialize_u64(*eid),
-//             Value::Instant(i) => serializer.serialize_newtype_variant("Value", 6, "Instant", i),
-//             #[cfg(feature = "uuid")]
-//             Value::Uuid(uuid) => serializer.serialize_newtype_variant("Value", 7, "Uuid", &uuid),
-//         }
-//     }
-// }
+#[cfg(feature = "serde_json")]
+impl std::convert::From<Value> for serde_json::Value {
+    fn from(v: Value) -> Self {
+        match v {
+            Value::Aid(v) => serde_json::Value::String(v),
+            Value::String(v) => serde_json::Value::String(v),
+            Value::Bool(v) => serde_json::Value::Bool(v),
+            Value::Number(v) => serde_json::Value::Number(serde_json::Number::from(v)),
+            _ => unimplemented!(),
+        }
+    }
+}
 
 impl std::convert::From<Value> for Eid {
     fn from(v: Value) -> Eid {

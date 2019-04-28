@@ -78,7 +78,8 @@ fn paths_to_nested(paths: Vec<(Vec<crate::Value>, isize)>) -> serde_json::Value 
     use serde_json::map::Map;
     use serde_json::Value::Object;
 
-    use crate::Value::{Aid, Eid};
+    use crate::Value;
+    use Value::{Aid, Eid};
 
     let mut acc = Map::new();
 
@@ -94,7 +95,7 @@ fn paths_to_nested(paths: Vec<(Vec<crate::Value>, isize)>) -> serde_json::Value 
         // @TODO handle retractions
 
         let mut current_map = &mut acc;
-        let last_val = path.pop().unwrap();
+        let last_val: Value = path.pop().unwrap();
 
         if let Aid(last_key) = path.pop().unwrap() {
             // If there are already values for the looked at attribute, we obtain
@@ -129,7 +130,7 @@ fn paths_to_nested(paths: Vec<(Vec<crate::Value>, isize)>) -> serde_json::Value 
             match current_map.get(&last_key) {
                 Some(Object(_)) => (),
                 _ => {
-                    current_map.insert(last_key, serde_json::json!(last_val));
+                    current_map.insert(last_key, serde_json::Value::from(last_val));
                 }
             };
         } else {

@@ -155,7 +155,7 @@ fn handle_message(msg: ws::Message) -> ws::Result<()> {
                 Ok(out) => match out {
                     Output::Json(_, v, _, _) => {
                         let pprinted = serde_json::to_string_pretty(&v).expect("failed to pprint");
-                        info!("{}", pprinted);
+                        info!("\n{}", pprinted);
                     }
                     Output::Error(_, err, tx_id) => error!("{:?} @ {}", err, tx_id),
                     _ => info!("{:?}", out),
