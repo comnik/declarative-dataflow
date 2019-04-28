@@ -49,8 +49,8 @@ fn run_transform_cases() {
             })
         },
         transactions: vec![vec![
-            TxData(1, 1, ":timestamp".to_string(), Instant(1_540_048_515_500)),
-            TxData(1, 2, ":timestamp".to_string(), Instant(1_540_048_515_616)),
+            TxData::add(1, ":timestamp", Instant(1_540_048_515_500)),
+            TxData::add(2, ":timestamp", Instant(1_540_048_515_616)),
         ]],
         expectations: vec![vec![
             (

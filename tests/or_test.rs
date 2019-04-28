@@ -121,18 +121,18 @@ fn run_cases(mut cases: Vec<Case>) {
 #[test]
 fn or() {
     let data = vec![
-        TxData(1, 1, ":name".to_string(), String("Ivan".to_string())),
-        TxData(1, 1, ":age".to_string(), Number(10)),
-        TxData(1, 2, ":name".to_string(), String("Ivan".to_string())),
-        TxData(1, 2, ":age".to_string(), Number(20)),
-        TxData(1, 3, ":name".to_string(), String("Oleg".to_string())),
-        TxData(1, 3, ":age".to_string(), Number(10)),
-        TxData(1, 4, ":name".to_string(), String("Oleg".to_string())),
-        TxData(1, 4, ":age".to_string(), Number(20)),
-        TxData(1, 5, ":name".to_string(), String("Ivan".to_string())),
-        TxData(1, 5, ":age".to_string(), Number(10)),
-        TxData(1, 6, ":name".to_string(), String("Ivan".to_string())),
-        TxData(1, 6, ":age".to_string(), Number(20)),
+        TxData::add(1, ":name", String("Ivan".to_string())),
+        TxData::add(1, ":age", Number(10)),
+        TxData::add(2, ":name", String("Ivan".to_string())),
+        TxData::add(2, ":age", Number(20)),
+        TxData::add(3, ":name", String("Oleg".to_string())),
+        TxData::add(3, ":age", Number(10)),
+        TxData::add(4, ":name", String("Oleg".to_string())),
+        TxData::add(4, ":age", Number(20)),
+        TxData::add(5, ":name", String("Ivan".to_string())),
+        TxData::add(5, ":age", Number(10)),
+        TxData::add(6, ":name", String("Ivan".to_string())),
+        TxData::add(6, ":age", Number(20)),
     ];
 
     run_cases(vec![
@@ -290,18 +290,18 @@ fn or() {
 #[test]
 fn or_join() {
     let data = vec![
-        TxData(1, 1, ":name".to_string(), String("Ivan".to_string())),
-        TxData(1, 1, ":age".to_string(), Number(10)),
-        TxData(1, 2, ":name".to_string(), String("Ivan".to_string())),
-        TxData(1, 2, ":age".to_string(), Number(20)),
-        TxData(1, 3, ":name".to_string(), String("Oleg".to_string())),
-        TxData(1, 3, ":age".to_string(), Number(10)),
-        TxData(1, 4, ":name".to_string(), String("Oleg".to_string())),
-        TxData(1, 4, ":age".to_string(), Number(20)),
-        TxData(1, 5, ":name".to_string(), String("Ivan".to_string())),
-        TxData(1, 5, ":age".to_string(), Number(10)),
-        TxData(1, 6, ":name".to_string(), String("Ivan".to_string())),
-        TxData(1, 6, ":age".to_string(), Number(20)),
+        TxData::add(1, ":name", String("Ivan".to_string())),
+        TxData::add(1, ":age", Number(10)),
+        TxData::add(2, ":name", String("Ivan".to_string())),
+        TxData::add(2, ":age", Number(20)),
+        TxData::add(3, ":name", String("Oleg".to_string())),
+        TxData::add(3, ":age", Number(10)),
+        TxData::add(4, ":name", String("Oleg".to_string())),
+        TxData::add(4, ":age", Number(20)),
+        TxData::add(5, ":name", String("Ivan".to_string())),
+        TxData::add(5, ":age", Number(10)),
+        TxData::add(6, ":name", String("Ivan".to_string())),
+        TxData::add(6, ":age", Number(20)),
     ];
 
     run_cases(vec![Case {

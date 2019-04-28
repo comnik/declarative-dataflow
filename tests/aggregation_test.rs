@@ -118,12 +118,12 @@ fn run_cases(mut cases: Vec<Case>) {
 fn count() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData(1, 1, ":amount".to_string(), Number(5)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 1, ":amount".to_string(), Number(2)),
-        TxData(1, 1, ":amount".to_string(), Number(4)),
-        TxData(1, 1, ":amount".to_string(), Number(6)),
+        TxData::add(1, ":amount", Number(5)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(1, ":amount", Number(2)),
+        TxData::add(1, ":amount", Number(4)),
+        TxData::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -177,12 +177,12 @@ fn count() {
 fn max() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData(1, 1, ":amount".to_string(), Number(5)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 1, ":amount".to_string(), Number(2)),
-        TxData(1, 1, ":amount".to_string(), Number(4)),
-        TxData(1, 1, ":amount".to_string(), Number(6)),
+        TxData::add(1, ":amount", Number(5)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(1, ":amount", Number(2)),
+        TxData::add(1, ":amount", Number(4)),
+        TxData::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -225,12 +225,12 @@ fn max() {
 fn min() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData(1, 1, ":amount".to_string(), Number(5)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 1, ":amount".to_string(), Number(2)),
-        TxData(1, 1, ":amount".to_string(), Number(4)),
-        TxData(1, 1, ":amount".to_string(), Number(6)),
+        TxData::add(1, ":amount", Number(5)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(1, ":amount", Number(2)),
+        TxData::add(1, ":amount", Number(4)),
+        TxData::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -273,12 +273,12 @@ fn min() {
 fn sum() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData(1, 1, ":amount".to_string(), Number(5)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 1, ":amount".to_string(), Number(2)),
-        TxData(1, 1, ":amount".to_string(), Number(4)),
-        TxData(1, 1, ":amount".to_string(), Number(6)),
+        TxData::add(1, ":amount", Number(5)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(1, ":amount", Number(2)),
+        TxData::add(1, ":amount", Number(4)),
+        TxData::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -332,12 +332,12 @@ fn sum() {
 fn avg() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData(1, 1, ":amount".to_string(), Number(5)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 1, ":amount".to_string(), Number(2)),
-        TxData(1, 1, ":amount".to_string(), Number(4)),
-        TxData(1, 1, ":amount".to_string(), Number(6)),
+        TxData::add(1, ":amount", Number(5)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(1, ":amount", Number(2)),
+        TxData::add(1, ":amount", Number(4)),
+        TxData::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -391,12 +391,12 @@ fn avg() {
 fn variance() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData(1, 1, ":amount".to_string(), Number(5)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 1, ":amount".to_string(), Number(2)),
-        TxData(1, 1, ":amount".to_string(), Number(4)),
-        TxData(1, 1, ":amount".to_string(), Number(6)),
+        TxData::add(1, ":amount", Number(5)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(1, ":amount", Number(2)),
+        TxData::add(1, ":amount", Number(4)),
+        TxData::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -443,12 +443,12 @@ fn variance() {
 fn median() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData(1, 1, ":amount".to_string(), Number(5)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 2, ":amount".to_string(), Number(10)),
-        TxData(1, 1, ":amount".to_string(), Number(2)),
-        TxData(1, 1, ":amount".to_string(), Number(4)),
-        TxData(1, 1, ":amount".to_string(), Number(6)),
+        TxData::add(1, ":amount", Number(5)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(2, ":amount", Number(10)),
+        TxData::add(1, ":amount", Number(2)),
+        TxData::add(1, ":amount", Number(4)),
+        TxData::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -519,20 +519,20 @@ fn multiple_aggregations() {
             },
             transactions: vec![
                 vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                    TxData(1, 1, ":amount".to_string(), Number(9)),
-                    TxData(1, 1, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":debt".to_string(), Number(13)),
-                    TxData(1, 1, ":debt".to_string(), Number(4)),
-                    TxData(1, 1, ":debt".to_string(), Number(9)),
-                    TxData(1, 1, ":debt".to_string(), Number(15)),
-                    TxData(1, 1, ":debt".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(2)),
-                    TxData(1, 2, ":amount".to_string(), Number(4)),
-                    TxData(1, 2, ":debt".to_string(), Number(5)),
-                    TxData(1, 2, ":debt".to_string(), Number(42)),
+                    TxData::add(1, ":amount", Number(5)),
+                    TxData::add(1, ":amount", Number(2)),
+                    TxData::add(1, ":amount", Number(6)),
+                    TxData::add(1, ":amount", Number(9)),
+                    TxData::add(1, ":amount", Number(10)),
+                    TxData::add(1, ":debt", Number(13)),
+                    TxData::add(1, ":debt", Number(4)),
+                    TxData::add(1, ":debt", Number(9)),
+                    TxData::add(1, ":debt", Number(15)),
+                    TxData::add(1, ":debt", Number(10)),
+                    TxData::add(2, ":amount", Number(2)),
+                    TxData::add(2, ":amount", Number(4)),
+                    TxData::add(2, ":debt", Number(5)),
+                    TxData::add(2, ":debt", Number(42)),
                 ],
             ],
             expectations: vec![
@@ -580,20 +580,20 @@ fn multiple_aggregations() {
             },
             transactions: vec![
                 vec![
-                    TxData(1, 1, ":amount".to_string(), Number(5)),
-                    TxData(1, 1, ":amount".to_string(), Number(2)),
-                    TxData(1, 1, ":amount".to_string(), Number(6)),
-                    TxData(1, 1, ":amount".to_string(), Number(9)),
-                    TxData(1, 1, ":amount".to_string(), Number(10)),
-                    TxData(1, 1, ":debt".to_string(), Number(13)),
-                    TxData(1, 1, ":debt".to_string(), Number(4)),
-                    TxData(1, 1, ":debt".to_string(), Number(9)),
-                    TxData(1, 1, ":debt".to_string(), Number(15)),
-                    TxData(1, 1, ":debt".to_string(), Number(10)),
-                    TxData(1, 2, ":amount".to_string(), Number(2)),
-                    TxData(1, 2, ":amount".to_string(), Number(4)),
-                    TxData(1, 2, ":debt".to_string(), Number(5)),
-                    TxData(1, 2, ":debt".to_string(), Number(42)),
+                    TxData::add(1, ":amount", Number(5)),
+                    TxData::add(1, ":amount", Number(2)),
+                    TxData::add(1, ":amount", Number(6)),
+                    TxData::add(1, ":amount", Number(9)),
+                    TxData::add(1, ":amount", Number(10)),
+                    TxData::add(1, ":debt", Number(13)),
+                    TxData::add(1, ":debt", Number(4)),
+                    TxData::add(1, ":debt", Number(9)),
+                    TxData::add(1, ":debt", Number(15)),
+                    TxData::add(1, ":debt", Number(10)),
+                    TxData::add(2, ":amount", Number(2)),
+                    TxData::add(2, ":amount", Number(4)),
+                    TxData::add(2, ":debt", Number(5)),
+                    TxData::add(2, ":debt", Number(42)),
                 ],
             ],
             expectations: vec![
@@ -635,14 +635,14 @@ fn multiple_aggregations() {
             },
             transactions: vec![
                 vec![
-                    TxData(1, 1, ":monster".to_string(), String("Cerberus".to_string())),
-                    TxData(1, 1, ":heads".to_string(), Number(3)),
-                    TxData(1, 2, ":monster".to_string(), String("Medusa".to_string())),
-                    TxData(1, 2, ":heads".to_string(), Number(1)),
-                    TxData(1, 3, ":monster".to_string(), String("Cyclops".to_string())),
-                    TxData(1, 3, ":heads".to_string(), Number(1)),
-                    TxData(1, 4, ":monster".to_string(), String("Chimera".to_string())),
-                    TxData(1, 4, ":heads".to_string(), Number(1)),
+                    TxData::add(1, ":monster", String("Cerberus".to_string())),
+                    TxData::add(1, ":heads", Number(3)),
+                    TxData::add(2, ":monster", String("Medusa".to_string())),
+                    TxData::add(2, ":heads", Number(1)),
+                    TxData::add(3, ":monster", String("Cyclops".to_string())),
+                    TxData::add(3, ":heads", Number(1)),
+                    TxData::add(4, ":monster", String("Chimera".to_string())),
+                    TxData::add(4, ":heads", Number(1)),
                 ],
             ],
             expectations: vec![

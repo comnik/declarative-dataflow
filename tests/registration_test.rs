@@ -24,9 +24,9 @@ fn match_ea_after_input() {
         });
 
         let tx_data = vec![
-            TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
-            TxData(1, 1, ":name".to_string(), String("Alias".to_string())),
-            TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
+            TxData::add(1, ":name", String("Dipper".to_string())),
+            TxData::add(1, ":name", String("Alias".to_string())),
+            TxData::add(2, ":name", String("Mabel".to_string())),
         ];
 
         server.transact(tx_data, 0, 0).unwrap();
@@ -92,14 +92,17 @@ fn join_after_input() {
         worker.step_while(|| server.is_any_outdated());
 
         {
-            let tx_data = vec![TxData(
-                1,
-                1,
-                ":user/id".to_string(),
-                String("123-456-789".to_string()),
-            )];
-
-            server.transact(tx_data, 0, 0).unwrap();
+            server
+                .transact(
+                    vec![TxData::add(
+                        1,
+                        ":user/id",
+                        String("123-456-789".to_string()),
+                    )],
+                    0,
+                    0,
+                )
+                .unwrap();
 
             server.advance_domain(None, 2).unwrap();
 
@@ -107,14 +110,17 @@ fn join_after_input() {
         }
 
         {
-            let tx_data = vec![TxData(
-                1,
-                101,
-                ":transfer/from".to_string(),
-                String("123-456-789".to_string()),
-            )];
-
-            server.transact(tx_data, 0, 0).unwrap();
+            server
+                .transact(
+                    vec![TxData::add(
+                        101,
+                        ":transfer/from",
+                        String("123-456-789".to_string()),
+                    )],
+                    0,
+                    0,
+                )
+                .unwrap();
 
             server.advance_domain(None, 3).unwrap();
 

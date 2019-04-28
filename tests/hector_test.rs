@@ -172,9 +172,9 @@ fn run_hector_cases() {
                 bindings: vec![Binding::attribute(0, ":name", 1)],
             },
             transactions: vec![vec![
-                TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
-                TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
-                TxData(1, 3, ":name".to_string(), String("Soos".to_string())),
+                TxData::add(1, ":name", String("Dipper".to_string())),
+                TxData::add(2, ":name", String("Mabel".to_string())),
+                TxData::add(3, ":name", String("Soos".to_string())),
             ]],
             expectations: vec![vec![
                 (vec![Eid(1), String("Dipper".to_string())], 0, 1),
@@ -192,9 +192,9 @@ fn run_hector_cases() {
                 ],
             },
             transactions: vec![vec![
-                TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
-                TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
-                TxData(1, 3, ":name".to_string(), String("Soos".to_string())),
+                TxData::add(1, ":name", String("Dipper".to_string())),
+                TxData::add(2, ":name", String("Mabel".to_string())),
+                TxData::add(3, ":name", String("Soos".to_string())),
             ]],
             expectations: vec![vec![(vec![Eid(1), String("Dipper".to_string())], 0, 1)]],
         },
@@ -210,11 +210,11 @@ fn run_hector_cases() {
                     ],
                 },
                 transactions: vec![vec![
-                    TxData(1, 1, ":name".to_string(), String("Dipper".to_string())),
-                    TxData(1, 1, ":age".to_string(), Number(12)),
-                    TxData(1, 2, ":name".to_string(), String("Mabel".to_string())),
-                    TxData(1, 2, ":age".to_string(), Number(13)),
-                    TxData(1, 3, ":name".to_string(), String("Soos".to_string())),
+                    TxData::add(1, ":name", String("Dipper".to_string())),
+                    TxData::add(1, ":age", Number(12)),
+                    TxData::add(2, ":name", String("Mabel".to_string())),
+                    TxData::add(2, ":age", Number(13)),
+                    TxData::add(3, ":name", String("Soos".to_string())),
                 ]],
                 expectations: vec![vec![
                     (vec![Eid(1), Number(12), String("Dipper".to_string())], 0, 1),
@@ -235,12 +235,12 @@ fn run_hector_cases() {
                     ],
                 },
                 transactions: vec![vec![
-                    TxData(1, 100, "edge".to_string(), Eid(200)),
-                    TxData(1, 200, "edge".to_string(), Eid(300)),
-                    TxData(1, 100, "edge".to_string(), Eid(300)),
-                    TxData(1, 100, "edge".to_string(), Eid(400)),
-                    TxData(1, 400, "edge".to_string(), Eid(500)),
-                    TxData(1, 500, "edge".to_string(), Eid(100)),
+                    TxData::add(100, "edge", Eid(200)),
+                    TxData::add(200, "edge", Eid(300)),
+                    TxData::add(100, "edge", Eid(300)),
+                    TxData::add(100, "edge", Eid(400)),
+                    TxData::add(400, "edge", Eid(500)),
+                    TxData::add(500, "edge", Eid(100)),
                 ]],
                 expectations: vec![vec![(vec![Eid(100), Eid(200), Eid(300)], 0, 1)]],
             }
@@ -259,13 +259,13 @@ fn run_hector_cases() {
                     ],
                 },
                 transactions: vec![vec![
-                    TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),
-                    TxData(1, 100, ":age".to_string(), Number(12)),
-                    TxData(1, 100, ":likes".to_string(), Eid(200)),
-                    TxData(1, 100, ":fears".to_string(), Eid(300)),
-                    TxData(1, 200, ":name".to_string(), String("Mabel".to_string())),
-                    TxData(1, 200, ":age".to_string(), Number(13)),
-                    TxData(1, 300, ":name".to_string(), String("Soos".to_string())),
+                    TxData::add(100, ":name", String("Dipper".to_string())),
+                    TxData::add(100, ":age", Number(12)),
+                    TxData::add(100, ":likes", Eid(200)),
+                    TxData::add(100, ":fears", Eid(300)),
+                    TxData::add(200, ":name", String("Mabel".to_string())),
+                    TxData::add(200, ":age", Number(13)),
+                    TxData::add(300, ":name", String("Soos".to_string())),
                 ]],
                 expectations: vec![vec![(
                     vec![
@@ -291,9 +291,9 @@ fn run_hector_cases() {
                 ],
             },
             transactions: vec![vec![
-                TxData(1, 100, ":num".to_string(), Number(1)),
-                TxData(1, 100, ":num".to_string(), Number(2)),
-                TxData(1, 100, ":num".to_string(), Number(3)),
+                TxData::add(100, ":num", Number(1)),
+                TxData::add(100, ":num", Number(2)),
+                TxData::add(100, ":num", Number(3)),
             ]],
             expectations: vec![vec![
                 (vec![Eid(100), Number(2), Number(1)], 0, 1),
@@ -315,9 +315,9 @@ fn run_hector_cases() {
                 ],
             },
             transactions: vec![vec![
-                TxData(1, 100, ":num".to_string(), Number(1)),
-                TxData(1, 100, ":num".to_string(), Number(10)),
-                TxData(1, 100, ":num".to_string(), Number(20)),
+                TxData::add(100, ":num", Number(1)),
+                TxData::add(100, ":num", Number(10)),
+                TxData::add(100, ":num", Number(20)),
             ]],
             expectations: vec![vec![(
                 vec![Eid(100), Number(10), Number(18), Number(20)],
@@ -340,12 +340,12 @@ fn run_hector_cases() {
                     ],
                 },
                 transactions: vec![vec![
-                    TxData(1, 100, ":name".to_string(), String("Dipper".to_string())),
-                    TxData(1, 100, ":age".to_string(), Number(12)),
-                    TxData(1, 100, ":admin?".to_string(), Bool(true)),
-                    TxData(1, 200, ":name".to_string(), String("Mabel".to_string())),
-                    TxData(1, 100, ":age".to_string(), Number(12)),
-                    TxData(1, 100, ":admin?".to_string(), Bool(false)),
+                    TxData::add(100, ":name", String("Dipper".to_string())),
+                    TxData::add(100, ":age", Number(12)),
+                    TxData::add(100, ":admin?", Bool(true)),
+                    TxData::add(200, ":name", String("Mabel".to_string())),
+                    TxData::add(100, ":age", Number(12)),
+                    TxData::add(100, ":admin?", Bool(false)),
                 ]],
                 expectations: vec![vec![(
                     vec![
