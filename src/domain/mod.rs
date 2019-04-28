@@ -217,13 +217,13 @@ where
     /// allowing traces to compact. All domain input handles are
     /// forwarded up to the frontier, so as not to stall progress.
     pub fn advance(&mut self) -> Result<(), Error> {
-        let mut frontier = self
-            .domain_probe
-            .with_frontier(|frontier| (*frontier).to_vec());
-
-        if !AntichainRef::new(&frontier).less_equal(self.epoch()) {
-            // Input handles have fallen behind the sources and need
-            // to be advanced, such as not to block progress.
+        if self.probed_source_count() == 0 {
+            // No sources registered.
+            self.advance_traces(&[self.epoch().clone()])
+        } else {
+            let frontier = self
+                .domain_probe
+                .with_frontier(|frontier| (*frontier).to_vec());
 
             if frontier.is_empty() {
                 // @TODO strictly speaking we'd have to drop input
@@ -231,13 +231,19 @@ where
                 // domain never even had sources to begin with.
 
                 // self.input_sessions.clear();
+                self.advance_traces(&[])
             } else {
-                let max = frontier.drain(..).max().unwrap();
-                self.advance_epoch(max)?;
+                if !AntichainRef::new(&frontier).less_equal(self.epoch()) {
+                    // Input handles have fallen behind the sources and need
+                    // to be advanced, such as not to block progress.
+
+                    let max = frontier.iter().max().unwrap().clone();
+                    self.advance_epoch(max)?;
+                }
+
+                self.advance_traces(&frontier)
             }
         }
-
-        self.advance_traces(&frontier)
     }
 
     /// Advances the domain epoch. The domain epoch can be in advance
@@ -326,87 +332,24 @@ where
     pub fn probed_source_count(&self) -> usize {
         self.probed_source_count
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use super::Domain;
-    use crate::{AttributeConfig, InputSemantics};
+    /// Returns true iff the frontier dominates all domain inputs.
+    pub fn dominates(&self, frontier: AntichainRef<T>) -> bool {
+        // We must distinguish the scenario where the internal domain
+        // has no sources from one where all its internal sources have
+        // dropped their capabilities. We do this by checking the
+        // probed_source_count of the domain.
 
-    #[test]
-    fn test_advance_epoch() {
-        let mut domain = Domain::<u64>::new(0);
-        assert_eq!(domain.epoch(), &0);
-
-        assert!(domain.advance_epoch(1).is_ok());
-        assert_eq!(domain.epoch(), &1);
-
-        assert!(domain.advance_epoch(1).is_ok());
-        assert_eq!(domain.epoch(), &1);
-
-        assert!(domain.advance_epoch(0).is_err());
-        assert_eq!(domain.epoch(), &1);
+        if self.probed_source_count() == 0 {
+            frontier.less_than(self.epoch())
+        } else {
+            if frontier.is_empty() {
+                false
+            } else {
+                self.domain_probe().with_frontier(|domain_frontier| {
+                    domain_frontier.iter().all(|t| frontier.less_than(t))
+                })
+            }
+        }
     }
-
-    #[test]
-    fn test_advance_without_sources() {
-        timely::execute_directly(move |worker| {
-            worker.dataflow::<u64, _, _>(|scope| {
-                let mut domain = Domain::<u64>::new(0);
-
-                assert_eq!(domain.epoch(), &0);
-
-                domain
-                    .create_transactable_attribute(
-                        "test",
-                        AttributeConfig::tx_time(InputSemantics::Raw),
-                        scope,
-                    )
-                    .unwrap();
-
-                assert_eq!(domain.epoch(), &0);
-
-                assert!(domain.advance_epoch(1).is_ok());
-                assert_eq!(domain.epoch(), &1);
-
-                assert!(domain.advance_epoch(1).is_ok());
-                assert_eq!(domain.epoch(), &1);
-
-                assert!(domain.advance_epoch(0).is_err());
-                assert_eq!(domain.epoch(), &1);
-            });
-        });
-    }
-
-    // #[test]
-    // fn test_advance_with_sources() {
-    //     timely::execute_directly(move |worker| {
-    //         worker.dataflow::<u64, _, _>(|scope| {
-    //             let mut domain = Domain::<u64>::new(0);
-
-    //             domain.create_transactable_attribute(
-    //                 "test",
-    //                 AttributeConfig::tx_time(InputSemantics::Raw),
-    //                 scope,
-    //             ).unwrap();
-
-    //             domain.create_transactable_attribute(
-    //                 "test",
-    //                 AttributeConfig::tx_time(InputSemantics::Raw),
-    //                 scope,
-    //             ).unwrap();
-
-    //             assert_eq!(domain.epoch(), &0);
-
-    //             assert!(domain.advance_epoch(1).is_ok());
-    //             assert_eq!(domain.epoch(), &1);
-
-    //             assert!(domain.advance_epoch(1).is_ok());
-    //             assert_eq!(domain.epoch(), &1);
-
-    //             assert!(domain.advance_epoch(0).is_err());
-    //             assert_eq!(domain.epoch(), &1);
-    //         });
-    //     });
-    // }
 }

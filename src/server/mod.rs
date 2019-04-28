@@ -446,33 +446,12 @@ where
     }
 
     /// Returns true iff the probe is behind any input handle. Mostly
-    /// used as a convenience method during testing.
+    /// used as a convenience method during testing. Using this within
+    /// `step_while` is not safe in general and might lead to stalls.
     pub fn is_any_outdated(&self) -> bool {
-        // We must distinguish the scenario where the internal domain
-        // has no sources from one where all its internal sources have
-        // dropped their capabilities. We do this by checking the
-        // probed_source_count of the domain.
-
-        if self.probe.less_than(self.context.internal.epoch()) {
-            true
-        } else if self.context.internal.probed_source_count() > 0 {
-            self.probe.with_frontier(|out_frontier| {
-                if out_frontier.is_empty() {
-                    false
-                } else {
-                    self.context
-                        .internal
-                        .domain_probe()
-                        .with_frontier(|in_frontier| {
-                            out_frontier
-                                .iter()
-                                .any(|t_out| in_frontier.iter().all(|t_in| t_out.less_than(t_in)))
-                        })
-                }
-            })
-        } else {
-            false
-        }
+        self.probe.with_frontier(|out_frontier| {
+            self.context.internal.dominates(out_frontier)
+        })
     }
 
     /// Helper for registering, publishing, and indicating interest in
