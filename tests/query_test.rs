@@ -399,12 +399,12 @@ fn wco_join_many() {
             (
                 vec![String("Ivan".to_string()), String("Ivan".to_string())],
                 0,
-                1,
+                2,
             ),
             (
                 vec![String("Petr".to_string()), String("Petr".to_string())],
                 0,
-                1,
+                2,
             ),
             (
                 vec![String("Ivan".to_string()), String("Petr".to_string())],
