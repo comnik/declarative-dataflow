@@ -55,7 +55,7 @@ fn run_cases(mut cases: Vec<Case>) {
                         .internal
                         .create_transactable_attribute(
                             dep,
-                            AttributeConfig::tx_time(InputSemantics::Raw),
+                            AttributeConfig::tx_time(InputSemantics::CardinalityMany),
                             scope,
                         )
                         .unwrap();
