@@ -162,14 +162,15 @@ where
     /// Transact data into one or more inputs.
     pub fn transact(&mut self, tx_data: Vec<TxData>) -> Result<(), Error> {
         // @TODO do this smarter, e.g. grouped by handle
-        for TxData(op, e, a, v) in tx_data {
+        for TxData(op, e, a, v, t) in tx_data {
             match self.input_sessions.get_mut(&a) {
                 None => {
                     return Err(Error::not_found(format!("Attribute {} does not exist.", a)));
                 }
-                Some(handle) => {
-                    handle.update((Value::Eid(e), v), op);
-                }
+                Some(handle) => match t {
+                    None => handle.update((Value::Eid(e), v), op),
+                    Some(t) => handle.update_at((Value::Eid(e), v), t.into(), op),
+                },
             }
         }
 

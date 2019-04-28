@@ -164,10 +164,9 @@ impl Error {
     }
 }
 
-/// Transaction data. Conceptually a pair (Datom, diff) but it's kept
-/// intentionally flat to be more directly compatible with Datomic.
+/// Transaction data.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct TxData(pub isize, pub Eid, pub Aid, pub Value);
+pub struct TxData(pub isize, pub Eid, pub Aid, pub Value, pub Option<Time>);
 
 /// A (tuple, time, diff) triple, as sent back to clients.
 pub type ResultDiff<T> = (Vec<Value>, T, isize);
