@@ -16,6 +16,10 @@ clap = { version = "~2.33.0", features = ["yaml"] }
 ws = "*"
 uuid = { version = "0.7", features = ["serde", "v4"] }
 
+[features]
+real-time = ["declarative-dataflow/real-time"]
+bitemporal = []
+
 [profile.release]
 opt-level = 3
 debug = true

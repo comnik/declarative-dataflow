@@ -36,15 +36,18 @@ use declarative_dataflow::timestamp::Coarsen;
 use declarative_dataflow::{Eid, Error, Output, ResultDiff};
 
 /// Server timestamp type.
-#[cfg(not(feature = "real-time"))]
+#[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
 type T = u64;
 
 /// Server timestamp type.
 #[cfg(feature = "real-time")]
 type T = Duration;
 
-// use declarative_dataflow::timestamp::pair::Pair;
-// type T = Pair<Duration, u64>;
+#[cfg(feature = "bitemporal")]
+use declarative_dataflow::timestamp::pair::Pair;
+/// Server timestamp type.
+#[cfg(feature = "bitemporal")]
+type T = Pair<Duration, u64>;
 
 const SERVER: Token = Token(std::usize::MAX - 1);
 const RESULTS: Token = Token(std::usize::MAX - 2);
@@ -681,13 +684,16 @@ fn main() {
                 }
 
                 if !config.manual_advance {
-                    #[cfg(not(feature = "real-time"))]
+                    #[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
                     let next = next_tx as u64;
 
                     #[cfg(feature = "real-time")]
                     let next = Instant::now().duration_since(worker.timer());
 
-                    if let Err(error) = server.advance_domain(None, next) {
+                    #[cfg(feature = "bitemporal")]
+                    let next = Pair::new(Instant::now().duration_since(worker.timer()), next_tx as u64);
+
+                    if let Err(error) = server.context.internal.advance_epoch(next) {
                         send_results.send(Output::Error(client, error, last_tx)).unwrap();
                     }
                 }
@@ -696,6 +702,8 @@ fn main() {
             // ensure work continues, even if no queries registered,
             // s.t. the sequencer continues issuing commands
             worker.step();
+
+            server.context.internal.advance().expect("failed to advance domain");
 
             worker.step_while(|| server.is_any_outdated());
         }

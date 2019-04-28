@@ -28,6 +28,7 @@ itertools = "0.8.0"
 [features]
 blocking = []
 real-time = ["declarative-dataflow/real-time"]
+bitemporal = []
 csv-source = ["declarative-dataflow/csv-source"]
 json-source = ["declarative-dataflow/json-source"]
 graphql = ["declarative-dataflow/graphql"]

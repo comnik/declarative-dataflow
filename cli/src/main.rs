@@ -18,6 +18,20 @@ use declarative_dataflow::server::{Interest, Register, Request};
 use declarative_dataflow::sinks::{AssocIn, Sink};
 use declarative_dataflow::{Output, Rule, TxData};
 
+/// Server timestamp type.
+#[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
+type T = u64;
+
+/// Server timestamp type.
+#[cfg(feature = "real-time")]
+type T = Duration;
+
+#[cfg(feature = "bitemporal")]
+use declarative_dataflow::timestamp::pair::Pair;
+/// Server timestamp type.
+#[cfg(feature = "bitemporal")]
+type T = Pair<Duration, u64>;
+
 fn main() {
     env_logger::init();
 
@@ -150,12 +164,12 @@ fn handle_message(msg: ws::Message) -> ws::Result<()> {
         ws::Message::Text(msg) => {
             trace!("{:?}", msg);
 
-            match serde_json::from_str::<Output<Duration>>(&msg) {
+            match serde_json::from_str::<Output<T>>(&msg) {
                 Err(err) => error!("{:?}", err),
                 Ok(out) => match out {
-                    Output::Json(_, v, _, _) => {
+                    Output::Json(_, v, t, diff) => {
                         let pprinted = serde_json::to_string_pretty(&v).expect("failed to pprint");
-                        info!("\n{}", pprinted);
+                        info!("{}@{:?}\n{}", diff, t, pprinted);
                     }
                     Output::Error(_, err, tx_id) => error!("{:?} @ {}", err, tx_id),
                     _ => info!("{:?}", out),
