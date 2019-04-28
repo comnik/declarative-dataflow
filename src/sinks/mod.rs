@@ -2,7 +2,7 @@
 
 use std::fs::File;
 use std::io::{LineWriter, Write};
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use timely::dataflow::channels::pact::ParallelizationContract;
 use timely::dataflow::operators::generic::{Operator, OutputHandle};
@@ -64,33 +64,17 @@ pub enum Sink {
     AssocIn(AssocIn),
 }
 
-impl Sinkable<u64> for Sink {
+impl<T: Timestamp + Lattice + Default> Sinkable<T> for Sink {
     fn sink<S, P>(
         &self,
-        _stream: &Stream<S, ResultDiff<u64>>,
-        _pact: P,
-        _probe: &mut ProbeHandle<u64>,
-        _context: SinkingContext,
-    ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
-    where
-        S: Scope<Timestamp = u64>,
-        P: ParallelizationContract<S::Timestamp, ResultDiff<u64>>,
-    {
-        unimplemented!();
-    }
-}
-
-impl Sinkable<Duration> for Sink {
-    fn sink<S, P>(
-        &self,
-        stream: &Stream<S, ResultDiff<Duration>>,
+        stream: &Stream<S, ResultDiff<T>>,
         pact: P,
-        probe: &mut ProbeHandle<Duration>,
+        probe: &mut ProbeHandle<T>,
         context: SinkingContext,
     ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
     where
-        S: Scope<Timestamp = Duration>,
-        P: ParallelizationContract<S::Timestamp, ResultDiff<Duration>>,
+        S: Scope<Timestamp = T>,
+        P: ParallelizationContract<S::Timestamp, ResultDiff<T>>,
     {
         match *self {
             Sink::TheVoid(ref filename) => {
@@ -103,12 +87,12 @@ impl Sinkable<Duration> for Sink {
                 };
 
                 let mut t0 = Instant::now();
-                let mut last = Duration::from_millis(0);
+                let mut last: T = Default::default();
                 let mut buffer = Vec::new();
 
                 stream
                     .unary_frontier(pact, "TheVoid", move |_cap, _info| {
-                        move |input, _output: &mut OutputHandle<_, ResultDiff<Duration>, _>| {
+                        move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
                             let mut received_input = false;
                             input.for_each(|_time, data| {
                                 data.swap(&mut buffer);

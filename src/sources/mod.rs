@@ -101,7 +101,10 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for Source {
 }
 
 #[cfg(not(feature = "real-time"))]
-impl<S: Scope<Timestamp = u64>> Sourceable<S> for Source {
+impl<S: Scope> Sourceable<S> for Source
+where
+    S::Timestamp: Timestamp + Lattice,
+{
     fn source(
         &self,
         _scope: &mut S,
@@ -109,7 +112,7 @@ impl<S: Scope<Timestamp = u64>> Sourceable<S> for Source {
     ) -> Vec<(
         Aid,
         AttributeConfig,
-        Stream<S, ((Value, Value), u64, isize)>,
+        Stream<S, ((Value, Value), S::Timestamp, isize)>,
     )> {
         unimplemented!();
     }
