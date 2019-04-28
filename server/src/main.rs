@@ -519,7 +519,7 @@ fn main() {
                                                 Some(granularity) => {
                                                     let granularity: T = granularity.into();
                                                     relation
-                                                        .delay(move |t| t.coarsen(granularity))
+                                                        .delay(move |t| t.coarsen(&granularity))
                                                         .consolidate()
                                                 }
                                             };

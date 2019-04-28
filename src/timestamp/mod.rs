@@ -95,29 +95,40 @@ impl Rewind for pair::Pair<Duration, u64> {
 pub trait Coarsen {
     /// Returns a new timestamp delayed up to the next multiple of the
     /// specified window size.
-    fn coarsen(&self, window_size: Self) -> Self;
+    fn coarsen(&self, window_size: &Self) -> Self;
 }
 
 impl Coarsen for u64 {
-    fn coarsen(&self, window_size: u64) -> Self {
+    fn coarsen(&self, window_size: &Self) -> Self {
         (self / window_size + 1) * window_size
     }
 }
 
 impl Coarsen for Duration {
-    fn coarsen(&self, window_size: Duration) -> Self {
-        let secs_coarsened = (self.as_secs() / window_size.as_secs() + 1) * window_size.as_secs();
-        let nanos_coarsened =
-            (self.subsec_nanos() / window_size.subsec_nanos() + 1) * window_size.subsec_nanos();
+    fn coarsen(&self, window_size: &Self) -> Self {
+        let w_secs = window_size.as_secs();
+        let w_nanos = window_size.subsec_nanos();
+
+        let secs_coarsened = if w_secs == 0 {
+            self.as_secs()
+        } else {
+            (self.as_secs() / w_secs + 1) * w_secs
+        };
+
+        let nanos_coarsened = if w_nanos == 0 {
+            0
+        } else {
+            (self.subsec_nanos() / w_nanos + 1) * w_nanos
+        };
 
         Duration::new(secs_coarsened, nanos_coarsened)
     }
 }
 
 impl Coarsen for pair::Pair<Duration, u64> {
-    fn coarsen(&self, window_size: pair::Pair<Duration, u64>) -> Self {
-        let first_coarsened = self.first.coarsen(window_size.first);
-        let second_coarsened = self.second.coarsen(window_size.second);
+    fn coarsen(&self, window_size: &Self) -> Self {
+        let first_coarsened = self.first.coarsen(&window_size.first);
+        let second_coarsened = self.second.coarsen(&window_size.second);
 
         Self::new(first_coarsened, second_coarsened)
     }
@@ -145,16 +156,16 @@ mod tests {
 
     #[test]
     fn test_coarsen() {
-        assert_eq!((0 as u64).coarsen(10), 10);
-        assert_eq!((6 as u64).coarsen(10), 10);
-        assert_eq!((11 as u64).coarsen(10), 20);
+        assert_eq!((0 as u64).coarsen(&10), 10);
+        assert_eq!((6 as u64).coarsen(&10), 10);
+        assert_eq!((11 as u64).coarsen(&10), 20);
 
         assert_eq!(
-            Duration::from_secs(0).coarsen(Duration::from_secs(10)),
+            Duration::from_secs(0).coarsen(&Duration::from_secs(10)),
             Duration::from_secs(10)
         );
         assert_eq!(
-            Duration::new(10, 500).coarsen(Duration::from_secs(10)),
+            Duration::new(10, 500).coarsen(&Duration::from_secs(10)),
             Duration::from_secs(20),
         );
     }
