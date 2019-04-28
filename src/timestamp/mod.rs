@@ -52,19 +52,19 @@ impl std::convert::From<Time> for pair::Pair<Duration, u64> {
 /// Extension trait for timestamp types that can be safely re-wound to
 /// an earlier time. This is required for automatically advancing
 /// traces according to their configured slack.
-pub trait Rewind {
+pub trait Rewind: std::convert::From<Time> {
     /// Returns a new timestamp corresponding to self rewound by the
     /// specified amount of slack. Calling rewind is always safe, in
     /// that no invalid times will be returned.
     ///
-    /// e.g. 0.rewind(TxId(10)) -> 0
-    /// and Duration(0).rewind(Real(Duration(1))) -> Duration(0)
-    fn rewind(&self, slack: Time) -> Self;
+    /// e.g. 0.rewind(10) -> 0
+    /// and Duration(0).rewind(Duration(1)) -> Duration(0)
+    fn rewind(&self, slack: Self) -> Self;
 }
 
 impl Rewind for u64 {
-    fn rewind(&self, slack: Time) -> Self {
-        match self.checked_sub(slack.into()) {
+    fn rewind(&self, slack: Self) -> Self {
+        match self.checked_sub(slack) {
             None => *self,
             Some(rewound) => rewound,
         }
@@ -72,8 +72,8 @@ impl Rewind for u64 {
 }
 
 impl Rewind for Duration {
-    fn rewind(&self, slack: Time) -> Self {
-        match self.checked_sub(slack.into()) {
+    fn rewind(&self, slack: Self) -> Self {
+        match self.checked_sub(slack) {
             None => *self,
             Some(rewound) => rewound,
         }
@@ -81,35 +81,81 @@ impl Rewind for Duration {
 }
 
 impl Rewind for pair::Pair<Duration, u64> {
-    fn rewind(&self, slack: Time) -> Self {
-        let slack_pair: Self = slack.into();
-
-        let first_rewound = self.first.rewind(Time::Real(slack_pair.first));
-        let second_rewound = self.second.rewind(Time::TxId(slack_pair.second));
+    fn rewind(&self, slack: Self) -> Self {
+        let first_rewound = self.first.rewind(slack.first);
+        let second_rewound = self.second.rewind(slack.second);
 
         Self::new(first_rewound, second_rewound)
     }
 }
 
+/// Extension trait for timestamp types that can be rounded up to
+/// interval bounds, thus coarsening the granularity of timestamps and
+/// delaying results.
+pub trait Coarsen {
+    /// Returns a new timestamp delayed up to the next multiple of the
+    /// specified window size.
+    fn coarsen(&self, window_size: Self) -> Self;
+}
+
+impl Coarsen for u64 {
+    fn coarsen(&self, window_size: u64) -> Self {
+        (self / window_size + 1) * window_size
+    }
+}
+
+impl Coarsen for Duration {
+    fn coarsen(&self, window_size: Duration) -> Self {
+        let secs_coarsened = (self.as_secs() / window_size.as_secs() + 1) * window_size.as_secs();
+        let nanos_coarsened =
+            (self.subsec_nanos() / window_size.subsec_nanos() + 1) * window_size.subsec_nanos();
+
+        Duration::new(secs_coarsened, nanos_coarsened)
+    }
+}
+
+impl Coarsen for pair::Pair<Duration, u64> {
+    fn coarsen(&self, window_size: pair::Pair<Duration, u64>) -> Self {
+        let first_coarsened = self.first.coarsen(window_size.first);
+        let second_coarsened = self.second.coarsen(window_size.second);
+
+        Self::new(first_coarsened, second_coarsened)
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::{Coarsen, Rewind};
     use std::time::Duration;
-
-    use super::{Rewind, Time};
-    use Time::{Real, TxId};
 
     #[test]
     fn test_rewind() {
-        assert_eq!((0 as u64).rewind(TxId(1)), 0);
-        assert_eq!((10 as u64).rewind(TxId(5)), 5);
+        assert_eq!((0 as u64).rewind(1), 0);
+        assert_eq!((10 as u64).rewind(5), 5);
 
         assert_eq!(
-            Duration::from_secs(0).rewind(Real(Duration::from_secs(10))),
+            Duration::from_secs(0).rewind(Duration::from_secs(10)),
             Duration::from_secs(0)
         );
         assert_eq!(
-            Duration::from_millis(12345).rewind(Real(Duration::from_millis(45))),
+            Duration::from_millis(12345).rewind(Duration::from_millis(45)),
             Duration::from_millis(12300)
+        );
+    }
+
+    #[test]
+    fn test_coarsen() {
+        assert_eq!((0 as u64).coarsen(10), 10);
+        assert_eq!((6 as u64).coarsen(10), 10);
+        assert_eq!((11 as u64).coarsen(10), 20);
+
+        assert_eq!(
+            Duration::from_secs(0).coarsen(Duration::from_secs(10)),
+            Duration::from_secs(10)
+        );
+        assert_eq!(
+            Duration::new(10, 500).coarsen(Duration::from_secs(10)),
+            Duration::from_secs(20),
         );
     }
 }

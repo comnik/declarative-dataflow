@@ -212,7 +212,7 @@ where
 
             for (aid, config) in self.attributes.iter() {
                 if let Some(ref trace_slack) = config.trace_slack {
-                    let frontier = &[next.rewind(trace_slack.clone())];
+                    let frontier = &[next.rewind(trace_slack.clone().into())];
 
                     let forward_index = self.forward.get_mut(aid).unwrap_or_else(|| {
                         panic!("Configuration available for unknown attribute {}", aid)
@@ -232,7 +232,7 @@ where
 
             for (name, config) in self.relations.iter() {
                 if let Some(ref trace_slack) = config.trace_slack {
-                    let frontier = &[next.rewind(trace_slack.clone())];
+                    let frontier = &[next.rewind(trace_slack.clone().into())];
 
                     let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {
                         panic!("Configuration available for unknown relation {}", name)
@@ -285,7 +285,7 @@ where
             if let Some(ref trace_slack) = config.trace_slack {
                 let slacking_frontier = frontier
                     .iter()
-                    .map(|t| t.rewind(trace_slack.clone()))
+                    .map(|t| t.rewind(trace_slack.clone().into()))
                     .collect::<Vec<T>>();;
 
                 let forward_index = self.forward.get_mut(aid).unwrap_or_else(|| {
@@ -308,7 +308,7 @@ where
             if let Some(ref trace_slack) = config.trace_slack {
                 let slacking_frontier = frontier
                     .iter()
-                    .map(|t| t.rewind(trace_slack.clone()))
+                    .map(|t| t.rewind(trace_slack.clone().into()))
                     .collect::<Vec<T>>();
 
                 let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {

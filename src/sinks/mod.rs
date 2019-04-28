@@ -12,7 +12,7 @@ use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 
-use crate::{Error, Output, ResultDiff};
+use crate::{Error, Output, ResultDiff, Time};
 
 // #[cfg(feature = "csv-source")]
 // pub mod csv_file;
@@ -28,9 +28,8 @@ pub use self::assoc_in::AssocIn;
 pub struct SinkingContext {
     /// The name of the dataflow feeding this sink.
     pub name: String,
-    /// Granularity (in seconds or tx ids) at which to send
-    /// results. None indicates no delay.
-    pub granularity: Option<u64>,
+    /// Granularity at which to send results. None indicates no delay.
+    pub granularity: Option<Time>,
 }
 
 /// An external system that wants to receive result diffs.

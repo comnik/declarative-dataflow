@@ -32,6 +32,7 @@ use ws::connection::{ConnEvent, Connection};
 
 use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
 use declarative_dataflow::sinks::{Sinkable, SinkingContext};
+use declarative_dataflow::timestamp::Coarsen;
 use declarative_dataflow::{Eid, Error, Output, ResultDiff};
 
 /// Server timestamp type.
@@ -515,16 +516,10 @@ fn main() {
                                         Ok(relation) => {
                                             let delayed = match req.granularity {
                                                 None => relation,
-                                                #[cfg(feature = "real-time")]
                                                 Some(granularity) => {
+                                                    let granularity: T = granularity.into();
                                                     relation
-                                                        .delay(move |t| Duration::from_secs((t.as_secs()/granularity + 1) * granularity))
-                                                        .consolidate()
-                                                }
-                                                #[cfg(not(feature = "real-time"))]
-                                                Some(granularity) => {
-                                                    relation
-                                                        .delay(move |t| (t/granularity + 1) * granularity)
+                                                        .delay(move |t| t.coarsen(granularity))
                                                         .consolidate()
                                                 }
                                             };

@@ -69,9 +69,8 @@ pub struct Interest {
     pub name: String,
     /// Result offset holding client token (for multi-tenant flows).
     pub tenant: Option<usize>,
-    /// Granularity (in seconds or tx ids) at which to send
-    /// results. None indicates no delay.
-    pub granularity: Option<u64>,
+    /// Granularity at which to send results. None indicates no delay.
+    pub granularity: Option<Time>,
     /// An optional sink configuration.
     pub sink: Option<Sink>,
     /// Whether or not to log events from this dataflow.
