@@ -43,7 +43,7 @@ use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpin
 use differential_dataflow::trace::wrappers::enter::TraceEnter;
 use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt;
 use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
-use differential_dataflow::{Collection, Data};
+use differential_dataflow::{Collection, ExchangeData};
 
 #[cfg(feature = "uuid")]
 pub use uuid::Uuid;
@@ -374,9 +374,9 @@ pub struct RelationConfig {
 /// participate in delta-join pipelines.
 pub struct CollectionIndex<K, V, T>
 where
-    K: Data,
-    V: Data,
-    T: Lattice + Data,
+    K: ExchangeData,
+    V: ExchangeData,
+    T: Lattice + ExchangeData,
 {
     /// A name uniquely identifying this index.
     pub name: String,
@@ -390,9 +390,9 @@ where
 
 impl<K, V, T> Clone for CollectionIndex<K, V, T>
 where
-    K: Data + Hash,
-    V: Data + Hash,
-    T: Lattice + Data + Timestamp,
+    K: ExchangeData + Hash,
+    V: ExchangeData + Hash,
+    T: Lattice + ExchangeData + Timestamp,
 {
     fn clone(&self) -> Self {
         CollectionIndex {
@@ -406,9 +406,9 @@ where
 
 impl<K, V, T> CollectionIndex<K, V, T>
 where
-    K: Data + Hash,
-    V: Data + Hash,
-    T: Lattice + Data + Timestamp,
+    K: ExchangeData + Hash,
+    V: ExchangeData + Hash,
+    T: Lattice + ExchangeData + Timestamp,
 {
     /// Creates a named CollectionIndex from a (K, V) collection.
     pub fn index<G: Scope<Timestamp = T>>(
@@ -495,9 +495,9 @@ where
 pub struct LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
 where
     G: Scope,
-    G::Timestamp: Lattice + Data,
-    K: Data,
-    V: Data,
+    G::Timestamp: Lattice + ExchangeData,
+    K: ExchangeData,
+    V: ExchangeData,
     TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
     TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
     TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
@@ -520,9 +520,9 @@ impl<G, K, V, TrCount, TrPropose, TrValidate> Clone
     for LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
 where
     G: Scope,
-    G::Timestamp: Lattice + Data,
-    K: Data,
-    V: Data,
+    G::Timestamp: Lattice + ExchangeData,
+    K: ExchangeData,
+    V: ExchangeData,
     TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
     TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
     TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
@@ -548,9 +548,9 @@ where
 impl<G, K, V, TrCount, TrPropose, TrValidate> LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
 where
     G: Scope,
-    G::Timestamp: Lattice + Data,
-    K: Data,
-    V: Data,
+    G::Timestamp: Lattice + ExchangeData,
+    K: ExchangeData,
+    V: ExchangeData,
     TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
     TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
     TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
@@ -647,7 +647,7 @@ pub struct Rule {
 trait Relation<'a, G, I>: AsBinding
 where
     G: Scope,
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + ExchangeData,
     I: ImplContext<G::Timestamp>,
 {
     /// A collection containing all tuples.
@@ -697,7 +697,7 @@ pub struct CollectionRelation<'a, G: Scope> {
 
 impl<'a, G: Scope> AsBinding for CollectionRelation<'a, G>
 where
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + ExchangeData,
 {
     fn variables(&self) -> Vec<Var> {
         self.variables.clone()
@@ -719,7 +719,7 @@ where
 impl<'a, G, I> Relation<'a, G, I> for CollectionRelation<'a, G>
 where
     G: Scope,
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + ExchangeData,
     I: ImplContext<G::Timestamp>,
 {
     fn tuples(
@@ -821,7 +821,7 @@ where
 impl<'a, G, I> Relation<'a, G, I> for AttributeBinding
 where
     G: Scope,
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + ExchangeData,
     I: ImplContext<G::Timestamp>,
 {
     fn tuples(
@@ -923,7 +923,7 @@ where
 pub enum Implemented<'a, G>
 where
     G: Scope,
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + ExchangeData,
 {
     /// A relation backed by an attribute.
     Attribute(AttributeBinding),
@@ -934,7 +934,7 @@ where
 
 impl<'a, G: Scope> AsBinding for Implemented<'a, G>
 where
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + ExchangeData,
 {
     fn variables(&self) -> Vec<Var> {
         match self {
@@ -970,7 +970,7 @@ where
 impl<'a, G, I> Relation<'a, G, I> for Implemented<'a, G>
 where
     G: Scope,
-    G::Timestamp: Lattice + Data,
+    G::Timestamp: Lattice + ExchangeData,
     I: ImplContext<G::Timestamp>,
 {
     fn tuples(
@@ -1029,7 +1029,7 @@ where
 // /// A arrangement and variable bindings.
 // struct ArrangedRelation<'a, G: Scope>
 // where
-//     G::Timestamp: Lattice+Data
+//     G::Timestamp: Lattice+ExchangeData
 // {
 //     variables: Vec<Var>,
 //     tuples: Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,

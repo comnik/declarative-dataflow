@@ -24,7 +24,7 @@ use timely_sort::Unsigned;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::{Consolidate, Count};
 use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
-use differential_dataflow::{AsCollection, Collection, Data, Hashable};
+use differential_dataflow::{AsCollection, Collection, ExchangeData, Hashable};
 
 use crate::binding::{AsBinding, BinaryPredicate, Binding};
 use crate::binding::{BinaryPredicateBinding, ConstantBinding};
@@ -67,9 +67,9 @@ trait IntoExtender<'a, S, V>
 where
     S: Scope,
     S::Timestamp: Timestamp + Lattice,
-    V: Data + Hash,
+    V: ExchangeData + Hash,
 {
-    fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
+    fn into_extender<P: ExchangeData + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
         prefix: &B,
     ) -> Vec<Extender<'a, S, P, V>>;
@@ -80,7 +80,7 @@ where
     S: Scope,
     S::Timestamp: Timestamp + Lattice,
 {
-    fn into_extender<P: Data + IndexNode<Value>, B: AsBinding + std::fmt::Debug>(
+    fn into_extender<P: ExchangeData + IndexNode<Value>, B: AsBinding + std::fmt::Debug>(
         &self,
         _prefix: &B,
     ) -> Vec<Extender<'a, S, P, Value>> {
@@ -95,9 +95,9 @@ impl<'a, S, V> IntoExtender<'a, S, V> for BinaryPredicateBinding
 where
     S: Scope,
     S::Timestamp: Timestamp + Lattice,
-    V: Data + Hash,
+    V: ExchangeData + Hash,
 {
-    fn into_extender<P: Data + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
+    fn into_extender<P: ExchangeData + IndexNode<V>, B: AsBinding + std::fmt::Debug>(
         &self,
         prefix: &B,
     ) -> Vec<Extender<'a, S, P, V>> {
@@ -849,15 +849,15 @@ impl Implementable for Hector {
 // GENERIC IMPLEMENTATION
 //
 
-trait ProposeExtensionMethod<'a, S: Scope, P: Data + Ord> {
-    fn extend<E: Data + Ord>(
+trait ProposeExtensionMethod<'a, S: Scope, P: ExchangeData + Ord> {
+    fn extend<E: ExchangeData + Ord>(
         &self,
         extenders: &mut [Extender<'a, S, P, E>],
     ) -> Collection<S, (P, E)>;
 }
 
-impl<'a, S: Scope, P: Data + Ord> ProposeExtensionMethod<'a, S, P> for Collection<S, P> {
-    fn extend<E: Data + Ord>(
+impl<'a, S: Scope, P: ExchangeData + Ord> ProposeExtensionMethod<'a, S, P> for Collection<S, P> {
+    fn extend<E: ExchangeData + Ord>(
         &self,
         extenders: &mut [Extender<'a, S, P, E>],
     ) -> Collection<S, (P, E)> {
@@ -897,7 +897,7 @@ impl<'a, S: Scope, P: Data + Ord> ProposeExtensionMethod<'a, S, P> for Collectio
 
 struct ConstantExtender<P, V>
 where
-    V: Data + Hash,
+    V: ExchangeData + Hash,
 {
     phantom: std::marker::PhantomData<P>,
     value: V,
@@ -906,9 +906,9 @@ where
 impl<'a, S, V, P> PrefixExtender<S> for ConstantExtender<P, V>
 where
     S: Scope,
-    S::Timestamp: Lattice + Data,
-    V: Data + Hash,
-    P: Data,
+    S::Timestamp: Lattice + ExchangeData,
+    V: ExchangeData + Hash,
+    P: ExchangeData,
 {
     type Prefix = P;
     type Extension = V;
@@ -940,7 +940,7 @@ where
 
 struct BinaryPredicateExtender<P, V>
 where
-    V: Data + Hash,
+    V: ExchangeData + Hash,
 {
     phantom: std::marker::PhantomData<(P, V)>,
     predicate: BinaryPredicate,
@@ -950,9 +950,9 @@ where
 impl<'a, S, V, P> PrefixExtender<S> for BinaryPredicateExtender<P, V>
 where
     S: Scope,
-    S::Timestamp: Lattice + Data,
-    V: Data + Hash,
-    P: Data + IndexNode<V>,
+    S::Timestamp: Lattice + ExchangeData,
+    V: ExchangeData + Hash,
+    P: ExchangeData + IndexNode<V>,
 {
     type Prefix = P;
     type Extension = V;
@@ -1011,9 +1011,9 @@ where
 struct CollectionExtender<S, K, V, P, F, TrCount, TrPropose, TrValidate>
 where
     S: Scope,
-    S::Timestamp: Lattice + Data,
-    K: Data,
-    V: Data,
+    S::Timestamp: Lattice + ExchangeData,
+    K: ExchangeData,
+    V: ExchangeData,
     F: Fn(&P) -> K,
     TrCount: TraceReader<Key = K, Val = (), Time = S::Timestamp, R = isize> + Clone + 'static,
     TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, S::Timestamp, TrCount::R> + 'static,
@@ -1038,10 +1038,10 @@ impl<'a, S, K, V, P, F, TrCount, TrPropose, TrValidate> PrefixExtender<S>
     for CollectionExtender<S, K, V, P, F, TrCount, TrPropose, TrValidate>
 where
     S: Scope,
-    S::Timestamp: Lattice + Data,
-    K: Data + Hash,
-    V: Data + Hash,
-    P: Data,
+    S::Timestamp: Lattice + ExchangeData,
+    K: ExchangeData + Hash,
+    V: ExchangeData + Hash,
+    P: ExchangeData,
     F: Fn(&P) -> K + 'static,
     TrCount: TraceReader<Key = K, Val = (), Time = S::Timestamp, R = isize> + Clone + 'static,
     TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, S::Timestamp, TrCount::R> + 'static,
@@ -1410,8 +1410,8 @@ where
 struct AntijoinExtender<'a, S, V, P>
 where
     S: Scope,
-    S::Timestamp: Lattice + Data,
-    V: Data,
+    S::Timestamp: Lattice + ExchangeData,
+    V: ExchangeData,
 {
     phantom: std::marker::PhantomData<P>,
     extender: Extender<'a, S, P, V>,
@@ -1420,9 +1420,9 @@ where
 impl<'a, S, V, P> PrefixExtender<S> for AntijoinExtender<'a, S, V, P>
 where
     S: Scope,
-    S::Timestamp: Lattice + Data,
-    V: Data + Hash,
-    P: Data,
+    S::Timestamp: Lattice + ExchangeData,
+    V: ExchangeData + Hash,
+    P: ExchangeData,
 {
     type Prefix = P;
     type Extension = V;
