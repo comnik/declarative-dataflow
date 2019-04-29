@@ -193,19 +193,15 @@ fn main() {
                 while let Some(activator) = scheduler.next() {
                     activator.activate();
                 }
-
-                // We mustn't timeout here, operators are pending!
-                poll.poll(&mut events, Some(Duration::from_millis(0)))
-                    .expect("failed to poll I/O events");
             } else {
-                #[cfg(not(feature = "blocking"))]
-                poll.poll(&mut events, Some(Duration::from_millis(0)))
-                    .expect("failed to poll I/O events");
-
-                #[cfg(feature = "blocking")]
-                poll.poll(&mut events, None)
-                    .expect("failed to poll I/O events");
+                // @TODO in blocking mode, we could check whether
+                // worker 'would park', and block for input here
+                // poll.poll(&mut events, None).expect("failed to poll I/O events");
             }
+
+            // We mustn't timeout here, operators are pending!
+            poll.poll(&mut events, Some(Duration::from_millis(0)))
+                .expect("failed to poll I/O events");
 
             for event in events.iter() {
                 trace!(
@@ -669,6 +665,18 @@ fn main() {
                         }
                         Request::Disconnect => server.disconnect_client(Token(command.client)),
                         Request::Setup => unimplemented!(),
+                        Request::Tick => {
+                            #[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
+                            let next = next_tx as u64;
+                            #[cfg(feature = "real-time")]
+                            let next = Instant::now().duration_since(worker.timer());
+                            #[cfg(feature = "bitemporal")]
+                            let next = Pair::new(Instant::now().duration_since(worker.timer()), next_tx as u64);
+
+                            if let Err(error) = server.context.internal.advance_epoch(next) {
+                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
+                            }
+                        }
                         Request::Status => {
                             let status = serde_json::json!({
                                 "category": "df/status",
@@ -686,28 +694,34 @@ fn main() {
                 if !config.manual_advance {
                     #[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
                     let next = next_tx as u64;
-
                     #[cfg(feature = "real-time")]
                     let next = Instant::now().duration_since(worker.timer());
-
                     #[cfg(feature = "bitemporal")]
                     let next = Pair::new(Instant::now().duration_since(worker.timer()), next_tx as u64);
 
-                    if let Err(error) = server.context.internal.advance_epoch(next) {
-                        send_results.send(Output::Error(client, error, last_tx)).unwrap();
-                    }
+                    server.context.internal.advance_epoch(next).expect("failed to advance epoch");
                 }
             }
 
-            // ensure work continues, even if no queries registered,
-            // s.t. the sequencer continues issuing commands.
-            // If there is nothing to do, park `until_next()` activation
-            // in scheduler is ready.
-            worker.step_or_park(Some(server.scheduler.borrow().until_next().unwrap_or(Duration::from_millis(100))));
+            // We must always ensure that workers step in every
+            // iteration, even if no queries registered, s.t. the
+            // sequencer can continue propagating commands. We also
+            // want to limit the maximal number of steps here to avoid
+            // stalling user inputs.
+            for _i in 0..32 {
+                worker.step();
+            }
 
+            // We advance before `step_or_park`, because advancing
+            // might take a decent amount of time, in case traces get
+            // compacted. If that happens, we can park less before
+            // scheduling the next activator.
             server.context.internal.advance().expect("failed to advance domain");
 
-            worker.step_while(|| server.is_any_outdated());
+            // Finally, we give the CPU a chance to chill, if no work
+            // remains.
+            let delay = server.scheduler.borrow().until_next().unwrap_or(Duration::from_millis(100));
+            worker.step_or_park(Some(delay));
         }
 
         info!("[WORKER {}] shutting down", worker.index());

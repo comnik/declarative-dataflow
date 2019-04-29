@@ -127,6 +127,10 @@ pub enum Request {
     CreateAttribute(CreateAttribute),
     /// Advances the specified domain to the specified time.
     AdvanceDomain(Option<String>, Time),
+    /// Requests a domain advance to whatever epoch the server
+    /// determines is *now*. Used by clients to enforce a minimum
+    /// granularity of responses, if inputs happen only infrequently.
+    Tick,
     /// Closes a named input handle.
     CloseInput(String),
     /// Client has disconnected.
@@ -449,9 +453,8 @@ where
     /// used as a convenience method during testing. Using this within
     /// `step_while` is not safe in general and might lead to stalls.
     pub fn is_any_outdated(&self) -> bool {
-        self.probe.with_frontier(|out_frontier| {
-            self.context.internal.dominates(out_frontier)
-        })
+        self.probe
+            .with_frontier(|out_frontier| self.context.internal.dominates(out_frontier))
     }
 
     /// Helper for registering, publishing, and indicating interest in
