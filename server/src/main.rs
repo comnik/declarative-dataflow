@@ -700,8 +700,10 @@ fn main() {
             }
 
             // ensure work continues, even if no queries registered,
-            // s.t. the sequencer continues issuing commands
-            worker.step();
+            // s.t. the sequencer continues issuing commands.
+            // If there is nothing to do, park `until_next()` activation
+            // in scheduler is ready.
+            worker.step_or_park(Some(server.scheduler.borrow().until_next().unwrap_or(Duration::from_millis(100))));
 
             server.context.internal.advance().expect("failed to advance domain");
 
