@@ -19,7 +19,7 @@ rmp-serde = "0.13.7"
 mio = "0.6.16"
 mio-extras = "2.0.5"
 slab = "0.4.1"
-ws = { git = "https://github.com/comnik/ws-rs", rev = "fdf5a291b8962de802e1745963a4c4575d76cecf" }
+ws = { git = "https://github.com/comnik/ws-rs", rev = "8312a820959828a0022008495b9bace7a13edac8" }
 log = "0.4"
 env_logger = "0.5.6"
 getopts = "0.2.18"

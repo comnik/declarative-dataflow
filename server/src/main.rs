@@ -171,6 +171,10 @@ fn main() {
 
         let mut shutdown = false;
 
+        // Keep a buffer around into which all connection events can
+        // be dropped without having to allocate all over the place.
+        let mut conn_events = Vec::new();
+
         while !shutdown {
             // each worker has to...
             //
@@ -338,78 +342,23 @@ fn main() {
                         let token = event.token();
                         let active = {
                             let event_readiness = event.readiness();
+
                             let conn_readiness = connections[token.into()].events();
-
-                            // @TODO refactor connection to accept a vector in which to place events
-
                             if (event_readiness & conn_readiness).is_readable() {
-                                match connections[token.into()].read() {
-                                    Err(err) => {
-                                        trace!(
-                                            "[WORKER {}] error while reading: {}",
-                                            worker.index(),
-                                            err
-                                        );
-                                        // @TODO error handling
-                                        connections[token.into()].error(err)
-                                    }
-                                    Ok(mut conn_events) => {
-                                        for conn_event in conn_events.drain(0..) {
-                                            match conn_event {
-                                                ConnEvent::Message(msg) => {
-                                                    match msg {
-                                                        ws::Message::Text(string) => {
-                                                            match serde_json::from_str::<Vec<Request>>(&string) {
-                                                                Err(serde_error) => {
-                                                                    send_results
-                                                                        .send(Output::Error(token.into(), Error::incorrect(serde_error), next_tx - 1))
-                                                                        .unwrap();
-                                                                }
-                                                                Ok(requests) => {
-                                                                    sequencer.push(
-                                                                        Command {
-                                                                            owner: worker.index(),
-                                                                            client: token.into(),
-                                                                            requests,
-                                                                        }
-                                                                    );
-                                                                }
-                                                            }
-                                                        }
-                                                        ws::Message::Binary(bytes) => {
-                                                            match rmp_serde::decode::from_slice::<Vec<Request>>(&bytes) {
-                                                                Err(rmp_error) => {
-                                                                    send_results
-                                                                        .send(Output::Error(token.into(), Error::incorrect(rmp_error), next_tx - 1))
-                                                                        .unwrap();
-                                                                }
-                                                                Ok(requests) => {
-                                                                    sequencer.push(
-                                                                        Command {
-                                                                            owner: worker.index(),
-                                                                            client: token.into(),
-                                                                            requests,
-                                                                        }
-                                                                    );
-                                                                }
-                                                            }
-                                                        }
-                                                    }
-                                                }
-                                                // @TODO handle ConnEvent::Close
-                                                _ => {
-                                                    println!("other");
-                                                }
-                                            }
-                                        }
-                                    }
+                                if let Err(err) = connections[token.into()].read(&mut conn_events) {
+                                    trace!(
+                                        "[WORKER {}] error while reading: {}",
+                                        worker.index(),
+                                        err
+                                    );
+                                    // @TODO error handling
+                                    connections[token.into()].error(err)
                                 }
                             }
 
                             let conn_readiness = connections[token.into()].events();
-
                             if (event_readiness & conn_readiness).is_writable() {
-                                if let Err(err) = connections[token.into()].write() {
+                                if let Err(err) = connections[token.into()].write(&mut conn_events) {
                                     trace!(
                                         "[WORKER {}] error while writing: {}",
                                         worker.index(),
@@ -417,6 +366,59 @@ fn main() {
                                     );
                                     // @TODO error handling
                                     connections[token.into()].error(err)
+                                }
+                            }
+
+                            trace!("read {} connection events", conn_events.len());
+
+                            for conn_event in conn_events.drain(..) {
+                                match conn_event {
+                                    ConnEvent::Message(msg) => {
+                                        match msg {
+                                            ws::Message::Text(string) => {
+                                                match serde_json::from_str::<Vec<Request>>(&string) {
+                                                    Err(serde_error) => {
+                                                        send_results
+                                                            .send(Output::Error(token.into(), Error::incorrect(serde_error), next_tx - 1))
+                                                            .unwrap();
+                                                    }
+                                                    Ok(requests) => {
+                                                        sequencer.push(
+                                                            Command {
+                                                                owner: worker.index(),
+                                                                client: token.into(),
+                                                                requests,
+                                                            }
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            ws::Message::Binary(bytes) => {
+                                                match rmp_serde::decode::from_slice::<Vec<Request>>(&bytes) {
+                                                    Err(rmp_error) => {
+                                                        send_results
+                                                            .send(Output::Error(token.into(), Error::incorrect(rmp_error), next_tx - 1))
+                                                            .unwrap();
+                                                    }
+                                                    Ok(requests) => {
+                                                        sequencer.push(
+                                                            Command {
+                                                                owner: worker.index(),
+                                                                client: token.into(),
+                                                                requests,
+                                                            }
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    ConnEvent::Close(code, reason) => {
+                                        info!("[WORKER {}] connection closing (token {:?}, {:?}, {})", worker.index(), token, code, reason);
+                                    }
+                                    other => {
+                                        trace!("[WS] {:?}", other);
+                                    }
                                 }
                             }
 
@@ -429,11 +431,14 @@ fn main() {
                         // established. It's possible that we may go inactive while in a connecting
                         // state if the handshake fails.
                         if !active {
-                            if let Ok(addr) = connections[token.into()].socket().peer_addr() {
-                                debug!("WebSocket connection to {} disconnected.", addr);
-                            } else {
-                                trace!("WebSocket connection to token={:?} disconnected.", token);
-                            }
+                            info!("[WORKER {}] token={:?} disconnected", worker.index(), token);
+
+                            sequencer.push(Command {
+                                owner: worker.index(),
+                                client: token.into(),
+                                requests: vec![Request::Disconnect],
+                            });
+
                             connections.remove(token.into());
                         } else {
                             let conn = &connections[token.into()];
