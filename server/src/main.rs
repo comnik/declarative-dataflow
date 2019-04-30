@@ -161,9 +161,10 @@ fn main() {
             .unwrap();
 
         info!(
-            "[WORKER {}] running with config {:?}",
+            "[WORKER {}] running with config {:?}, {} peers",
             worker.index(),
-            config
+            config,
+            worker.peers(),
         );
 
         // Sequence counter for commands.
@@ -355,7 +356,7 @@ fn main() {
                                     connections[token.into()].error(err)
                                 }
                             }
-
+                            
                             let conn_readiness = connections[token.into()].events();
                             if (event_readiness & conn_readiness).is_writable() {
                                 if let Err(err) = connections[token.into()].write(&mut conn_events) {
@@ -374,6 +375,7 @@ fn main() {
                             for conn_event in conn_events.drain(..) {
                                 match conn_event {
                                     ConnEvent::Message(msg) => {
+                                        trace!("[WS] ConnEvent::Message");
                                         match msg {
                                             ws::Message::Text(string) => {
                                                 match serde_json::from_str::<Vec<Request>>(&string) {
@@ -383,6 +385,7 @@ fn main() {
                                                             .unwrap();
                                                     }
                                                     Ok(requests) => {
+                                                        trace!("[WORKER {}] push command", worker.index());
                                                         sequencer.push(
                                                             Command {
                                                                 owner: worker.index(),
@@ -401,6 +404,7 @@ fn main() {
                                                             .unwrap();
                                                     }
                                                     Ok(requests) => {
+                                                        trace!("[WORKER {}] push binary command", worker.index());
                                                         sequencer.push(
                                                             Command {
                                                                 owner: worker.index(),
@@ -414,6 +418,7 @@ fn main() {
                                         }
                                     }
                                     ConnEvent::Close(code, reason) => {
+                                        trace!("[WS] ConnEvent::Close");
                                         info!("[WORKER {}] connection closing (token {:?}, {:?}, {})", worker.index(), token, code, reason);
                                     }
                                     other => {
