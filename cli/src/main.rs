@@ -5,6 +5,8 @@
 extern crate log;
 #[macro_use]
 extern crate clap;
+#[macro_use]
+extern crate serde_derive;
 
 use std::io::Read;
 use std::time::Duration;
@@ -16,21 +18,25 @@ use ws::{connect, CloseCode};
 use declarative_dataflow::plan::{GraphQl, Plan};
 use declarative_dataflow::server::{Interest, Register, Request};
 use declarative_dataflow::sinks::{AssocIn, Sink};
-use declarative_dataflow::{Output, Rule, TxData};
-
-/// Server timestamp type.
-#[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
-type T = u64;
-
-/// Server timestamp type.
-#[cfg(feature = "real-time")]
-type T = Duration;
-
-#[cfg(feature = "bitemporal")]
 use declarative_dataflow::timestamp::pair::Pair;
-/// Server timestamp type.
-#[cfg(feature = "bitemporal")]
-type T = Pair<Duration, u64>;
+use declarative_dataflow::{Rule, TxData, Error, ResultDiff};
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum Time {
+    TxId(u64),
+    Real(Duration),
+    Bi(Pair<Duration, u64>),
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+enum Output {
+    QueryDiff(String, Vec<ResultDiff<Time>>),
+    TenantDiff(String, usize, Vec<ResultDiff<Time>>),
+    Json(String, serde_json::Value, Time, isize),
+    Message(usize, serde_json::Value),
+    Error(usize, Error, u64),
+}
 
 fn main() {
     env_logger::init();
@@ -164,7 +170,7 @@ fn handle_message(msg: ws::Message) -> ws::Result<()> {
         ws::Message::Text(msg) => {
             trace!("{:?}", msg);
 
-            match serde_json::from_str::<Output<T>>(&msg) {
+            match serde_json::from_str::<Output>(&msg) {
                 Err(err) => error!("{:?}", err),
                 Ok(out) => match out {
                     Output::Json(_, v, t, diff) => {
