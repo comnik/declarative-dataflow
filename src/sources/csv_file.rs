@@ -32,6 +32,10 @@ pub struct CsvFile {
     /// Specifies the column offsets and their value types, that
     /// should be introduced.
     pub schema: Vec<(Aid, (usize, Value))>,
+    /// Batch size.
+    pub fuel: Option<usize>,
+    /// Scheduling interval.
+    pub interval: Option<Duration>,
 }
 
 impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
@@ -88,6 +92,12 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
             let schema = self.schema.clone();
             let eid_offset = self.eid_offset;
             let timestamp_offset = self.timestamp_offset;
+            let mut fuel: i64 = self.fuel.unwrap_or(256) as i64;
+
+            // Grab scheduler handle for deferred re-activation.
+            let scheduler = context.scheduler;
+            let t0 = context.t0;
+            let interval = self.interval.unwrap_or(Duration::from_secs(1));
 
             move |_frontiers| {
                 if iterator.reader().is_done() {
@@ -97,8 +107,6 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                     );
                     capabilities.drain(..);
                 } else {
-                    let mut fuel = 256;
-
                     let mut handles = Vec::with_capacity(schema.len());
                     for wrapper in wrappers.iter_mut() {
                         handles.push(wrapper.activate());
@@ -109,52 +117,51 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                         sessions.push(handle.session(capabilities.get(idx).unwrap()));
                     }
 
-                    let time = Instant::now().duration_since(context.t0);
+                    let time = Instant::now().duration_since(t0);
 
                     info!("Ingesting at {:?}", time);
 
                     while let Some(result) = iterator.next() {
                         let record = result.expect("read error");
 
-                        if datum_index % num_workers == worker_index {
-                            let eid =
-                                Value::Eid(record[eid_offset].parse::<Eid>().expect("not a eid"));
-                            // let time = match timestamp_offset {
-                            //     None => Default::default(),
-                            //     Some(timestamp_offset) => {
-                            //         let epoch =
-                            //             DateTime::parse_from_rfc3339(&record[timestamp_offset])
-                            //                 .expect("not a valid rfc3339 datetime")
-                            //                 .timestamp();
+                        // if datum_index % num_workers == worker_index {
+                        let eid = Value::Eid(record[eid_offset].parse::<Eid>().expect("not a eid"));
+                        // let time = match timestamp_offset {
+                        //     None => Default::default(),
+                        //     Some(timestamp_offset) => {
+                        //         let epoch =
+                        //             DateTime::parse_from_rfc3339(&record[timestamp_offset])
+                        //                 .expect("not a valid rfc3339 datetime")
+                        //                 .timestamp();
 
-                            //         if epoch >= 0 {
-                            //             epoch as u64
-                            //         } else {
-                            //             panic!("invalid epoch");
-                            //         }
-                            //     }
-                            // };
+                        //         if epoch >= 0 {
+                        //             epoch as u64
+                        //         } else {
+                        //             panic!("invalid epoch");
+                        //         }
+                        //     }
+                        // };
 
-                            for (idx, (_aid, (offset, type_hint))) in schema.iter().enumerate() {
-                                let v = match type_hint {
-                                    Value::String(_) => Value::String(record[*offset].to_string()),
-                                    Value::Number(_) => Value::Number(
-                                        record[*offset].parse::<i64>().expect("not a number"),
-                                    ),
-                                    Value::Eid(_) => Value::Eid(
-                                        record[*offset].parse::<Eid>().expect("not a eid"),
-                                    ),
-                                    _ => panic!(
-                                        "Only String, Number, and Eid are supported at the moment."
-                                    ),
-                                };
+                        for (idx, (_aid, (offset, type_hint))) in schema.iter().enumerate() {
+                            let v = match type_hint {
+                                Value::String(_) => Value::String(record[*offset].to_string()),
+                                Value::Number(_) => Value::Number(
+                                    record[*offset].parse::<i64>().expect("not a number"),
+                                ),
+                                Value::Eid(_) => {
+                                    Value::Eid(record[*offset].parse::<Eid>().expect("not a eid"))
+                                }
+                                _ => panic!(
+                                    "Only String, Number, and Eid are supported at the moment."
+                                ),
+                            };
 
-                                let tuple = (eid.clone(), v);
-                                sessions.get_mut(idx).unwrap().give((tuple, time, 1));
-                            }
-
-                            num_datums_read += 1;
+                            let tuple = (eid.clone(), v);
+                            sessions.get_mut(idx).unwrap().give((tuple, time, 1));
                         }
+
+                        num_datums_read += 1;
+                        // }
 
                         datum_index += 1;
 
@@ -172,13 +179,20 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                         capabilities.drain(..);
                     } else {
                         // Incorporate processing time in downgrade
-                        let time = Instant::now().duration_since(context.t0);
+                        let time = Instant::now().duration_since(t0);
 
                         for cap in capabilities.iter_mut() {
                             cap.downgrade(&time);
                         }
 
-                        activator.activate();
+                        // Notify the server that we want to be scheduled again soon
+                        {
+                            scheduler
+                                .upgrade()
+                                .unwrap()
+                                .borrow_mut()
+                                .schedule_after(interval, Rc::downgrade(&activator))
+                        }
                     }
                 }
             }
