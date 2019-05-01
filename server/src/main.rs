@@ -356,7 +356,7 @@ fn main() {
                                     connections[token.into()].error(err)
                                 }
                             }
-                            
+
                             let conn_readiness = connections[token.into()].events();
                             if (event_readiness & conn_readiness).is_writable() {
                                 if let Err(err) = connections[token.into()].write(&mut conn_events) {

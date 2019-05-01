@@ -232,7 +232,6 @@ where
                 // continuously advanced and compacted.
 
                 self.advance_traces(&[self.epoch().clone()])
-
             } else {
                 if !AntichainRef::new(&frontier).less_equal(self.epoch()) {
                     // Input handles have fallen behind the sources and need

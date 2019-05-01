@@ -92,7 +92,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
             let schema = self.schema.clone();
             let eid_offset = self.eid_offset;
             let timestamp_offset = self.timestamp_offset;
-            let mut fuel: i64 = self.fuel.unwrap_or(256) as i64;
+            let total_fuel: i64 = self.fuel.unwrap_or(256) as i64;
 
             // Grab scheduler handle for deferred re-activation.
             let scheduler = context.scheduler;
@@ -107,6 +107,8 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                     );
                     capabilities.drain(..);
                 } else {
+                    let mut fuel = total_fuel;
+                    
                     let mut handles = Vec::with_capacity(schema.len());
                     for wrapper in wrappers.iter_mut() {
                         handles.push(wrapper.activate());
