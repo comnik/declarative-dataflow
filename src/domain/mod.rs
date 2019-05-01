@@ -226,12 +226,13 @@ where
                 .with_frontier(|frontier| (*frontier).to_vec());
 
             if frontier.is_empty() {
-                // @TODO strictly speaking we'd have to drop input
-                // handles here, but we can't distinguish whether the
-                // domain never even had sources to begin with.
+                // Even if all sources dropped their capabilities we
+                // still want to advance all traces to the current
+                // epoch, s.t. user created attributes are
+                // continuously advanced and compacted.
 
-                // self.input_sessions.clear();
-                self.advance_traces(&[])
+                self.advance_traces(&[self.epoch().clone()])
+
             } else {
                 if !AntichainRef::new(&frontier).less_equal(self.epoch()) {
                     // Input handles have fallen behind the sources and need
