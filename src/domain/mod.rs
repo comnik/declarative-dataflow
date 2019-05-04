@@ -120,35 +120,11 @@ where
                 InputSemantics::CardinalityMany => pairs.as_collection().distinct(),
             };
 
-            // This is crucial. If we forget to install the attribute
-            // configuration, its traces will be ignored when
-            // advancing the domain.
-            self.attributes.insert(name.to_string(), config);
-
-            self.forward_count.insert(
-                name.to_string(),
-                tuples
-                    .map(|(k, _v)| (k, ()))
-                    .arrange_named(&format!("Counts({})", name))
-                    .trace,
-            );
+            // Propose traces are used in general, whereas the other
+            // indices are only relevant to Hector.
             self.forward_propose.insert(
                 name.to_string(),
                 tuples.arrange_named(&format!("Proposals({})", &name)).trace,
-            );
-            self.forward_validate.insert(
-                name.to_string(),
-                tuples
-                    .map(|t| (t, ()))
-                    .arrange_named(&format!("Validations({})", &name))
-                    .trace,
-            );
-            self.reverse_count.insert(
-                name.to_string(),
-                tuples
-                    .map(|(k, _v)| (k, ()))
-                    .arrange_named(&format!("_Counts({})", name))
-                    .trace,
             );
             self.reverse_propose.insert(
                 name.to_string(),
@@ -156,13 +132,49 @@ where
                     .arrange_named(&format!("_Proposals({})", &name))
                     .trace,
             );
-            self.reverse_validate.insert(
-                name.to_string(),
-                tuples
-                    .map(|t| (t, ()))
-                    .arrange_named(&format!("_Validations({})", &name))
-                    .trace,
-            );
+
+            // CardinalityOne is a special case, because count,
+            // propose, and validate are all essentially the same.
+            if !(config.input_semantics == InputSemantics::CardinalityOne) {
+                // Count traces are only required for use in
+                // worst-case optimal joins.
+                if config.enable_wco {
+                    self.forward_count.insert(
+                        name.to_string(),
+                        tuples
+                            .map(|(k, _v)| (k, ()))
+                            .arrange_named(&format!("Counts({})", name))
+                            .trace,
+                    );
+                    self.reverse_count.insert(
+                        name.to_string(),
+                        tuples
+                            .map(|(k, _v)| (k, ()))
+                            .arrange_named(&format!("_Counts({})", name))
+                            .trace,
+                    );
+                }
+
+                self.forward_validate.insert(
+                    name.to_string(),
+                    tuples
+                        .map(|t| (t, ()))
+                        .arrange_named(&format!("Validations({})", &name))
+                        .trace,
+                );
+                self.reverse_validate.insert(
+                    name.to_string(),
+                    tuples
+                        .map(|t| (t, ()))
+                        .arrange_named(&format!("_Validations({})", &name))
+                        .trace,
+                );
+            }
+
+            // This is crucial. If we forget to install the attribute
+            // configuration, its traces will be ignored when
+            // advancing the domain.
+            self.attributes.insert(name.to_string(), config);
 
             info!("Created attribute {}", name);
 
