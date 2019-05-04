@@ -23,10 +23,9 @@ use crate::plan::{ImplContext, Implementable};
 use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
-use crate::{
-    implement, implement_neu, AttributeConfig, CollectionIndex, RelationHandle, ShutdownHandle,
-};
+use crate::{implement, implement_neu, AttributeConfig, RelationHandle, ShutdownHandle};
 use crate::{Aid, Error, Rewind, Time, TxData, Value};
+use crate::{TraceKeyHandle, TraceValHandle};
 
 pub mod scheduler;
 use self::scheduler::Scheduler;
@@ -202,15 +201,43 @@ where
     }
 
     fn has_attribute(&self, name: &str) -> bool {
-        self.internal.forward.contains_key(name)
+        self.internal.attributes.contains_key(name)
     }
 
-    fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, T>> {
-        self.internal.forward.get_mut(name)
+    fn forward_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
+        self.internal.forward_count.get_mut(name)
     }
 
-    fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, T>> {
-        self.internal.reverse.get_mut(name)
+    fn forward_propose(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
+        self.internal.forward_propose.get_mut(name)
+    }
+
+    fn forward_validate(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
+        self.internal.forward_validate.get_mut(name)
+    }
+
+    fn reverse_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
+        self.internal.reverse_count.get_mut(name)
+    }
+
+    fn reverse_propose(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
+        self.internal.reverse_propose.get_mut(name)
+    }
+
+    fn reverse_validate(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
+        self.internal.reverse_validate.get_mut(name)
     }
 
     fn is_underconstrained(&self, _name: &str) -> bool {

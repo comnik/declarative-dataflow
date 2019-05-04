@@ -22,6 +22,7 @@ use timely::PartialOrder;
 use timely_sort::Unsigned;
 
 use differential_dataflow::lattice::Lattice;
+use differential_dataflow::operators::arrange::Arranged;
 use differential_dataflow::operators::{Consolidate, Count};
 use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
 use differential_dataflow::{AsCollection, Collection, ExchangeData, Hashable};
@@ -32,7 +33,7 @@ use crate::logging::DeclarativeEvent;
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::timestamp::altneu::AltNeu;
 use crate::{Aid, Value, Var};
-use crate::{CollectionRelation, Implemented, LiveIndex, ShutdownHandle, VariableMap};
+use crate::{CollectionRelation, Implemented, ShutdownHandle, VariableMap};
 
 type Extender<'a, S, P, V> = Box<(dyn PrefixExtender<S, Prefix = P, Extension = V> + 'a)>;
 
@@ -342,42 +343,45 @@ impl Hector {
         // anything fancy (provided the binding is sourceable).
 
         match self.bindings.first().unwrap() {
-            Binding::Attribute(binding) => match context.forward_index(&binding.source_attribute) {
-                None => panic!("Unknown attribute {}", &binding.source_attribute),
-                Some(index) => {
-                    let frontier: Vec<T> = index.validate_trace.advance_frontier().to_vec();
-                    let (validate, shutdown_validate) = index
-                        .validate_trace
-                        .import_core(&nested.parent, &format!("Validate({})", index.name));
+            Binding::Attribute(binding) => {
+                match context.forward_validate(&binding.source_attribute) {
+                    None => panic!("Unknown attribute {}", &binding.source_attribute),
+                    Some(validate_trace) => {
+                        let frontier: Vec<T> = validate_trace.advance_frontier().to_vec();
+                        let (validate, shutdown_validate) = validate_trace.import_core(
+                            &nested.parent,
+                            &format!("Validate({})", &binding.source_attribute),
+                        );
 
-                    let prefix = binding.variables();
-                    let target_variables = self.variables.clone();
-                    let tuples = validate
-                        .enter_at(nested, move |_, _, time| {
-                            let mut forwarded = time.clone();
-                            forwarded.advance_by(&frontier);
-                            Product::new(forwarded, 0)
-                        })
-                        .as_collection(move |tuple, ()| {
-                            target_variables
-                                .iter()
-                                .flat_map(|x| {
-                                    Some(tuple.index(AsBinding::binds(&prefix, *x).unwrap()))
-                                })
-                                .collect()
-                        });
+                        let prefix = binding.variables();
+                        let target_variables = self.variables.clone();
+                        let tuples = validate
+                            .enter_at(nested, move |_, _, time| {
+                                let mut forwarded = time.clone();
+                                forwarded.advance_by(&frontier);
+                                Product::new(forwarded, 0)
+                            })
+                            .as_collection(move |tuple, ()| {
+                                target_variables
+                                    .iter()
+                                    .flat_map(|x| {
+                                        Some(tuple.index(AsBinding::binds(&prefix, *x).unwrap()))
+                                    })
+                                    .collect()
+                            });
 
-                    let relation = CollectionRelation {
-                        variables: self.variables.clone(),
-                        tuples,
-                    };
+                        let relation = CollectionRelation {
+                            variables: self.variables.clone(),
+                            tuples,
+                        };
 
-                    (
-                        Implemented::Collection(relation),
-                        ShutdownHandle::from_button(shutdown_validate),
-                    )
+                        (
+                            Implemented::Collection(relation),
+                            ShutdownHandle::from_button(shutdown_validate),
+                        )
+                    }
                 }
-            },
+            }
             _ => {
                 panic!("Passed a single, non-sourceable binding.");
             }
@@ -414,9 +418,8 @@ impl Hector {
     //                 0 => {
     //                     // [?a :edge ?b] (constant ?a x) <=> [x :edge ?b]
 
-    //                     let (index, shutdown) = context.forward_index(&source.source_attribute)
+    //                     let (index, shutdown) = context.forward_propose(&source.source_attribute)
     //                         .unwrap_or_else(|| panic!("No forward index found for attribute {}", &source.source_attribute))
-    //                         .propose_trace
     //                         .import_core(&nested.parent, &source.source_attribute);
 
     //                     let frontier: Vec<T> = index.trace.advance_frontier().to_vec();
@@ -431,9 +434,8 @@ impl Hector {
     //                 1 => {
     //                     // [?a :edge ?b] (constant ?b x) <=> [?a :edge x]
 
-    //                     let (index, shutdown) = context.reverse_index(&source.source_attribute)
+    //                     let (index, shutdown) = context.reverse_propose(&source.source_attribute)
     //                         .unwrap_or_else(|| panic!("No reverse index found for attribute {}", &source.source_attribute))
-    //                         .propose_trace
     //                         .import_core(&nested.parent, &source.source_attribute);
 
     //                     let frontier: Vec<T> = index.trace.advance_frontier().to_vec();
@@ -509,8 +511,14 @@ impl Implementable for Hector {
                 // wrapping things more than once.
 
                 let mut shutdown_handle = ShutdownHandle::empty();
-                let mut forward_cache = HashMap::new();
-                let mut reverse_cache = HashMap::new();
+
+                let mut forward_counts = HashMap::new();
+                let mut forward_proposes = HashMap::new();
+                let mut forward_validates = HashMap::new();
+
+                let mut reverse_counts = HashMap::new();
+                let mut reverse_proposes = HashMap::new();
+                let mut reverse_validates = HashMap::new();
 
                 // Attempt to acquire a logger for tuple counts.
                 let logger = {
@@ -548,25 +556,24 @@ impl Implementable for Hector {
 
                             let mut source_conflicts = source_conflicts(idx, &self.bindings);
 
-                            let index = forward_cache
-                                .entry(delta_binding.source_attribute.to_string())
-                                .or_insert_with(|| {
-                                    let (arranged, shutdown) =
-                                        context.forward_index(&delta_binding.source_attribute)
-                                        .expect("forward_index doesn't exist")
-                                        .import(&scope.parent.parent);
-
-                                    shutdown_handle.merge_with(shutdown);
-
-                                    arranged
-                                });
-                            let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
-
                             let mut source = if !source_conflicts.is_empty() {
                                 // @TODO there can be more than one conflict
+                                // @TODO Not just constant bindings can cause issues here!
                                 assert_eq!(source_conflicts.len(), 1);
 
-                                // @TODO Not just constant bindings can cause issues here!
+                                let propose = forward_proposes
+                                    .entry(delta_binding.source_attribute.to_string())
+                                    .or_insert_with(|| {
+                                        let (arranged, shutdown) = context
+                                            .forward_propose(&delta_binding.source_attribute)
+                                            .expect("forward propose trace doesn't exist")
+                                            .import_core(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
+
+                                        shutdown_handle.add_button(shutdown);
+
+                                        arranged
+                                    });
+                                let frontier: Vec<T> = propose.trace.advance_frontier().to_vec();
 
                                 let conflict = source_conflicts.pop().unwrap();
                                 // for conflict in source_conflicts.drain(..) {
@@ -581,8 +588,7 @@ impl Implementable for Hector {
                                                 Direction::Forward(_) => {
                                                     prefix.push(delta_binding.variables.1);
 
-                                                    index
-                                                        .propose
+                                                    propose
                                                         .filter(move |e, _v| *e == match_v)
                                                         .enter_at(&scope.parent, move |_, _, time| {
                                                             let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
@@ -594,8 +600,7 @@ impl Implementable for Hector {
                                                 Direction::Reverse(_) => {
                                                     prefix.push(delta_binding.variables.0);
 
-                                                    index
-                                                        .propose
+                                                    propose
                                                         .filter(move |_e, v| *v == match_v)
                                                         .enter_at(&scope.parent, move |_, _, time| {
                                                             let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
@@ -613,8 +618,21 @@ impl Implementable for Hector {
                                 prefix.push(delta_binding.variables.0);
                                 prefix.push(delta_binding.variables.1);
 
-                                index
-                                    .validate
+                                let validate = forward_validates
+                                    .entry(delta_binding.source_attribute.to_string())
+                                    .or_insert_with(|| {
+                                        let (arranged, shutdown) =
+                                            context.forward_validate(&delta_binding.source_attribute)
+                                            .expect("forward validate trace doesn't exist")
+                                            .import_core(&scope.parent.parent, &format!("Validate({})", &delta_binding.source_attribute));
+
+                                        shutdown_handle.add_button(shutdown);
+
+                                        arranged
+                                    });
+                                let frontier: Vec<T> = validate.trace.advance_frontier().to_vec();
+
+                                validate
                                     .enter_at(&scope.parent, move |_, _, time| {
                                         let mut forwarded = time.clone();
                                         forwarded.advance_by(&frontier);
@@ -700,80 +718,179 @@ impl Implementable for Hector {
                                                         Err(msg) => panic!(msg),
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
-                                                                let index = forward_cache.entry(other.source_attribute.to_string())
-                                                                    .or_insert_with(|| {
-                                                                        let (arranged, shutdown) =
-                                                                            context.forward_index(&other.source_attribute)
-                                                                            .expect("forward index doesn't exist")
-                                                                            .import(&scope.parent.parent);
+                                                                let count = {
+                                                                    let count = forward_counts
+                                                                        .entry(other.source_attribute.to_string())
+                                                                        .or_insert_with(|| {
+                                                                            let (arranged, shutdown) =
+                                                                                context.forward_count(&other.source_attribute)
+                                                                                .expect("forward count doesn't exist")
+                                                                                .import_core(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
 
-                                                                        shutdown_handle.merge_with(shutdown);
+                                                                            shutdown_handle.add_button(shutdown);
 
-                                                                        arranged
-                                                                    });
-                                                                let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
+                                                                            arranged
+                                                                        });
 
-                                                                let (frontier1, frontier2, frontier3) = (frontier.clone(), frontier.clone(), frontier);
-                                                                let (neu1, neu2, neu3) = (is_neu, is_neu, is_neu);
+                                                                    let frontier: Vec<T> = count.trace.advance_frontier().to_vec();
+                                                                    let neu = is_neu;
 
-                                                                let forward = index
-                                                                // .enter(&scope.parent)
-                                                                    .enter_at(
-                                                                        &scope.parent,
-                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier1); Product::new(forwarded, 0) },
-                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier2); Product::new(forwarded, 0) },
-                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier3); Product::new(forwarded, 0) },
-                                                                    )
-                                                                    .enter_at(
-                                                                        &scope,
-                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
-                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
-                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
-                                                                    );
+                                                                    count
+                                                                        .enter_at(&scope.parent, move |_, _, t| {
+                                                                            let mut forwarded = t.clone();
+                                                                            forwarded.advance_by(&frontier);
+                                                                            Product::new(forwarded, 0)
+                                                                        })
+                                                                        .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
+                                                                };
+;
+                                                                let propose = {
+                                                                    let propose = forward_proposes
+                                                                        .entry(other.source_attribute.to_string())
+                                                                        .or_insert_with(|| {
+                                                                            let (arranged, shutdown) =
+                                                                                context.forward_propose(&other.source_attribute)
+                                                                                .expect("forward propose doesn't exist")
+                                                                                .import_core(&scope.parent.parent, &format!("Propose({})", &delta_binding.source_attribute));
+
+                                                                            shutdown_handle.add_button(shutdown);
+
+                                                                            arranged
+                                                                        });
+
+                                                                    let frontier: Vec<T> = propose.trace.advance_frontier().to_vec();
+                                                                    let neu = is_neu;
+
+                                                                    propose
+                                                                        .enter_at(&scope.parent, move |_, _, t| {
+                                                                            let mut forwarded = t.clone();
+                                                                            forwarded.advance_by(&frontier);
+                                                                            Product::new(forwarded, 0)
+                                                                        })
+                                                                        .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
+                                                                };
+
+                                                                let validate = {
+                                                                    let validate = forward_validates
+                                                                        .entry(other.source_attribute.to_string())
+                                                                        .or_insert_with(|| {
+                                                                            let (arranged, shutdown) =
+                                                                                context.forward_validate(&other.source_attribute)
+                                                                                .expect("forward validate doesn't exist")
+                                                                                .import_core(&scope.parent.parent, &format!("Validate({})", &delta_binding.source_attribute));
+
+                                                                            shutdown_handle.add_button(shutdown);
+
+                                                                            arranged
+                                                                        });
+
+                                                                    let frontier: Vec<T> = validate.trace.advance_frontier().to_vec();
+                                                                    let neu = is_neu;
+
+                                                                    validate
+                                                                        .enter_at(&scope.parent, move |_, _, t| {
+                                                                            let mut forwarded = t.clone();
+                                                                            forwarded.advance_by(&frontier);
+                                                                            Product::new(forwarded, 0)
+                                                                        })
+                                                                        .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
+                                                                };
 
                                                                 extenders.push(
                                                                     Box::new(CollectionExtender {
                                                                         phantom: std::marker::PhantomData,
-                                                                        indices: forward,
+                                                                        count,
+                                                                        propose,
+                                                                        validate,
                                                                         key_selector: Rc::new(move |prefix: &Vec<Value>| prefix.index(offset)),
                                                                     })
                                                                 );
                                                             },
                                                             Direction::Reverse(offset) => {
-                                                                let index = reverse_cache.entry(other.source_attribute.to_string())
-                                                                    .or_insert_with(|| {
-                                                                        let (arranged, shutdown) =
-                                                                            context.reverse_index(&other.source_attribute).unwrap()
-                                                                            .import(&scope.parent.parent);
+                                                                let count = {
+                                                                    let count = reverse_counts
+                                                                        .entry(other.source_attribute.to_string())
+                                                                        .or_insert_with(|| {
+                                                                            let (arranged, shutdown) =
+                                                                                context.reverse_count(&other.source_attribute)
+                                                                                .expect("reverse count doesn't exist")
+                                                                                .import_core(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
 
-                                                                        shutdown_handle.merge_with(shutdown);
+                                                                            shutdown_handle.add_button(shutdown);
 
-                                                                        arranged
-                                                                    });
-                                                                let frontier: Vec<T> = index.propose.trace.advance_frontier().to_vec();
+                                                                            arranged
+                                                                        });
 
-                                                                let (frontier1, frontier2, frontier3) = (frontier.clone(), frontier.clone(), frontier);
-                                                                let (neu1, neu2, neu3) = (is_neu, is_neu, is_neu);
+                                                                    let frontier: Vec<T> = count.trace.advance_frontier().to_vec();
+                                                                    let neu = is_neu;
 
-                                                                let reverse = index
-                                                                // .enter(&scope.parent)
-                                                                    .enter_at(
-                                                                        &scope.parent,
-                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier1); Product::new(forwarded, 0) },
-                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier2); Product::new(forwarded, 0) },
-                                                                        move |_, _, t| { let mut forwarded = t.clone(); forwarded.advance_by(&frontier3); Product::new(forwarded, 0) },
-                                                                    )
-                                                                    .enter_at(
-                                                                        &scope,
-                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu1 },
-                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu2 },
-                                                                        move |_,_,t| AltNeu { time: t.clone(), neu: neu3 },
-                                                                    );
+                                                                    count
+                                                                        .enter_at(&scope.parent, move |_, _, t| {
+                                                                            let mut forwarded = t.clone();
+                                                                            forwarded.advance_by(&frontier);
+                                                                            Product::new(forwarded, 0)
+                                                                        })
+                                                                        .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
+                                                                };
+;
+                                                                let propose = {
+                                                                    let propose = reverse_proposes
+                                                                        .entry(other.source_attribute.to_string())
+                                                                        .or_insert_with(|| {
+                                                                            let (arranged, shutdown) =
+                                                                                context.reverse_propose(&other.source_attribute)
+                                                                                .expect("reverse propose doesn't exist")
+                                                                                .import_core(&scope.parent.parent, &format!("Propose({})", &delta_binding.source_attribute));
+
+                                                                            shutdown_handle.add_button(shutdown);
+
+                                                                            arranged
+                                                                        });
+
+                                                                    let frontier: Vec<T> = propose.trace.advance_frontier().to_vec();
+                                                                    let neu = is_neu;
+
+                                                                    propose
+                                                                        .enter_at(&scope.parent, move |_, _, t| {
+                                                                            let mut forwarded = t.clone();
+                                                                            forwarded.advance_by(&frontier);
+                                                                            Product::new(forwarded, 0)
+                                                                        })
+                                                                        .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
+                                                                };
+
+                                                                let validate = {
+                                                                    let validate = reverse_validates
+                                                                        .entry(other.source_attribute.to_string())
+                                                                        .or_insert_with(|| {
+                                                                            let (arranged, shutdown) =
+                                                                                context.reverse_validate(&other.source_attribute)
+                                                                                .expect("reverse validate doesn't exist")
+                                                                                .import_core(&scope.parent.parent, &format!("Validate({})", &delta_binding.source_attribute));
+
+                                                                            shutdown_handle.add_button(shutdown);
+
+                                                                            arranged
+                                                                        });
+
+                                                                    let frontier: Vec<T> = validate.trace.advance_frontier().to_vec();
+                                                                    let neu = is_neu;
+
+                                                                    validate
+                                                                        .enter_at(&scope.parent, move |_, _, t| {
+                                                                            let mut forwarded = t.clone();
+                                                                            forwarded.advance_by(&frontier);
+                                                                            Product::new(forwarded, 0)
+                                                                        })
+                                                                        .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
+                                                                };
 
                                                                 extenders.push(
                                                                     Box::new(CollectionExtender {
                                                                         phantom: std::marker::PhantomData,
-                                                                        indices: reverse,
+                                                                        count,
+                                                                        propose,
+                                                                        validate,
                                                                         key_selector: Rc::new(move |prefix: &Vec<Value>| prefix.index(offset)),
                                                                     })
                                                                 );
@@ -1030,7 +1147,9 @@ where
         Cursor<TrValidate::Key, TrValidate::Val, S::Timestamp, TrValidate::R> + 'static,
 {
     phantom: std::marker::PhantomData<P>,
-    indices: LiveIndex<S, K, V, TrCount, TrPropose, TrValidate>,
+    count: Arranged<S, TrCount>,
+    propose: Arranged<S, TrPropose>,
+    validate: Arranged<S, TrValidate>,
     key_selector: Rc<F>,
 }
 
@@ -1074,7 +1193,7 @@ where
         // differences by key and save some time, or we could skip
         // that.
 
-        let counts = &self.indices.count;
+        let counts = &self.count;
         let mut counts_trace = Some(counts.trace.clone());
 
         let mut stash = HashMap::new();
@@ -1187,7 +1306,7 @@ where
     }
 
     fn propose(&mut self, prefixes: &Collection<S, P>) -> Collection<S, (P, V)> {
-        let propose = &self.indices.propose;
+        let propose = &self.propose;
         let mut propose_trace = Some(propose.trace.clone());
 
         let mut stash = HashMap::new();
@@ -1299,7 +1418,7 @@ where
         // just doing a stream of changes and a stream of look-ups, no consolidation or any funny business like
         // that. We *could* organize the input differences by key and save some time, or we could skip that.
 
-        let validate = &self.indices.validate;
+        let validate = &self.validate;
         let mut validate_trace = Some(validate.trace.clone());
 
         let mut stash = HashMap::new();

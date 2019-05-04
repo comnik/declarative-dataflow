@@ -9,13 +9,15 @@ use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
+use differential_dataflow::operators::arrange::Arrange;
 use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
 use crate::operators::CardinalitySingle;
 use crate::{Aid, Error, Rewind, TxData, Value};
-use crate::{AttributeConfig, CollectionIndex, InputSemantics, RelationConfig, RelationHandle};
+use crate::{AttributeConfig, InputSemantics, RelationConfig, RelationHandle};
+use crate::{TraceKeyHandle, TraceValHandle};
 
 mod unordered_session;
 use unordered_session::UnorderedSession;
@@ -54,10 +56,18 @@ pub struct Domain<T: Timestamp + Lattice> {
     probed_source_count: usize,
     /// Configurations for attributes in this domain.
     pub attributes: HashMap<Aid, AttributeConfig>,
-    /// Forward attribute indices eid -> v.
-    pub forward: HashMap<Aid, CollectionIndex<Value, Value, T>>,
-    /// Reverse attribute indices v -> eid.
-    pub reverse: HashMap<Aid, CollectionIndex<Value, Value, T>>,
+    /// Forward count traces.
+    pub forward_count: HashMap<Aid, TraceKeyHandle<Value, T, isize>>,
+    /// Forward propose traces.
+    pub forward_propose: HashMap<Aid, TraceValHandle<Value, Value, T, isize>>,
+    /// Forward validate traces.
+    pub forward_validate: HashMap<Aid, TraceKeyHandle<(Value, Value), T, isize>>,
+    /// Reverse count traces.
+    pub reverse_count: HashMap<Aid, TraceKeyHandle<Value, T, isize>>,
+    /// Reverse propose traces.
+    pub reverse_propose: HashMap<Aid, TraceValHandle<Value, Value, T, isize>>,
+    /// Reverse validate traces.
+    pub reverse_validate: HashMap<Aid, TraceKeyHandle<(Value, Value), T, isize>>,
     /// Configuration for relations in this domain.
     pub relations: HashMap<Aid, RelationConfig>,
     /// Relation traces.
@@ -76,8 +86,12 @@ where
             domain_probe: ProbeHandle::new(),
             probed_source_count: 0,
             attributes: HashMap::new(),
-            forward: HashMap::new(),
-            reverse: HashMap::new(),
+            forward_count: HashMap::new(),
+            forward_propose: HashMap::new(),
+            forward_validate: HashMap::new(),
+            reverse_count: HashMap::new(),
+            reverse_propose: HashMap::new(),
+            reverse_validate: HashMap::new(),
             relations: HashMap::new(),
             arrangements: HashMap::new(),
         }
@@ -92,7 +106,7 @@ where
         config: AttributeConfig,
         pairs: &Stream<S, ((Value, Value), T, isize)>,
     ) -> Result<(), Error> {
-        if self.forward.contains_key(name) {
+        if self.attributes.contains_key(name) {
             Err(Error::conflict(format!(
                 "An attribute of name {} already exists.",
                 name
@@ -111,11 +125,44 @@ where
             // advancing the domain.
             self.attributes.insert(name.to_string(), config);
 
-            let forward = CollectionIndex::index(&name, &tuples);
-            let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
-
-            self.forward.insert(name.to_string(), forward);
-            self.reverse.insert(name.to_string(), reverse);
+            self.forward_count.insert(
+                name.to_string(),
+                tuples
+                    .map(|(k, _v)| (k, ()))
+                    .arrange_named(&format!("Counts({})", name))
+                    .trace,
+            );
+            self.forward_propose.insert(
+                name.to_string(),
+                tuples.arrange_named(&format!("Proposals({})", &name)).trace,
+            );
+            self.forward_validate.insert(
+                name.to_string(),
+                tuples
+                    .map(|t| (t, ()))
+                    .arrange_named(&format!("Validations({})", &name))
+                    .trace,
+            );
+            self.reverse_count.insert(
+                name.to_string(),
+                tuples
+                    .map(|(k, _v)| (k, ()))
+                    .arrange_named(&format!("_Counts({})", name))
+                    .trace,
+            );
+            self.reverse_propose.insert(
+                name.to_string(),
+                tuples
+                    .arrange_named(&format!("_Proposals({})", &name))
+                    .trace,
+            );
+            self.reverse_validate.insert(
+                name.to_string(),
+                tuples
+                    .map(|t| (t, ()))
+                    .arrange_named(&format!("_Validations({})", &name))
+                    .trace,
+            );
 
             info!("Created attribute {}", name);
 
@@ -283,19 +330,35 @@ where
                     .map(|t| t.rewind(trace_slack.clone().into()))
                     .collect::<Vec<T>>();;
 
-                let forward_index = self.forward.get_mut(aid).unwrap_or_else(|| {
-                    panic!("Configuration available for unknown attribute {}", aid)
-                });
+                if let Some(trace) = self.forward_count.get_mut(aid) {
+                    trace.advance_by(&slacking_frontier);
+                    trace.distinguish_since(&slacking_frontier);
+                }
 
-                forward_index.advance_by(&slacking_frontier);
-                forward_index.distinguish_since(&slacking_frontier);
+                if let Some(trace) = self.forward_propose.get_mut(aid) {
+                    trace.advance_by(&slacking_frontier);
+                    trace.distinguish_since(&slacking_frontier);
+                }
 
-                let reverse_index = self.reverse.get_mut(aid).unwrap_or_else(|| {
-                    panic!("Configuration available for unknown attribute {}", aid)
-                });
+                if let Some(trace) = self.forward_validate.get_mut(aid) {
+                    trace.advance_by(&slacking_frontier);
+                    trace.distinguish_since(&slacking_frontier);
+                }
 
-                reverse_index.advance_by(&slacking_frontier);
-                reverse_index.distinguish_since(&slacking_frontier);
+                if let Some(trace) = self.reverse_count.get_mut(aid) {
+                    trace.advance_by(&slacking_frontier);
+                    trace.distinguish_since(&slacking_frontier);
+                }
+
+                if let Some(trace) = self.reverse_propose.get_mut(aid) {
+                    trace.advance_by(&slacking_frontier);
+                    trace.distinguish_since(&slacking_frontier);
+                }
+
+                if let Some(trace) = self.reverse_validate.get_mut(aid) {
+                    trace.advance_by(&slacking_frontier);
+                    trace.distinguish_since(&slacking_frontier);
+                }
             }
         }
 

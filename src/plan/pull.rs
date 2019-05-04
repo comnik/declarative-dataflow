@@ -143,12 +143,12 @@ impl<P: Implementable> Implementable for PullLevel<P> {
 
             let mut shutdown_handle = shutdown_handle;
             let streams = self.pull_attributes.iter().map(|a| {
-                let e_v = match context.forward_index(a) {
+                let e_v = match context.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(index) => {
-                        let frontier: Vec<T> = index.propose_trace.advance_frontier().to_vec();
+                    Some(propose_trace) => {
+                        let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
                         let (arranged, shutdown_propose) =
-                            index.propose_trace.import_core(&nested.parent, a);
+                            propose_trace.import_core(&nested.parent, a);
 
                         let e_v = arranged.enter_at(nested, move |_, _, time| {
                             let mut forwarded = time.clone();
