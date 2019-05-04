@@ -95,37 +95,33 @@ fn test_advance_only_source() {
         assert!(!domain.dominates(AntichainRef::new(&[0])));
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("tx_test")
                 .unwrap()
-                .propose_trace
                 .advance_frontier(),
             &[0]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("tx_test")
                 .unwrap()
-                .propose_trace
                 .distinguish_frontier(),
             &[0]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("source_test")
                 .unwrap()
-                .propose_trace
                 .advance_frontier(),
             &[0]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("source_test")
                 .unwrap()
-                .propose_trace
                 .distinguish_frontier(),
             &[0]
         );
@@ -140,37 +136,33 @@ fn test_advance_only_source() {
         assert!(!domain.dominates(AntichainRef::new(&[1])));
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("tx_test")
                 .unwrap()
-                .propose_trace
                 .advance_frontier(),
             &[0]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("tx_test")
                 .unwrap()
-                .propose_trace
                 .distinguish_frontier(),
             &[0]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("source_test")
                 .unwrap()
-                .propose_trace
                 .advance_frontier(),
             &[0]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("source_test")
                 .unwrap()
-                .propose_trace
                 .distinguish_frontier(),
             &[0]
         );
@@ -185,37 +177,33 @@ fn test_advance_only_source() {
         assert!(!domain.dominates(AntichainRef::new(&[2])));
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("tx_test")
                 .unwrap()
-                .propose_trace
                 .advance_frontier(),
             &[1]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("tx_test")
                 .unwrap()
-                .propose_trace
                 .distinguish_frontier(),
             &[1]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("source_test")
                 .unwrap()
-                .propose_trace
                 .advance_frontier(),
             &[1]
         );
         assert_eq!(
             domain
-                .forward
+                .forward_propose
                 .get_mut("source_test")
                 .unwrap()
-                .propose_trace
                 .distinguish_frontier(),
             &[1]
         );

@@ -50,16 +50,14 @@ where
         let (mut index, shutdown_button) = if target == left.variables.0 {
             variables.push(left.variables.1);
             context
-                .forward_index(&left.source_attribute)
+                .forward_propose(&left.source_attribute)
                 .unwrap()
-                .propose_trace
                 .import_core(&nested.parent, &left.source_attribute)
         } else if target == left.variables.1 {
             variables.push(left.variables.0);
             context
-                .reverse_index(&left.source_attribute)
+                .reverse_propose(&left.source_attribute)
                 .unwrap()
-                .propose_trace
                 .import_core(&nested.parent, &left.source_attribute)
         } else {
             panic!("Unbound target variable in Attribute<->Attribute join.");
@@ -79,16 +77,14 @@ where
         let (mut index, shutdown_button) = if target == right.variables.0 {
             variables.push(right.variables.1);
             context
-                .forward_index(&right.source_attribute)
+                .forward_propose(&right.source_attribute)
                 .unwrap()
-                .propose_trace
                 .import_core(&nested.parent, &right.source_attribute)
         } else if target == right.variables.1 {
             variables.push(right.variables.0);
             context
-                .reverse_index(&right.source_attribute)
+                .reverse_propose(&right.source_attribute)
                 .unwrap()
-                .propose_trace
                 .import_core(&nested.parent, &right.source_attribute)
         } else {
             panic!("Unbound target variable in Attribute<->Attribute join.");
@@ -198,13 +194,12 @@ where
 {
     // @TODO specialized implementation
 
-    let (tuples, shutdown_validate) = match context.forward_index(&right.source_attribute) {
+    let (tuples, shutdown_validate) = match context.forward_validate(&right.source_attribute) {
         None => panic!("attribute {:?} does not exist", &right.source_attribute),
-        Some(index) => {
-            let frontier: Vec<T> = index.validate_trace.advance_frontier().to_vec();
-            let (validate, shutdown_validate) = index
-                .validate_trace
-                .import_core(&nested.parent, &right.source_attribute);
+        Some(validate_trace) => {
+            let frontier: Vec<T> = validate_trace.advance_frontier().to_vec();
+            let (validate, shutdown_validate) =
+                validate_trace.import_core(&nested.parent, &right.source_attribute);
 
             let tuples = validate
                 .enter_at(nested, move |_, _, time| {
@@ -235,9 +230,8 @@ where
 //                 assert!(*var == self.variables.1);
 
 //                 let (index, shutdown_button) = context
-//                     .forward_index(&self.source_attribute)
+//                     .forward_validate(&self.source_attribute)
 //                     .unwrap()
-//                     .validate_trace
 //                     .import_core(&scope.parent, &self.source_attribute);
 
 //                 let frontier = index.trace.advance_frontier().to_vec();
@@ -254,9 +248,8 @@ where
 //                 assert!(*var == self.variables.0);
 
 //                 let (index, shutdown_button) = context
-//                     .reverse_index(&self.source_attribute)
+//                     .reverse_validate(&self.source_attribute)
 //                     .unwrap()
-//                     .validate_trace
 //                     .import_core(&scope.parent, &self.source_attribute);
 
 //                 let frontier = index.trace.advance_frontier().to_vec();

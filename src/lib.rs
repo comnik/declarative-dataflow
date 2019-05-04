@@ -22,27 +22,23 @@ pub mod sources;
 pub mod timestamp;
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::hash::Hash;
 use std::time::Duration;
 
 use timely::dataflow::operators::CapabilitySet;
-use timely::dataflow::scopes::child::{Child, Iterative};
+use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::*;
 use timely::order::Product;
-use timely::progress::timestamp::Refines;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::arrange::{Arrange, Arranged, ShutdownButton, TraceAgent};
+use differential_dataflow::operators::arrange::{ShutdownButton, TraceAgent};
 use differential_dataflow::operators::iterate::Variable;
 #[cfg(not(feature = "set-semantics"))]
 use differential_dataflow::operators::Consolidate;
 #[cfg(feature = "set-semantics")]
 use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
-use differential_dataflow::trace::wrappers::enter::TraceEnter;
-use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt;
-use differential_dataflow::trace::{BatchReader, Cursor, TraceReader};
+use differential_dataflow::trace::TraceReader;
 use differential_dataflow::{Collection, ExchangeData};
 
 #[cfg(feature = "uuid")]
@@ -248,6 +244,7 @@ pub struct ShutdownHandle {
 
 impl Drop for ShutdownHandle {
     fn drop(&mut self) {
+        trace!("Dropping ShutdownHandle");
         for mut button in self.shutdown_buttons.drain(..) {
             button.press();
         }
@@ -318,10 +315,27 @@ pub struct AttributeConfig {
     /// How close indexed traces should follow the computation
     /// frontier.
     pub trace_slack: Option<Time>,
+    // @TODO
+    // /// Will this attribute require reverse indices?
+    // pub enable_reverse: bool,
+    /// Will this attribute be used in worst-case optimal queries?
+    pub enable_wco: bool,
     /// Does this attribute care about its respective time
     /// dimension? Timeless attributes do not have an
     /// influence on the overall progress in the system.
     pub timeless: bool,
+}
+
+impl Default for AttributeConfig {
+    fn default() -> Self {
+        AttributeConfig {
+            input_semantics: InputSemantics::Raw,
+            trace_slack: None,
+            // enable_reverse: true,
+            enable_wco: false,
+            timeless: false,
+        }
+    }
 }
 
 impl AttributeConfig {
@@ -336,7 +350,7 @@ impl AttributeConfig {
             // s.t. traces advance to t+1 when we're still accepting
             // inputs for t+1.
             trace_slack: Some(Time::TxId(1)),
-            timeless: false,
+            ..Default::default()
         }
     }
 
@@ -347,7 +361,7 @@ impl AttributeConfig {
         AttributeConfig {
             input_semantics,
             trace_slack: Some(Time::Real(Duration::from_secs(0))),
-            timeless: false,
+            ..Default::default()
         }
     }
 
@@ -357,7 +371,7 @@ impl AttributeConfig {
         AttributeConfig {
             input_semantics,
             trace_slack: None,
-            timeless: false,
+            ..Default::default()
         }
     }
 }
@@ -368,263 +382,6 @@ pub struct RelationConfig {
     /// How close the arranged trace should follow the computation
     /// frontier.
     pub trace_slack: Option<Time>,
-}
-
-/// Various indices over a collection of (K, V) pairs, required to
-/// participate in delta-join pipelines.
-pub struct CollectionIndex<K, V, T>
-where
-    K: ExchangeData,
-    V: ExchangeData,
-    T: Lattice + ExchangeData,
-{
-    /// A name uniquely identifying this index.
-    pub name: String,
-    /// A trace of type (K, ()), used to count extensions for each prefix.
-    pub count_trace: TraceKeyHandle<K, T, isize>,
-    /// A trace of type (K, V), used to propose extensions for each prefix.
-    pub propose_trace: TraceValHandle<K, V, T, isize>,
-    /// A trace of type ((K, V), ()), used to validate proposed extensions.
-    pub validate_trace: TraceKeyHandle<(K, V), T, isize>,
-}
-
-impl<K, V, T> Clone for CollectionIndex<K, V, T>
-where
-    K: ExchangeData + Hash,
-    V: ExchangeData + Hash,
-    T: Lattice + ExchangeData + Timestamp,
-{
-    fn clone(&self) -> Self {
-        CollectionIndex {
-            name: self.name.clone(),
-            count_trace: self.count_trace.clone(),
-            propose_trace: self.propose_trace.clone(),
-            validate_trace: self.validate_trace.clone(),
-        }
-    }
-}
-
-impl<K, V, T> CollectionIndex<K, V, T>
-where
-    K: ExchangeData + Hash,
-    V: ExchangeData + Hash,
-    T: Lattice + ExchangeData + Timestamp,
-{
-    /// Creates a named CollectionIndex from a (K, V) collection.
-    pub fn index<G: Scope<Timestamp = T>>(
-        name: &str,
-        collection: &Collection<G, (K, V), isize>,
-    ) -> Self {
-        let count_trace = collection
-            .map(|(k, _v)| (k, ()))
-            .arrange_named(&format!("Counts({})", name))
-            .trace;
-        let propose_trace = collection
-            .arrange_named(&format!("Proposals({})", &name))
-            .trace;
-        let validate_trace = collection
-            .map(|t| (t, ()))
-            .arrange_named(&format!("Validations({})", &name))
-            .trace;
-
-        CollectionIndex {
-            name: name.to_string(),
-            count_trace,
-            propose_trace,
-            validate_trace,
-        }
-    }
-
-    /// Returns a LiveIndex that lives in the specified scope.
-    pub fn import<G: Scope<Timestamp = T>>(
-        &mut self,
-        scope: &G,
-    ) -> (
-        LiveIndex<
-            G,
-            K,
-            V,
-            TraceKeyHandle<K, T, isize>,
-            TraceValHandle<K, V, T, isize>,
-            TraceKeyHandle<(K, V), T, isize>,
-        >,
-        ShutdownHandle,
-    ) {
-        let (count, shutdown_count) = self
-            .count_trace
-            .import_core(scope, &format!("Counts({})", self.name));
-        let (propose, shutdown_propose) = self
-            .propose_trace
-            .import_core(scope, &format!("Proposals({})", self.name));
-        let (validate, shutdown_validate) = self
-            .validate_trace
-            .import_core(scope, &format!("Validations({})", self.name));
-
-        let index = LiveIndex {
-            count,
-            propose,
-            validate,
-        };
-
-        let mut shutdown_handle = ShutdownHandle::empty();
-        shutdown_handle.add_button(shutdown_count);
-        shutdown_handle.add_button(shutdown_propose);
-        shutdown_handle.add_button(shutdown_validate);
-
-        (index, shutdown_handle)
-    }
-
-    /// Allows Differential to logically compact trace batches on this
-    /// attribute, up to frontier.
-    pub fn advance_by(&mut self, frontier: &[T]) {
-        self.count_trace.advance_by(frontier);
-        self.propose_trace.advance_by(frontier);
-        self.validate_trace.advance_by(frontier);
-    }
-
-    /// Allows Differential to physically merge trace batches on this
-    /// attribute, up to frontier.
-    pub fn distinguish_since(&mut self, frontier: &[T]) {
-        self.count_trace.distinguish_since(frontier);
-        self.propose_trace.distinguish_since(frontier);
-        self.validate_trace.distinguish_since(frontier);
-    }
-}
-
-/// CollectionIndex that was imported into a scope.
-pub struct LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
-where
-    G: Scope,
-    G::Timestamp: Lattice + ExchangeData,
-    K: ExchangeData,
-    V: ExchangeData,
-    TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
-    TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
-    TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
-    TrPropose: TraceReader<Key = K, Val = V, Time = G::Timestamp, R = isize> + Clone,
-    TrPropose::Batch:
-        BatchReader<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
-    TrPropose::Cursor: Cursor<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
-    TrValidate: TraceReader<Key = (K, V), Val = (), Time = G::Timestamp, R = isize> + Clone,
-    TrValidate::Batch:
-        BatchReader<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
-    TrValidate::Cursor:
-        Cursor<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
-{
-    count: Arranged<G, TrCount>,
-    propose: Arranged<G, TrPropose>,
-    validate: Arranged<G, TrValidate>,
-}
-
-impl<G, K, V, TrCount, TrPropose, TrValidate> Clone
-    for LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
-where
-    G: Scope,
-    G::Timestamp: Lattice + ExchangeData,
-    K: ExchangeData,
-    V: ExchangeData,
-    TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
-    TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
-    TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
-    TrPropose: TraceReader<Key = K, Val = V, Time = G::Timestamp, R = isize> + Clone,
-    TrPropose::Batch:
-        BatchReader<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
-    TrPropose::Cursor: Cursor<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
-    TrValidate: TraceReader<Key = (K, V), Val = (), Time = G::Timestamp, R = isize> + Clone,
-    TrValidate::Batch:
-        BatchReader<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
-    TrValidate::Cursor:
-        Cursor<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
-{
-    fn clone(&self) -> Self {
-        LiveIndex {
-            count: self.count.clone(),
-            propose: self.propose.clone(),
-            validate: self.validate.clone(),
-        }
-    }
-}
-
-impl<G, K, V, TrCount, TrPropose, TrValidate> LiveIndex<G, K, V, TrCount, TrPropose, TrValidate>
-where
-    G: Scope,
-    G::Timestamp: Lattice + ExchangeData,
-    K: ExchangeData,
-    V: ExchangeData,
-    TrCount: TraceReader<Key = K, Val = (), Time = G::Timestamp, R = isize> + Clone,
-    TrCount::Batch: BatchReader<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
-    TrCount::Cursor: Cursor<TrCount::Key, TrCount::Val, G::Timestamp, TrCount::R> + 'static,
-    TrPropose: TraceReader<Key = K, Val = V, Time = G::Timestamp, R = isize> + Clone,
-    TrPropose::Batch:
-        BatchReader<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
-    TrPropose::Cursor: Cursor<TrPropose::Key, TrPropose::Val, G::Timestamp, TrPropose::R> + 'static,
-    TrValidate: TraceReader<Key = (K, V), Val = (), Time = G::Timestamp, R = isize> + Clone,
-    TrValidate::Batch:
-        BatchReader<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
-    TrValidate::Cursor:
-        Cursor<TrValidate::Key, TrValidate::Val, G::Timestamp, TrValidate::R> + 'static,
-{
-    /// Brings the index's traces into the specified scope.
-    pub fn enter<'a, TInner>(
-        &self,
-        child: &Child<'a, G, TInner>,
-    ) -> LiveIndex<
-        Child<'a, G, TInner>,
-        K,
-        V,
-        TraceEnter<TrCount, TInner>,
-        TraceEnter<TrPropose, TInner>,
-        TraceEnter<TrValidate, TInner>,
-    >
-    where
-        TrCount::Batch: Clone,
-        TrPropose::Batch: Clone,
-        TrValidate::Batch: Clone,
-        K: 'static,
-        V: 'static,
-        G::Timestamp: Clone + Default + 'static,
-        TInner: Refines<G::Timestamp> + Lattice + Timestamp + Clone + Default + 'static,
-    {
-        LiveIndex {
-            count: self.count.enter(child),
-            propose: self.propose.enter(child),
-            validate: self.validate.enter(child),
-        }
-    }
-
-    /// Brings the index's traces into the specified scope.
-    pub fn enter_at<'a, TInner, FCount, FPropose, FValidate>(
-        &self,
-        child: &Child<'a, G, TInner>,
-        fcount: FCount,
-        fpropose: FPropose,
-        fvalidate: FValidate,
-    ) -> LiveIndex<
-        Child<'a, G, TInner>,
-        K,
-        V,
-        TraceEnterAt<TrCount, TInner, FCount>,
-        TraceEnterAt<TrPropose, TInner, FPropose>,
-        TraceEnterAt<TrValidate, TInner, FValidate>,
-    >
-    where
-        TrCount::Batch: Clone,
-        TrPropose::Batch: Clone,
-        TrValidate::Batch: Clone,
-        K: 'static,
-        V: 'static,
-        G::Timestamp: Clone + Default + 'static,
-        TInner: Refines<G::Timestamp> + Lattice + Timestamp + Clone + Default + 'static,
-        FCount: Fn(&K, &(), &G::Timestamp) -> TInner + 'static,
-        FPropose: Fn(&K, &V, &G::Timestamp) -> TInner + 'static,
-        FValidate: Fn(&(K, V), &(), &G::Timestamp) -> TInner + 'static,
-    {
-        LiveIndex {
-            count: self.count.enter_at(child, fcount),
-            propose: self.propose.enter_at(child, fpropose),
-            validate: self.validate.enter_at(child, fvalidate),
-        }
-    }
 }
 
 /// A variable used in a query.
@@ -845,13 +602,12 @@ where
         Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     ) {
-        match context.forward_index(&self.source_attribute) {
+        match context.forward_propose(&self.source_attribute) {
             None => panic!("attribute {:?} does not exist", self.source_attribute),
-            Some(index) => {
-                let frontier = index.propose_trace.advance_frontier().to_vec();
-                let (propose, shutdown_propose) = index
-                    .propose_trace
-                    .import_core(&nested.parent, &self.source_attribute);
+            Some(propose_trace) => {
+                let frontier = propose_trace.advance_frontier().to_vec();
+                let (propose, shutdown_propose) =
+                    propose_trace.import_core(&nested.parent, &self.source_attribute);
 
                 let tuples = propose.enter_at(nested, move |_, _, time| {
                     let mut forwarded = time.clone();
@@ -886,13 +642,12 @@ where
         Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>,
         ShutdownHandle,
     ) {
-        match context.forward_index(&self.source_attribute) {
+        match context.forward_propose(&self.source_attribute) {
             None => panic!("attribute {:?} does not exist", self.source_attribute),
-            Some(index) => {
-                let frontier = index.propose_trace.advance_frontier().to_vec();
-                let (propose, shutdown_propose) = index
-                    .propose_trace
-                    .import_core(&nested.parent, &self.source_attribute);
+            Some(propose_trace) => {
+                let frontier = propose_trace.advance_frontier().to_vec();
+                let (propose, shutdown_propose) =
+                    propose_trace.import_core(&nested.parent, &self.source_attribute);
 
                 let tuples = propose.enter_at(nested, move |_, _, time| {
                     let mut forwarded = time.clone();

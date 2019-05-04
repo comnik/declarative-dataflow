@@ -16,9 +16,9 @@ use crate::binding::{AsBinding, AttributeBinding, Binding};
 use crate::Rule;
 use crate::{Aid, Eid, Value, Var};
 use crate::{
-    CollectionIndex, CollectionRelation, Implemented, Relation, RelationHandle, ShutdownHandle,
-    VariableMap,
+    CollectionRelation, Implemented, Relation, RelationHandle, ShutdownHandle, VariableMap,
 };
+use crate::{TraceKeyHandle, TraceValHandle};
 
 #[cfg(feature = "set-semantics")]
 pub mod aggregate;
@@ -79,15 +79,35 @@ where
     /// Checks whether an attribute of that name exists.
     fn has_attribute(&self, name: &str) -> bool;
 
-    /// Returns a mutable reference to an attribute (a base relation)
-    /// arranged from eid -> value, if one is registered under the
-    /// given name.
-    fn forward_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, T>>;
+    /// Retrieves the forward count trace for the specified aid.
+    fn forward_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>>;
 
-    /// Returns a mutable reference to an attribute (a base relation)
-    /// arranged from value -> eid, if one is registered under the
-    /// given name.
-    fn reverse_index(&mut self, name: &str) -> Option<&mut CollectionIndex<Value, Value, T>>;
+    /// Retrieves the forward propose trace for the specified aid.
+    fn forward_propose(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>>;
+
+    /// Retrieves the forward validate trace for the specified aid.
+    fn forward_validate(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>>;
+
+    /// Retrieves the reverse count trace for the specified aid.
+    fn reverse_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>>;
+
+    /// Retrieves the reverse propose trace for the specified aid.
+    fn reverse_propose(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>>;
+
+    /// Retrieves the reverse validate trace for the specified aid.
+    fn reverse_validate(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>>;
 
     /// Returns the current opinion as to whether this rule is
     /// underconstrained. Underconstrained rules cannot be safely
@@ -391,12 +411,12 @@ impl Implementable for Plan {
                 (Implemented::Attribute(binding), ShutdownHandle::empty())
             }
             Plan::MatchEA(match_e, ref a, sym1) => {
-                let (tuples, shutdown_propose) = match context.forward_index(a) {
+                let (tuples, shutdown_propose) = match context.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(index) => {
-                        let frontier: Vec<T> = index.propose_trace.advance_frontier().to_vec();
+                    Some(propose_trace) => {
+                        let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
                         let (propose, shutdown_propose) =
-                            index.propose_trace.import_core(&nested.parent, a);
+                            propose_trace.import_core(&nested.parent, a);
 
                         let tuples = propose
                             .enter_at(nested, move |_, _, time| {
@@ -422,13 +442,13 @@ impl Implementable for Plan {
                 )
             }
             Plan::MatchAV(sym1, ref a, ref match_v) => {
-                let (tuples, shutdown_propose) = match context.forward_index(a) {
+                let (tuples, shutdown_propose) = match context.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
-                    Some(index) => {
+                    Some(propose_trace) => {
                         let match_v = match_v.clone();
-                        let frontier: Vec<T> = index.propose_trace.advance_frontier().to_vec();
+                        let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
                         let (propose, shutdown_propose) =
-                            index.propose_trace.import_core(&nested.parent, a);
+                            propose_trace.import_core(&nested.parent, a);
 
                         let tuples = propose
                             .enter_at(nested, move |_, _, time| {

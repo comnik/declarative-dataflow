@@ -108,7 +108,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                     capabilities.drain(..);
                 } else {
                     let mut fuel = total_fuel;
-                    
+
                     let mut handles = Vec::with_capacity(schema.len());
                     for wrapper in wrappers.iter_mut() {
                         handles.push(wrapper.activate());
