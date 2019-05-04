@@ -417,14 +417,12 @@ where
 
         if self.probed_source_count() == 0 {
             frontier.less_than(self.epoch())
+        } else if frontier.is_empty() {
+            false
         } else {
-            if frontier.is_empty() {
-                false
-            } else {
-                self.domain_probe().with_frontier(|domain_frontier| {
-                    domain_frontier.iter().all(|t| frontier.less_than(t))
-                })
-            }
+            self.domain_probe().with_frontier(|domain_frontier| {
+                domain_frontier.iter().all(|t| frontier.less_than(t))
+            })
         }
     }
 }
