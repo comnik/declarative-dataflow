@@ -35,6 +35,8 @@ use self::scheduler::Scheduler;
 pub struct Config {
     /// Port at which this server will listen at.
     pub port: u16,
+    /// Automatic domain tick interval.
+    pub tick: Option<Duration>,
     /// Do clients have to call AdvanceDomain explicitely?
     pub manual_advance: bool,
     /// Should logging streams be created?
@@ -49,6 +51,7 @@ impl Default for Config {
     fn default() -> Config {
         Config {
             port: 6262,
+            tick: None,
             manual_advance: false,
             enable_logging: false,
             enable_optimizer: false,

@@ -2,10 +2,10 @@
 
 use std::cmp::Ordering;
 use std::collections::BinaryHeap;
-use std::rc::{Rc, Weak};
+use std::rc::Weak;
 use std::time::{Duration, Instant};
 
-use timely::scheduling::activate::Activator;
+use timely::scheduling::Activator;
 
 /// A scheduler allows polling sources to defer triggering their
 /// activators, in case they do not have work available. This reduces
@@ -30,22 +30,18 @@ impl Scheduler {
     /// scheduled.
     pub fn has_pending(&self) -> bool {
         if let Some(ref timed_activator) = self.activator_queue.peek() {
-            Instant::now() >= timed_activator.at
+            timed_activator.is_ready()
         } else {
             false
         }
     }
-    /// Returns the duration until the next activation in `activator_queue`
-    /// from `now()`. If no activations are present returns None.
+
+    /// Returns the duration until the next activation in
+    /// `activator_queue` from `now()`. If no activations are present
+    /// returns None.
     pub fn until_next(&self) -> Option<Duration> {
         if let Some(ref timed_activator) = self.activator_queue.peek() {
-            // timed_activator.at.check_duration_since(Instant::now()).unwrap_or(Duration::from_millies(0))
-            let now = Instant::now();
-            if timed_activator.at > now {
-                Some(timed_activator.at.duration_since(now))
-            } else {
-                Some(Duration::from_millis(0))
-            }
+            Some(timed_activator.until_ready())
         } else {
             None
         }
@@ -54,7 +50,11 @@ impl Scheduler {
     /// Schedule activation at the specified instant. No hard
     /// guarantees on when the activator will actually be triggered.
     pub fn schedule_at(&mut self, at: Instant, activator: Weak<Activator>) {
-        self.activator_queue.push(TimedActivator { at, activator });
+        self.activator_queue.push(TimedActivator {
+            at,
+            activator,
+            event: None,
+        });
     }
 
     /// Schedule activation now. No hard guarantees on when the
@@ -68,25 +68,72 @@ impl Scheduler {
     pub fn schedule_after(&mut self, after: Duration, activator: Weak<Activator>) {
         self.schedule_at(Instant::now() + after, activator);
     }
+
+    /// Schedule an event at the specified instant. No hard guarantees
+    /// on when the activator will actually be triggered.
+    pub fn event_at(&mut self, at: Instant, event: Event) {
+        self.activator_queue.push(TimedActivator {
+            at,
+            activator: Weak::new(),
+            event: Some(event),
+        });
+    }
+
+    /// Schedule an event after the specified duration. No hard
+    /// guarantees on when the activator will actually be triggered.
+    pub fn event_after(&mut self, after: Duration, event: Event) {
+        self.event_at(Instant::now() + after, event);
+    }
 }
 
 impl Iterator for Scheduler {
-    type Item = Rc<Activator>;
-    fn next(&mut self) -> Option<Rc<Activator>> {
+    type Item = TimedActivator;
+    fn next(&mut self) -> Option<TimedActivator> {
         if self.has_pending() {
-            match self.activator_queue.pop().unwrap().activator.upgrade() {
-                None => self.next(),
-                Some(activator) => Some(activator),
-            }
+            Some(self.activator_queue.pop().unwrap())
         } else {
             None
         }
     }
 }
 
-struct TimedActivator {
-    pub at: Instant,
-    pub activator: Weak<Activator>,
+/// A set of things that we might want to schedule.
+#[derive(PartialEq, Eq, Debug)]
+pub enum Event {
+    /// A domain tick.
+    Tick,
+}
+
+/// A thing that can be scheduled at an instant. Scheduling this
+/// activator might result in an `Event`.
+pub struct TimedActivator {
+    at: Instant,
+    activator: Weak<Activator>,
+    event: Option<Event>,
+}
+
+impl TimedActivator {
+    fn is_ready(&self) -> bool {
+        Instant::now() >= self.at
+    }
+
+    fn until_ready(&self) -> Duration {
+        let now = Instant::now();
+        if self.at > now {
+            self.at.duration_since(now)
+        } else {
+            Duration::from_millis(0)
+        }
+    }
+
+    /// Trigger the activation, potentially resulting in an event.
+    pub fn schedule(self) -> Option<Event> {
+        if let Some(activator) = self.activator.upgrade() {
+            activator.activate();
+        }
+
+        self.event
+    }
 }
 
 // We want the activator_queue to act like a min-heap.

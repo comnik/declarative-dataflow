@@ -30,7 +30,7 @@ use slab::Slab;
 
 use ws::connection::{ConnEvent, Connection};
 
-use declarative_dataflow::server::{Config, CreateAttribute, Request, Server, TxId};
+use declarative_dataflow::server::{scheduler, Config, CreateAttribute, Request, Server, TxId};
 use declarative_dataflow::sinks::{Sinkable, SinkingContext};
 use declarative_dataflow::timestamp::Coarsen;
 use declarative_dataflow::{Eid, Error, Output, ResultDiff};
@@ -71,6 +71,12 @@ fn main() {
 
     let mut opts = Options::new();
     opts.optopt("", "port", "server port", "PORT");
+    opts.optopt(
+        "",
+        "tick",
+        "advance domain at a regular interval",
+        "SECONDS",
+    );
     opts.optflag(
         "",
         "manual-advance",
@@ -94,11 +100,16 @@ fn main() {
             Ok(matches) => {
                 let starting_port = matches
                     .opt_str("port")
-                    .map(|x| x.parse().unwrap_or(default_config.port))
+                    .map(|x| x.parse().expect("failed to parse port"))
                     .unwrap_or(default_config.port);
+
+                let tick: Option<Duration> = matches
+                    .opt_str("tick")
+                    .map(|x| Duration::from_secs(x.parse().expect("failed to parse tick duration")));
 
                 Config {
                     port: starting_port + (worker.index() as u16),
+                    tick,
                     manual_advance: matches.opt_present("manual-advance"),
                     enable_logging: matches.opt_present("enable-logging"),
                     enable_optimizer: matches.opt_present("enable-optimizer"),
@@ -129,6 +140,16 @@ fn main() {
         // setup serialized command queue (shared between all workers)
         let mut sequencer: Sequencer<Command> =
             Sequencer::preloaded(worker, Instant::now(), VecDeque::from(vec![preload_command]));
+
+        // Kickoff ticking, if configured. We only want to issue ticks
+        // from a single worker, to avoid redundant ticking.
+        if worker.index() == 0 && config.tick.is_some() {
+            sequencer.push(Command {
+                owner: 0,
+                client: SYSTEM.0,
+                requests: vec![Request::Tick],
+            });
+        }
 
         // configure websocket server
         let ws_settings = ws::Settings {
@@ -196,7 +217,17 @@ fn main() {
             if server.scheduler.borrow().has_pending() {
                 let mut scheduler = server.scheduler.borrow_mut();
                 while let Some(activator) = scheduler.next() {
-                    activator.activate();
+                    if let Some(event) = activator.schedule() {
+                        match event {
+                            scheduler::Event::Tick => {
+                                sequencer.push(Command {
+                                    owner: worker.index(),
+                                    client: SYSTEM.0,
+                                    requests: vec![Request::Tick],
+                                });
+                            }
+                        }
+                    }
                 }
             } else {
                 // @TODO in blocking mode, we could check whether
@@ -676,15 +707,18 @@ fn main() {
                         Request::Disconnect => server.disconnect_client(Token(command.client)),
                         Request::Setup => unimplemented!(),
                         Request::Tick => {
-                            #[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
-                            let next = next_tx as u64;
-                            #[cfg(feature = "real-time")]
-                            let next = Instant::now().duration_since(worker.timer());
-                            #[cfg(feature = "bitemporal")]
-                            let next = Pair::new(Instant::now().duration_since(worker.timer()), next_tx as u64);
+                            // We don't actually have to do any actual worker here, because we are
+                            // ticking the domain on each command anyways. We do have to schedule
+                            // the next tick, however.
 
-                            if let Err(error) = server.context.internal.advance_epoch(next) {
-                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
+                            // We only want to issue ticks from a single worker, to avoid
+                            // redundant ticking.
+                            if worker.index() == 0 {
+                                if let Some(tick) = config.tick {
+                                    let interval_end = Instant::now().duration_since(worker.timer()).coarsen(&tick);
+                                    let at = worker.timer() + interval_end;
+                                    server.scheduler.borrow_mut().event_at(at, scheduler::Event::Tick);
+                                }
                             }
                         }
                         Request::Status => {
