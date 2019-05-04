@@ -51,14 +51,13 @@ fn run_cases(mut cases: Vec<Case>) {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
+                    let mut config = AttributeConfig::tx_time(InputSemantics::Raw);
+                    config.enable_wco = true;
+
                     server
                         .context
                         .internal
-                        .create_transactable_attribute(
-                            dep,
-                            AttributeConfig::tx_time(InputSemantics::Raw),
-                            scope,
-                        )
+                        .create_transactable_attribute(dep, config, scope)
                         .unwrap();
                 }
 

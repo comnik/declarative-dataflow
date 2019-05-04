@@ -315,12 +315,27 @@ pub struct AttributeConfig {
     /// How close indexed traces should follow the computation
     /// frontier.
     pub trace_slack: Option<Time>,
+    // @TODO
+    // /// Will this attribute require reverse indices?
+    // pub enable_reverse: bool,
     /// Will this attribute be used in worst-case optimal queries?
     pub enable_wco: bool,
     /// Does this attribute care about its respective time
     /// dimension? Timeless attributes do not have an
     /// influence on the overall progress in the system.
     pub timeless: bool,
+}
+
+impl Default for AttributeConfig {
+    fn default() -> Self {
+        AttributeConfig {
+            input_semantics: InputSemantics::Raw,
+            trace_slack: None,
+            // enable_reverse: true,
+            enable_wco: false,
+            timeless: false,
+        }
+    }
 }
 
 impl AttributeConfig {
@@ -335,8 +350,7 @@ impl AttributeConfig {
             // s.t. traces advance to t+1 when we're still accepting
             // inputs for t+1.
             trace_slack: Some(Time::TxId(1)),
-            enable_wco: false,
-            timeless: false,
+            ..Default::default()
         }
     }
 
@@ -347,8 +361,7 @@ impl AttributeConfig {
         AttributeConfig {
             input_semantics,
             trace_slack: Some(Time::Real(Duration::from_secs(0))),
-            enable_wco: false,
-            timeless: false,
+            ..Default::default()
         }
     }
 
@@ -358,8 +371,7 @@ impl AttributeConfig {
         AttributeConfig {
             input_semantics,
             trace_slack: None,
-            enable_wco: false,
-            timeless: false,
+            ..Default::default()
         }
     }
 }
