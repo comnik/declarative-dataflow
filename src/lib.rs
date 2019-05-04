@@ -32,13 +32,13 @@ use timely::order::Product;
 use timely::progress::timestamp::Refines;
 use timely::progress::Timestamp;
 
+use differential_dataflow::difference::Monoid;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::{Arrange, Arranged, ShutdownButton, TraceAgent};
 use differential_dataflow::operators::iterate::Variable;
+use differential_dataflow::operators::reduce::ReduceCore;
 #[cfg(not(feature = "set-semantics"))]
 use differential_dataflow::operators::Consolidate;
-#[cfg(feature = "set-semantics")]
-use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
 use differential_dataflow::trace::wrappers::enter::TraceEnter;
 use differential_dataflow::trace::wrappers::enter_at::TraceEnter as TraceEnterAt;
@@ -426,6 +426,72 @@ where
             .map(|t| (t, ()))
             .arrange_named(&format!("Validations({})", &name))
             .trace;
+
+        CollectionIndex {
+            name: name.to_string(),
+            count_trace,
+            propose_trace,
+            validate_trace,
+        }
+    }
+
+    /// Creates a named CollectionIndex from a (K, V) collection,
+    /// enforces distinct pairs.
+    pub fn index_distinct<G: Scope<Timestamp = T>>(
+        name: &str,
+        collection: &Collection<G, (K, V), isize>,
+    ) -> Self {
+        let count_trace = {
+            let arrange: Arranged<G, TraceKeyHandle<K, T, isize>> = collection
+                .map(|(k, _v)| (k, ()))
+                .arrange_named(&format!("DistinctCounts({})", name));
+
+            arrange
+                .reduce_abelian::<_, OrdKeySpine<K, T, isize>>(
+                    move |k: &K, s: &[(&(), isize)], t: &mut Vec<((), isize)>| {
+                        if s[0].1.is_zero() {
+                            t.push(((), 0))
+                        } else {
+                            t.push(((), 1))
+                        }
+                    },
+                )
+                .trace
+        };
+
+        let propose_trace = {
+            let arrange: Arranged<G, TraceValHandle<K, V, T, isize>> =
+                collection.arrange_named(&format!("DistinctProposals({})", &name));
+
+            arrange
+                .reduce_abelian::<_, OrdValSpine<K, V, T, isize>>(move |k, s: &[(&V, isize)], t| {
+                    let mut values = s.iter().map(|(v, _diff)| *v).cloned().collect::<Vec<V>>();
+
+                    // Values arrive already sorted, so we can dedup.
+                    values.dedup();
+
+                    for v in values.drain(..) {
+                        t.push((v, 1));
+                    }
+                })
+                .trace
+        };
+
+        let validate_trace = {
+            let arrange: Arranged<G, TraceKeyHandle<(K, V), T, isize>> = collection
+                .map(|t| (t, ()))
+                .arrange_named(&format!("DistinctValidations({})", &name));
+
+            arrange
+                .reduce_abelian::<_, OrdKeySpine<(K, V), T, isize>>(move |k, s, t| {
+                    if s[0].1.is_zero() {
+                        t.push(((), 0))
+                    } else {
+                        t.push(((), 1))
+                    }
+                })
+                .trace
+        };
 
         CollectionIndex {
             name: name.to_string(),

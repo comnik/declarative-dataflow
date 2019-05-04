@@ -9,7 +9,6 @@ use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
@@ -98,24 +97,43 @@ where
                 name
             )))
         } else {
-            let tuples = match config.input_semantics {
-                InputSemantics::Raw => pairs.as_collection(),
-                InputSemantics::CardinalityOne => pairs.cardinality_single().as_collection(),
-                // Ensure that redundant (e,v) pairs don't cause
-                // misleading proposals during joining.
-                InputSemantics::CardinalityMany => pairs.as_collection().distinct(),
+            let (forward, reverse) = match config.input_semantics {
+                InputSemantics::Raw => {
+                    let tuples = pairs.as_collection();
+
+                    let forward = CollectionIndex::index(&name, &tuples);
+                    let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
+
+                    (forward, reverse)
+                }
+                InputSemantics::CardinalityOne => {
+                    let tuples = pairs.cardinality_single().as_collection();
+
+                    let forward = CollectionIndex::index(&name, &tuples);
+                    let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
+
+                    (forward, reverse)
+                }
+                InputSemantics::CardinalityMany => {
+                    // Ensure that redundant (e,v) pairs don't cause
+                    // misleading proposals during joining.
+                    let tuples = pairs.as_collection();
+
+                    let forward = CollectionIndex::index_distinct(&name, &tuples);
+                    let reverse =
+                        CollectionIndex::index_distinct(&name, &tuples.map(|(e, v)| (v, e)));
+
+                    (forward, reverse)
+                }
             };
+
+            self.forward.insert(name.to_string(), forward);
+            self.reverse.insert(name.to_string(), reverse);
 
             // This is crucial. If we forget to install the attribute
             // configuration, its traces will be ignored when
             // advancing the domain.
             self.attributes.insert(name.to_string(), config);
-
-            let forward = CollectionIndex::index(&name, &tuples);
-            let reverse = CollectionIndex::index(&name, &tuples.map(|(e, v)| (v, e)));
-
-            self.forward.insert(name.to_string(), forward);
-            self.reverse.insert(name.to_string(), reverse);
 
             info!("Created attribute {}", name);
 
