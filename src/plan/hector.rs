@@ -554,26 +554,26 @@ impl Implementable for Hector {
                             // But to get away with that we need to check for single-variable
                             // bindings in conflict with the source binding.
 
+                            let propose = forward_proposes
+                                .entry(delta_binding.source_attribute.to_string())
+                                .or_insert_with(|| {
+                                    let (arranged, shutdown) = context
+                                        .forward_propose(&delta_binding.source_attribute)
+                                        .expect("forward propose trace doesn't exist")
+                                        .import_core(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
+
+                                    shutdown_handle.add_button(shutdown);
+
+                                    arranged
+                                });
+                            let frontier: Vec<T> = propose.trace.advance_frontier().to_vec();
+
                             let mut source_conflicts = source_conflicts(idx, &self.bindings);
 
                             let mut source = if !source_conflicts.is_empty() {
                                 // @TODO there can be more than one conflict
                                 // @TODO Not just constant bindings can cause issues here!
                                 assert_eq!(source_conflicts.len(), 1);
-
-                                let propose = forward_proposes
-                                    .entry(delta_binding.source_attribute.to_string())
-                                    .or_insert_with(|| {
-                                        let (arranged, shutdown) = context
-                                            .forward_propose(&delta_binding.source_attribute)
-                                            .expect("forward propose trace doesn't exist")
-                                            .import_core(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
-
-                                        shutdown_handle.add_button(shutdown);
-
-                                        arranged
-                                    });
-                                let frontier: Vec<T> = propose.trace.advance_frontier().to_vec();
 
                                 let conflict = source_conflicts.pop().unwrap();
                                 // for conflict in source_conflicts.drain(..) {
@@ -618,28 +618,14 @@ impl Implementable for Hector {
                                 prefix.push(delta_binding.variables.0);
                                 prefix.push(delta_binding.variables.1);
 
-                                let validate = forward_validates
-                                    .entry(delta_binding.source_attribute.to_string())
-                                    .or_insert_with(|| {
-                                        let (arranged, shutdown) =
-                                            context.forward_validate(&delta_binding.source_attribute)
-                                            .expect("forward validate trace doesn't exist")
-                                            .import_core(&scope.parent.parent, &format!("Validate({})", &delta_binding.source_attribute));
-
-                                        shutdown_handle.add_button(shutdown);
-
-                                        arranged
-                                    });
-                                let frontier: Vec<T> = validate.trace.advance_frontier().to_vec();
-
-                                validate
+                                propose
                                     .enter_at(&scope.parent, move |_, _, time| {
                                         let mut forwarded = time.clone();
                                         forwarded.advance_by(&frontier);
                                         Product::new(forwarded, Default::default())
                                     })
                                     .enter(&scope)
-                                    .as_collection(|(e,v),()| vec![e.clone(), v.clone()])
+                                    .as_collection(|e,v| vec![e.clone(), v.clone()])
                             };
 
                             for target in variables.iter() {
@@ -814,7 +800,7 @@ impl Implementable for Hector {
                                                                             let (arranged, shutdown) =
                                                                                 context.reverse_count(&other.source_attribute)
                                                                                 .expect("reverse count doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
+                                                                                .import_core(&scope.parent.parent, &format!("_Counts({})", &delta_binding.source_attribute));
 
                                                                             shutdown_handle.add_button(shutdown);
 
@@ -840,7 +826,7 @@ impl Implementable for Hector {
                                                                             let (arranged, shutdown) =
                                                                                 context.reverse_propose(&other.source_attribute)
                                                                                 .expect("reverse propose doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("Propose({})", &delta_binding.source_attribute));
+                                                                                .import_core(&scope.parent.parent, &format!("_Propose({})", &delta_binding.source_attribute));
 
                                                                             shutdown_handle.add_button(shutdown);
 
@@ -866,7 +852,7 @@ impl Implementable for Hector {
                                                                             let (arranged, shutdown) =
                                                                                 context.reverse_validate(&other.source_attribute)
                                                                                 .expect("reverse validate doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("Validate({})", &delta_binding.source_attribute));
+                                                                                .import_core(&scope.parent.parent, &format!("_Validate({})", &delta_binding.source_attribute));
 
                                                                             shutdown_handle.add_button(shutdown);
 

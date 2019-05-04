@@ -120,6 +120,8 @@ where
                 InputSemantics::CardinalityMany => pairs.as_collection().distinct(),
             };
 
+            let tuples_reverse = tuples.map(|(e, v)| (v, e));
+
             // Propose traces are used in general, whereas the other
             // indices are only relevant to Hector.
             self.forward_propose.insert(
@@ -128,7 +130,7 @@ where
             );
             self.reverse_propose.insert(
                 name.to_string(),
-                tuples
+                tuples_reverse
                     .arrange_named(&format!("_Proposals({})", &name))
                     .trace,
             );
@@ -148,7 +150,7 @@ where
                     );
                     self.reverse_count.insert(
                         name.to_string(),
-                        tuples
+                        tuples_reverse
                             .map(|(k, _v)| (k, ()))
                             .arrange_named(&format!("_Counts({})", name))
                             .trace,
@@ -164,7 +166,7 @@ where
                 );
                 self.reverse_validate.insert(
                     name.to_string(),
-                    tuples
+                    tuples_reverse
                         .map(|t| (t, ()))
                         .arrange_named(&format!("_Validations({})", &name))
                         .trace,
