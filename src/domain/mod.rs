@@ -14,7 +14,7 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
-use crate::operators::CardinalitySingle;
+use crate::operators::CardinalityOne;
 use crate::{Aid, Error, Rewind, TxData, Value};
 use crate::{AttributeConfig, InputSemantics, RelationConfig, RelationHandle};
 use crate::{TraceKeyHandle, TraceValHandle};
@@ -114,7 +114,7 @@ where
         } else {
             let tuples = match config.input_semantics {
                 InputSemantics::Raw => pairs.as_collection(),
-                InputSemantics::CardinalityOne => pairs.cardinality_single().as_collection(),
+                InputSemantics::CardinalityOne => pairs.as_collection().cardinality_one(),
                 // Ensure that redundant (e,v) pairs don't cause
                 // misleading proposals during joining.
                 InputSemantics::CardinalityMany => pairs.as_collection().distinct(),

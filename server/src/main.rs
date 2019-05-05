@@ -555,7 +555,7 @@ fn main() {
                                         }
                                         Ok(relation) => {
                                             let delayed = match req.granularity {
-                                                None => relation,
+                                                None => relation.consolidate(),
                                                 Some(granularity) => {
                                                     let granularity: T = granularity.into();
                                                     relation
