@@ -3,22 +3,32 @@
 
 use timely::dataflow::operators::aggregation::StateMachine;
 use timely::dataflow::operators::Map;
-use timely::dataflow::{Scope, Stream};
+use timely::dataflow::Scope;
+
+use differential_dataflow::lattice::Lattice;
+use differential_dataflow::operators::Consolidate;
+use differential_dataflow::{AsCollection, Collection};
 
 use crate::Value;
 
-/// Provides the `cardinality_single` method.
-pub trait CardinalitySingle<S: Scope> {
+/// Provides the `cardinality_one` method.
+pub trait CardinalityOne<S: Scope> {
     /// Ensures that only a single value per eid exists within an
     /// attribute, by retracting any previous values upon new
     /// updates. Therefore this stream does not expect explicit
     /// retractions.
-    fn cardinality_single(&self) -> Stream<S, ((Value, Value), S::Timestamp, isize)>;
+    fn cardinality_one(&self) -> Collection<S, (Value, Value), isize>;
 }
 
-impl<S: Scope> CardinalitySingle<S> for Stream<S, ((Value, Value), S::Timestamp, isize)> {
-    fn cardinality_single(&self) -> Stream<S, ((Value, Value), S::Timestamp, isize)> {
-        self.map(|((e, next_v), t, diff)| (e, (next_v, t, diff)))
+impl<S> CardinalityOne<S> for Collection<S, (Value, Value), isize>
+where
+    S: Scope,
+    S::Timestamp: Lattice + Ord,
+{
+    fn cardinality_one(&self) -> Collection<S, (Value, Value), isize> {
+        self.consolidate()
+            .inner
+            .map(|((e, next_v), t, diff)| (e, (next_v, t, diff)))
             .state_machine(
                 |e, (next_v, t, diff), v| {
                     match v {
@@ -56,5 +66,6 @@ impl<S: Scope> CardinalitySingle<S> for Stream<S, ((Value, Value), S::Timestamp,
                     }
                 },
             )
+            .as_collection()
     }
 }
