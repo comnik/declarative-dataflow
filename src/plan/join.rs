@@ -194,22 +194,22 @@ where
 {
     // @TODO specialized implementation
 
-    let (tuples, shutdown_validate) = match context.forward_validate(&right.source_attribute) {
+    let (tuples, shutdown_propose) = match context.forward_propose(&right.source_attribute) {
         None => panic!("attribute {:?} does not exist", &right.source_attribute),
-        Some(validate_trace) => {
-            let frontier: Vec<T> = validate_trace.advance_frontier().to_vec();
-            let (validate, shutdown_validate) =
-                validate_trace.import_core(&nested.parent, &right.source_attribute);
+        Some(propose_trace) => {
+            let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
+            let (propose, shutdown_propose) =
+                propose_trace.import_core(&nested.parent, &right.source_attribute);
 
-            let tuples = validate
+            let tuples = propose
                 .enter_at(nested, move |_, _, time| {
                     let mut forwarded = time.clone();
                     forwarded.advance_by(&frontier);
                     Product::new(forwarded, 0)
                 })
-                .as_collection(|(e, v), _| vec![e.clone(), v.clone()]);
+                .as_collection(|e, v| vec![e.clone(), v.clone()]);
 
-            (tuples, shutdown_validate)
+            (tuples, shutdown_propose)
         }
     };
 
@@ -221,7 +221,7 @@ where
     let (implemented, mut shutdown_handle) =
         collection_collection(nested, context, target_variables, left, right_collected);
 
-    shutdown_handle.add_button(shutdown_validate);
+    shutdown_handle.add_button(shutdown_propose);
 
     (implemented, shutdown_handle)
 }
