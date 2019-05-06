@@ -58,12 +58,14 @@ where
                         }
                     }
                 },
-                |e| {
-                    if let Value::Eid(eid) = e {
-                        *eid as u64
-                    } else {
-                        panic!("Expected an eid.");
-                    }
+                |e| match e {
+                    Value::Eid(eid) => *eid as u64,
+                    #[cfg(feature = "uuid")]
+                    Value::Uuid(uuid) => {
+                        use differential_dataflow::hashable::Hashable;
+                        uuid.hashed()
+                    },
+                    _ => panic!("Not an eid or uuid: {:?}.", e),
                 },
             )
             .as_collection()
