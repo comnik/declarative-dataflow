@@ -244,8 +244,8 @@ pub struct ShutdownHandle {
 
 impl Drop for ShutdownHandle {
     fn drop(&mut self) {
-        trace!("Dropping ShutdownHandle");
         for mut button in self.shutdown_buttons.drain(..) {
+            trace!("pressing shutdown button");
             button.press();
         }
     }

@@ -46,6 +46,8 @@ use unordered_session::UnorderedSession;
 pub struct Domain<T: Timestamp + Lattice> {
     /// The current input epoch.
     now_at: T,
+    /// Last trace advance.
+    last_advance: Vec<T>,
     /// Input handles to attributes in this domain.
     input_sessions: HashMap<String, UnorderedSession<T, (Value, Value), isize>>,
     /// The probe keeping track of source progress in this domain.
@@ -82,6 +84,7 @@ where
     pub fn new(start_at: T) -> Self {
         Domain {
             now_at: start_at,
+            last_advance: vec![<T as Lattice>::minimum()],
             input_sessions: HashMap::new(),
             domain_probe: ProbeHandle::new(),
             probed_source_count: 0,
@@ -335,60 +338,67 @@ where
     /// Advances domain traces up to the specified frontier minus
     /// their configured slack.
     pub fn advance_traces(&mut self, frontier: &[T]) -> Result<(), Error> {
-        let frontier = AntichainRef::new(frontier);
+        let last_advance = AntichainRef::new(&self.last_advance);
 
-        for (aid, config) in self.attributes.iter() {
-            if let Some(ref trace_slack) = config.trace_slack {
-                let slacking_frontier = frontier
-                    .iter()
-                    .map(|t| t.rewind(trace_slack.clone().into()))
-                    .collect::<Vec<T>>();;
+        if frontier.iter().any(|t| last_advance.less_than(t)) {
+            trace!("Advancing traces to {:?}", frontier);
 
-                if let Some(trace) = self.forward_count.get_mut(aid) {
-                    trace.advance_by(&slacking_frontier);
-                    trace.distinguish_since(&slacking_frontier);
-                }
+            self.last_advance = frontier.to_vec();
+            let frontier = AntichainRef::new(frontier);
 
-                if let Some(trace) = self.forward_propose.get_mut(aid) {
-                    trace.advance_by(&slacking_frontier);
-                    trace.distinguish_since(&slacking_frontier);
-                }
+            for (aid, config) in self.attributes.iter() {
+                if let Some(ref trace_slack) = config.trace_slack {
+                    let slacking_frontier = frontier
+                        .iter()
+                        .map(|t| t.rewind(trace_slack.clone().into()))
+                        .collect::<Vec<T>>();;
 
-                if let Some(trace) = self.forward_validate.get_mut(aid) {
-                    trace.advance_by(&slacking_frontier);
-                    trace.distinguish_since(&slacking_frontier);
-                }
+                    if let Some(trace) = self.forward_count.get_mut(aid) {
+                        trace.advance_by(&slacking_frontier);
+                        trace.distinguish_since(&slacking_frontier);
+                    }
 
-                if let Some(trace) = self.reverse_count.get_mut(aid) {
-                    trace.advance_by(&slacking_frontier);
-                    trace.distinguish_since(&slacking_frontier);
-                }
+                    if let Some(trace) = self.forward_propose.get_mut(aid) {
+                        trace.advance_by(&slacking_frontier);
+                        trace.distinguish_since(&slacking_frontier);
+                    }
 
-                if let Some(trace) = self.reverse_propose.get_mut(aid) {
-                    trace.advance_by(&slacking_frontier);
-                    trace.distinguish_since(&slacking_frontier);
-                }
+                    if let Some(trace) = self.forward_validate.get_mut(aid) {
+                        trace.advance_by(&slacking_frontier);
+                        trace.distinguish_since(&slacking_frontier);
+                    }
 
-                if let Some(trace) = self.reverse_validate.get_mut(aid) {
-                    trace.advance_by(&slacking_frontier);
-                    trace.distinguish_since(&slacking_frontier);
+                    if let Some(trace) = self.reverse_count.get_mut(aid) {
+                        trace.advance_by(&slacking_frontier);
+                        trace.distinguish_since(&slacking_frontier);
+                    }
+
+                    if let Some(trace) = self.reverse_propose.get_mut(aid) {
+                        trace.advance_by(&slacking_frontier);
+                        trace.distinguish_since(&slacking_frontier);
+                    }
+
+                    if let Some(trace) = self.reverse_validate.get_mut(aid) {
+                        trace.advance_by(&slacking_frontier);
+                        trace.distinguish_since(&slacking_frontier);
+                    }
                 }
             }
-        }
 
-        for (name, config) in self.relations.iter() {
-            if let Some(ref trace_slack) = config.trace_slack {
-                let slacking_frontier = frontier
-                    .iter()
-                    .map(|t| t.rewind(trace_slack.clone().into()))
-                    .collect::<Vec<T>>();
+            for (name, config) in self.relations.iter() {
+                if let Some(ref trace_slack) = config.trace_slack {
+                    let slacking_frontier = frontier
+                        .iter()
+                        .map(|t| t.rewind(trace_slack.clone().into()))
+                        .collect::<Vec<T>>();
 
-                let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {
-                    panic!("Configuration available for unknown relation {}", name)
-                });
+                    let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {
+                        panic!("Configuration available for unknown relation {}", name)
+                    });
 
-                trace.advance_by(&slacking_frontier);
-                trace.distinguish_since(&slacking_frontier);
+                    trace.advance_by(&slacking_frontier);
+                    trace.distinguish_since(&slacking_frontier);
+                }
             }
         }
 
