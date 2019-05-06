@@ -60,18 +60,11 @@ where
                 },
                 |e| match e {
                     Value::Eid(eid) => *eid as u64,
-
                     #[cfg(feature = "uuid")]
                     Value::Uuid(uuid) => {
-                        use std::collections::hash_map::DefaultHasher;
-                        use std::hash::Hash;
-                        use std::hash::Hasher;
-
-                        let mut hasher = DefaultHasher::new();
-                        uuid.hash(&mut hasher);
-
-                        hasher.finish()
-                    }
+                        use differential_dataflow::hashable::Hashable;
+                        uuid.hashed()
+                    },
                     _ => panic!("Not an eid or uuid: {:?}.", e),
                 },
             )
