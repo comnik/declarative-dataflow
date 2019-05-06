@@ -9,7 +9,7 @@ use timely::dataflow::channels::pact::Pipeline;
 use timely::dataflow::operators::capture::Replay;
 use timely::dataflow::operators::generic::builder_rc::OperatorBuilder;
 use timely::dataflow::{Scope, Stream};
-use timely::logging::TimelyEvent;
+use timely::logging::{TimelyEvent, WorkerIdentifier};
 
 use crate::sources::{Sourceable, SourcingContext};
 use crate::{Aid, Value};
@@ -21,6 +21,9 @@ use Value::{Bool, Eid};
 pub struct TimelyLogging {
     /// The log attributes that should be materialized.
     pub attributes: Vec<Aid>,
+    /// Optionally listen for events from a number of remote workers,
+    /// rather than introspectively.
+    pub remote_peers: Option<usize>,
 }
 
 impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
@@ -33,7 +36,17 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
         AttributeConfig,
         Stream<S, ((Value, Value), Duration, isize)>,
     )> {
-        let input = Some(context.timely_events).replay_into(scope);
+        let input = match self.remote_peers {
+            None => {
+                // Read events introspectively.
+                Some(context.timely_events).replay_into(scope)
+            }
+            Some(source_peers) => {
+                // Listen for events from a remote computation.
+                let sockets = open_sockets(source_peers);
+                make_replayers(sockets, scope.index(), scope.peers()).replay_into(scope)
+            }
+        };
 
         let mut demux = OperatorBuilder::new("Timely Logging Demux".to_string(), scope.clone());
 
@@ -170,4 +183,38 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
             })
             .collect()
     }
+}
+
+use std::net::{TcpListener, TcpStream};
+use std::sync::{Arc, Mutex};
+
+use timely::dataflow::operators::capture::EventReader;
+
+/// Listens on 127.0.0.1:8000 and opens `source_peers` sockets from
+/// the computations we're examining.
+fn open_sockets(source_peers: usize) -> Arc<Mutex<Vec<Option<TcpStream>>>> {
+    let listener = TcpListener::bind("127.0.0.1:8000").unwrap();
+    let sockets = (0..source_peers)
+        .map(|_| Some(listener.incoming().next().unwrap().unwrap()))
+        .collect::<Vec<_>>();
+
+    Arc::new(Mutex::new(sockets))
+}
+
+/// Construct replayers that read data from sockets and can stream it
+/// into timely dataflow.
+fn make_replayers(
+    sockets: Arc<Mutex<Vec<Option<TcpStream>>>>,
+    index: usize,
+    peers: usize,
+) -> Vec<EventReader<Duration, (Duration, WorkerIdentifier, TimelyEvent), TcpStream>> {
+    sockets
+        .lock()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+        .filter(|(i, _)| *i % peers == index)
+        .map(move |(_, s)| s.take().unwrap())
+        .map(|r| EventReader::<Duration, (Duration, WorkerIdentifier, TimelyEvent), _>::new(r))
+        .collect::<Vec<_>>()
 }
