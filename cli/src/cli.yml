@@ -33,6 +33,11 @@ subcommands:
     - gql:
         about: subscribes to a GraphQL query
         args:
+          - granularity:
+              long: granularity
+              help: granularity of changes reported
+              value_name: GRANULARITY
+              takes_value: true
           - QUERY:
               help: a GraphQL query
               required: false

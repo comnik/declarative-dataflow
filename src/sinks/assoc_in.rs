@@ -9,13 +9,26 @@ use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 
+use serde_json::map::Map;
+use serde_json::Value::Object;
+
 use crate::{Error, Output, ResultDiff};
 
 use super::{Sinkable, SinkingContext};
 
-/// A nested hash-map sink.
+/// A nested hash-map sink. Intra timestamp. For an inter timestamp version
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct AssocIn {}
+pub struct AssocIn {
+    /// Specifies whether to output full snapshots or just
+    /// consolidated differences. None means no history and thus,
+    /// diffs will merely be consolidated into nested maps as they
+    /// pass through. Some(granularity) indicates that history is
+    /// kept, and changes are reported at the specified granularity. A
+    /// granularity of 1 means the full result set is forwarded on
+    /// each change. A granularity of n means that only the
+    /// sub-structure at level n will be forwarded on a change.
+    pub stateful: Option<usize>,
+}
 
 impl<T> Sinkable<T> for AssocIn
 where
@@ -32,7 +45,18 @@ where
         S: Scope<Timestamp = T>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<T>>,
     {
+        // This is basically Timely's Aggregate, reimplemented here,
+        // s.t. we can pass in the pact instead of a routing function.
+
         let mut paths = HashMap::new();
+        let mut states = if self.stateful.is_some() {
+            Some(Map::new())
+        } else {
+            None
+        };
+
+        let granularity = self.stateful.unwrap_or(1);
+
         let mut vector = Vec::new();
 
         let name = context.name;
@@ -56,13 +80,42 @@ where
                 // pop completed views
                 notificator.for_each(|cap, _, _| {
                     if let Some(paths_at_time) = paths.remove(cap.time()) {
-                        let map = paths_to_nested(paths_at_time);
-                        output.session(&cap).give(Output::Json(
-                            name.clone(),
-                            map,
-                            cap.time().clone(),
-                            1,
-                        ));
+                        match states {
+                            None => {
+                                let t = cap.time();
+
+                                let mut map = Map::new();
+                                merge_paths(&mut map, paths_at_time, granularity);
+
+                                let keys: Vec<String> = map.keys().cloned().collect();
+
+                                output.session(&cap).give_iterator(keys.iter().map(|key| {
+                                    Output::Json(
+                                        name.clone(),
+                                        map.remove(key).unwrap(),
+                                        t.clone(),
+                                        1,
+                                    )
+                                }));
+                            }
+                            Some(ref mut states) => {
+                                let t = cap.time();
+
+                                let changes = merge_paths(states, paths_at_time, granularity);
+
+                                output.session(&cap).give_iterator(changes.iter().map(
+                                    |change_key| {
+                                        let mut snapshot = &states[&change_key[0]];
+                                        for key in &change_key[1..] {
+                                            if let Object(map) = snapshot {
+                                                snapshot = &map[key];
+                                            }
+                                        }
+                                        Output::Json(name.clone(), snapshot.clone(), t.clone(), 1)
+                                    },
+                                ));
+                            }
+                        }
                     }
                 });
             },
@@ -74,69 +127,84 @@ where
 
 /// Outbound direction: Transform the provided query result paths into
 /// a GraphQL-like / JSONy nested value to be provided to the user.
-fn paths_to_nested(paths: Vec<(Vec<crate::Value>, isize)>) -> serde_json::Value {
-    use serde_json::map::Map;
-    use serde_json::Value::Object;
-
+fn merge_paths(
+    acc: &mut Map<String, serde_json::Value>,
+    paths: Vec<(Vec<crate::Value>, isize)>,
+    granularity: usize,
+) -> Vec<Vec<String>> {
     use crate::Value;
-    use Value::{Aid, Eid};
 
-    let mut acc = Map::new();
-
-    // `paths` has the structure `[[aid/eid val aid/eid val last-aid
-    // last-val], ...]` Starting from the result map `acc`, for each
+    // `paths` has the structure `[[aid/eid val aid/eid val leaf-aid
+    // leaf-val], ...]` Starting from the result map `acc`, for each
     // path, we want to navigate down the map, optionally creating
     // intermediate map levels if they don't exist yet, and finally
-    // insert `last-val` at the lowest level.
+    // insert `leaf-val` at the lowest level.
     //
     // In short: We're rebuilding Clojure's `assoc-in` here:
     // `(assoc-in acc (pop path) (peek path))`
+
+    // Keys have to be either aids (attributes on an entity)
+    // or eids (nested entities). Both types will be converted
+    // to strings.
+    let parse_key = |v: Value| match v {
+        Value::Aid(x) => x,
+        Value::Eid(x) => x.to_string(),
+        _ => panic!("Malformed pull path. Expected a key."),
+    };
+
+    let mut changes: Vec<Vec<String>> = Vec::new();
+
     for (mut path, diff) in paths {
         // @TODO handle retractions
 
-        let mut current_map = &mut acc;
-        let last_val: Value = path.pop().unwrap();
+        let mut change_key: Vec<String> = Vec::new();
 
-        if let Aid(last_key) = path.pop().unwrap() {
-            // If there are already values for the looked at attribute, we obtain
-            // a reference to it. Otherwise, we create a new `Map` and obtain a
-            // reference to it, which will be used in the next iteration.
-            // We repeat this process of traversing down the map and optionally creating
-            // new map levels until we've run out of intermediate attributes.
-            for attribute in path {
-                // Keys have to be `String`s and are either `Aid`s (such as "age")
-                // or `Eid`s (linking to a nested `PullPath`).
-                let k = match attribute {
-                    Aid(x) => x,
-                    Eid(x) => x.to_string(),
-                    _ => unreachable!(),
-                };
+        let leaf_val: Value = path.pop().expect("leaf value missing");
+        let leaf_key: String = parse_key(path.pop().expect("leaf keay missing"));
 
-                let entry = current_map.entry(k).or_insert_with(|| Object(Map::new()));
+        if path.is_empty() {
+            if change_key.len() < granularity {
+                change_key.push(leaf_key.clone());
+            }
+            acc.insert(leaf_key, serde_json::Value::from(leaf_val));
+        } else {
+            let first_key = parse_key(path[0].clone());
 
-                *entry = match entry {
-                    Object(m) => Object(std::mem::replace(m, Map::new())),
-                    serde_json::Value::Array(_) => unreachable!(),
-                    _ => Object(Map::new()),
-                };
-
-                match entry {
-                    Object(m) => current_map = m,
-                    _ => unreachable!(),
-                };
+            if change_key.len() < granularity {
+                change_key.push(first_key.clone());
             }
 
-            // At the lowest level, we finally insert the path's value
-            match current_map.get(&last_key) {
-                Some(Object(_)) => (),
-                _ => {
-                    current_map.insert(last_key, serde_json::Value::from(last_val));
+            let mut entry = acc.entry(first_key).or_insert_with(|| Object(Map::new()));
+
+            for key in path.drain(1..) {
+                // If there are already values for the looked at attribute, we
+                // obtain a reference to it. Otherwise, we create a new `Map`
+                // and obtain a reference to it, which will be used in the
+                // next iteration.  We repeat this process of traversing down
+                // the map and optionally creating new map levels until we've
+                // run out of intermediate attributes.
+
+                if change_key.len() < granularity {
+                    change_key.push(parse_key(key.clone()));
                 }
-            };
-        } else {
-            unreachable!();
+
+                if let Object(map) = entry {
+                    entry = map
+                        .entry(parse_key(key))
+                        .or_insert_with(|| Object(Map::new()));
+                }
+            }
+
+            // At the lowest level, we finally insert the leaf value.
+            if let Object(map) = entry {
+                map.insert(leaf_key, serde_json::Value::from(leaf_val));
+            }
         }
+
+        changes.push(change_key);
     }
 
-    serde_json::Value::Object(acc)
+    changes.sort();
+    changes.dedup();
+    changes
 }

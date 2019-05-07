@@ -19,7 +19,7 @@ use declarative_dataflow::plan::{GraphQl, Plan};
 use declarative_dataflow::server::{Interest, Register, Request};
 use declarative_dataflow::sinks::{AssocIn, Sink};
 use declarative_dataflow::timestamp::pair::Pair;
-use declarative_dataflow::{Rule, TxData, Error, ResultDiff};
+use declarative_dataflow::{Error, ResultDiff, Rule, TxData};
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(untagged)]
@@ -135,6 +135,11 @@ fn main() {
                 Some(query) => query.to_string(),
             };
 
+            let granularity = match matches.value_of("granularity") {
+                None => None,
+                Some(arg) => Some(arg.parse::<usize>().expect("granularity must be a usize")),
+            };
+
             let name = Uuid::new_v4();
 
             let req = serde_json::to_string::<Vec<Request>>(&vec![
@@ -149,7 +154,9 @@ fn main() {
                     name: name.to_string(),
                     tenant: None,
                     granularity: None,
-                    sink: Some(Sink::AssocIn(AssocIn {})),
+                    sink: Some(Sink::AssocIn(AssocIn {
+                        stateful: granularity,
+                    })),
                     disable_logging: None,
                 }),
             ])
