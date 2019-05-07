@@ -384,7 +384,7 @@ where
                     let mut data = rule.plan.datafy();
                     let tx_data: Vec<TxData> = data
                         .drain(..)
-                        .map(|(e, a, v)| TxData(1, e, a, v, None))
+                        .map(|(e, a, v)| TxData(1, Value::Eid(e), a, v, None))
                         .collect();
 
                     self.transact(tx_data, 0, 0)?;

@@ -84,6 +84,25 @@ pub enum Value {
     Real(fixed::types::I16F16),
 }
 
+#[cfg(feature = "uuid")]
+impl Value {
+    /// Helper to create a UUID value from a string representation.
+    pub fn uuid_str(v: &str) -> Self {
+        let uuid = Uuid::parse_str(v).expect("failed to parse UUID");
+        Value::Uuid(uuid)
+    }
+}
+
+#[cfg(feature = "real")]
+impl std::convert::From<f64> for Value {
+    fn from(v: f64) -> Self {
+        let real =
+            fixed::types::I16F16::checked_from_float(v).expect("failed to convert to I16F16");
+
+        Value::Real(real)
+    }
+}
+
 #[cfg(feature = "serde_json")]
 impl std::convert::From<Value> for serde_json::Value {
     fn from(v: Value) -> Self {
@@ -162,29 +181,29 @@ impl Error {
 
 /// Transaction data.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct TxData(pub isize, pub Eid, pub Aid, pub Value, pub Option<Time>);
+pub struct TxData(pub isize, pub Value, pub Aid, pub Value, pub Option<Time>);
 
 impl TxData {
     /// Creates TxData representing the addition of a single fact.
     pub fn add(e: Eid, a: &str, v: Value) -> Self {
-        TxData(1, e, a.to_string(), v, None)
+        TxData(1, Value::Eid(e), a.to_string(), v, None)
     }
 
     /// Creates TxData representing the addition of a single fact at a
     /// specific point in time.
     pub fn add_at(e: Eid, a: &str, v: Value, t: Time) -> Self {
-        TxData(1, e, a.to_string(), v, Some(t))
+        TxData(1, Value::Eid(e), a.to_string(), v, Some(t))
     }
 
     /// Creates TxData representing the retraction of a single fact.
     pub fn retract(e: Eid, a: &str, v: Value) -> Self {
-        TxData(-1, e, a.to_string(), v, None)
+        TxData(-1, Value::Eid(e), a.to_string(), v, None)
     }
 
     /// Creates TxData representing the retraction of a single fact at
     /// a specific point in time.
     pub fn retract_at(e: Eid, a: &str, v: Value, t: Time) -> Self {
-        TxData(-1, e, a.to_string(), v, Some(t))
+        TxData(-1, Value::Eid(e), a.to_string(), v, Some(t))
     }
 }
 

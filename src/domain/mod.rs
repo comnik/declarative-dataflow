@@ -257,8 +257,8 @@ where
                     return Err(Error::not_found(format!("Attribute {} does not exist.", a)));
                 }
                 Some(handle) => match t {
-                    None => handle.update((Value::Eid(e), v), op),
-                    Some(t) => handle.update_at((Value::Eid(e), v), t.into(), op),
+                    None => handle.update((e, v), op),
+                    Some(t) => handle.update_at((e, v), t.into(), op),
                 },
             }
         }
