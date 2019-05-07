@@ -11,129 +11,171 @@ use graphql_parser::query::{Definition, Document, OperationDefinition, Selection
 
 use crate::plan::{Dependencies, ImplContext, Implementable};
 use crate::plan::{Plan, Pull, PullLevel};
+use crate::Aid;
 use crate::{Implemented, ShutdownHandle, VariableMap};
 
-/// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`
+/// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct GraphQl {
     /// String representation of GraphQL query
     pub query: String,
     /// Cached paths
-    pub paths: Vec<PullLevel<Plan>>,
+    paths: Vec<PullLevel<Plan>>,
 }
 
 impl GraphQl {
-    /// Creates a new GraphQL instance by parsing the ast obtained from the provided query
+    /// Creates a new GraphQL instance by parsing the AST obtained
+    /// from the provided query.
     pub fn new(query: String) -> Self {
-        let q = query.clone();
+        let ast = parse_query(&query).expect("graphQL ast parsing failed");
+
         GraphQl {
             query,
-            paths: ast_to_paths(parse_query(&q).expect("graphQL ast parsing failed")),
+            paths: ast.into_paths(),
         }
     }
 }
 
-/// Takes a GraphQL `SelectionSet` and recursively transforms it into `PullLevel`s.
+trait IntoPaths {
+    fn into_paths(&self) -> Vec<PullLevel<Plan>>;
+}
+
+impl IntoPaths for Document {
+    /// Transforms the provided GraphQL query AST into corresponding pull
+    /// paths. The structure of a typical parsed ast looks like this:
+    ///
+    /// ```
+    /// Document {
+    ///   definitions: [
+    ///     Operation(SelectionSet(SelectionSet {
+    ///       items: [
+    ///         Field(Field {
+    ///           name: ...,
+    ///           selection_set: SelectionSet(...}
+    ///         }),
+    ///         ...
+    ///       ]
+    ///     }))
+    ///   ]
+    /// }
+    /// ```
+    fn into_paths(&self) -> Vec<PullLevel<Plan>> {
+        self.definitions
+            .iter()
+            .flat_map(|definition| definition.into_paths())
+            .collect()
+    }
+}
+
+impl IntoPaths for Definition {
+    fn into_paths(&self) -> Vec<PullLevel<Plan>> {
+        match self {
+            Definition::Operation(operation) => operation.into_paths(),
+            Definition::Fragment(_) => unimplemented!(),
+        }
+    }
+}
+
+impl IntoPaths for OperationDefinition {
+    fn into_paths(&self) -> Vec<PullLevel<Plan>> {
+        use OperationDefinition::{Query, SelectionSet};
+
+        match self {
+            Query(_) => unimplemented!(),
+            SelectionSet(selection_set) => selection_set_to_paths(&selection_set, &vec![], true),
+            _ => unimplemented!(),
+        }
+    }
+}
+
+/// Takes a GraphQL `SelectionSet` and recursively transforms it into
+/// `PullLevel`s.
 ///
-/// A `SelectionSet` consists of multiple items. We're interested in items of type
-/// `Field`, which might contain a nested `SelectionSet` themselves. We iterate through
-/// each field and construct (1) a parent path, which describes how to traverse to the
-/// current nesting level ("vertical"), and (2) pull attributes, which describe the
-/// attributes pulled at the current nesting level ("horizontal"); only attributes at
-/// the lowest nesting level can be part of a `PullLevel`'s `pull_attributes`.
+/// A `SelectionSet` consists of multiple items. We're interested in
+/// items of type `Field`, which might contain a nested `SelectionSet`
+/// themselves. We iterate through each field and construct (1) a
+/// parent path, which describes how to traverse to the current
+/// nesting level ("vertical"), and (2) pull attributes, which
+/// describe the attributes pulled at the current nesting level
+/// ("horizontal"); only attributes at the lowest nesting level can be
+/// part of a `PullLevel`'s `pull_attributes`.
 fn selection_set_to_paths(
     selection_set: &SelectionSet,
     parent_path: &Vec<String>,
     at_root: bool,
 ) -> Vec<PullLevel<Plan>> {
-    let mut result = vec![];
-    let mut pull_attributes = vec![];
-    let variables = vec![];
-
-    // 1. Collect Fields and potentially recur.
-    for item in &selection_set.items {
-        match item {
+    // We will first gather the attributes that need to be retrieved
+    // at this level. These are the fields that do not refer to a
+    // nested entity.
+    let pull_attributes = selection_set
+        .items
+        .iter()
+        .flat_map(|item| match item {
             Selection::Field(field) => {
-                // at lowest nesting level
                 if field.selection_set.items.is_empty() {
-                    // "horizontal" path
-                    pull_attributes.push(field.name.to_string());
+                    Some(field.name.to_string())
+                } else {
+                    None
                 }
-
-                // "vertical" path to this nesting level
-                let mut new_parent_path = parent_path.to_vec();
-                new_parent_path.push(field.name.to_string());
-
-                // recur
-                result.extend(selection_set_to_paths(
-                    &field.selection_set,
-                    &new_parent_path,
-                    parent_path.is_empty(),
-                ));
             }
             _ => unimplemented!(),
-        }
-    }
+        })
+        .collect::<Vec<Aid>>();
 
-    // 2. Construct the current level's `PullLevel`.
-    if !pull_attributes.is_empty() && !parent_path.is_empty() {
-        let plan = if at_root {
-            // If we're looking at the root of the GraphQL query, we need to push
-            // the pulled IDs into the v position.
-            Plan::NameExpr(vec![0, 1], parent_path.last().unwrap().to_string())
-        } else {
-            // Otherwise, we transform into a simple [?e a ?v] clause.
-            Plan::MatchA(0, parent_path.last().unwrap().to_string(), 1)
-        };
+    // We then gather any nested levels that need to be transformed
+    // into their own plans.
+    let nested_levels = selection_set
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Selection::Field(field) => {
+                if !field.selection_set.items.is_empty() {
+                    let mut parent_path = parent_path.to_vec();
+                    parent_path.push(field.name.to_string());
 
-        let pull_level = PullLevel {
-            pull_attributes,
-            path_attributes: parent_path.to_vec(),
-            pull_variable: 1,
-            variables,
-            plan: Box::new(plan),
-        };
-        result.push(pull_level);
-    }
-
-    result
-}
-
-/// Inbound direction: Parse the provided GraphQL query ast into
-/// pull paths, which will then be used downstream to query data.
-///
-/// The structure of a typical parsed ast looks like this:
-/// ```
-/// Document {
-///   definitions: [
-///     Operation(SelectionSet(SelectionSet {
-///       items: [
-///         Field(Field {
-///           name: ...,
-///           selection_set: SelectionSet(...}
-///         }),
-///         ...
-///       ]
-///     }))
-///   ]
-/// }
-/// ```
-fn ast_to_paths(ast: Document) -> Vec<PullLevel<Plan>> {
-    let mut result = vec![];
-    for definition in &ast.definitions {
-        match definition {
-            Definition::Operation(operation_definition) => match operation_definition {
-                OperationDefinition::Query(_) => unimplemented!(),
-                OperationDefinition::SelectionSet(selection_set) => {
-                    result.extend(selection_set_to_paths(selection_set, &vec![], true))
+                    selection_set_to_paths(&field.selection_set, &parent_path, false)
+                } else {
+                    vec![]
                 }
-                _ => unimplemented!(),
-            },
-            Definition::Fragment(_) => unimplemented!(),
+            }
+            _ => unimplemented!(),
+        })
+        .collect::<Vec<PullLevel<Plan>>>();
+
+    let mut levels = nested_levels;
+
+    // Finally we construct a plan stage for our current level.
+    if !pull_attributes.is_empty() && !parent_path.is_empty() {
+        let current_level = if parent_path.len() == 1 {
+            // @TODO
+            // The root selection of the GraphQL query is currently
+            // assumed to be defined by a named, binary query of the
+            // form (root _ ?e).
+            PullLevel {
+                pull_attributes,
+                path_attributes: parent_path.to_vec(),
+                pull_variable: 1,
+                variables: vec![],
+                plan: Box::new(Plan::NameExpr(
+                    vec![0, 1],
+                    parent_path.last().unwrap().to_string(),
+                )),
+            }
+        } else {
+            // We select children via a [?e a ?v] clause.
+            PullLevel {
+                pull_attributes,
+                path_attributes: parent_path.to_vec(),
+                pull_variable: 1,
+                variables: vec![],
+                plan: Box::new(Plan::MatchA(0, parent_path.last().unwrap().to_string(), 1)),
+            }
         };
+
+        levels.push(current_level);
     }
 
-    result
+    levels
 }
 
 impl Implementable for GraphQl {
@@ -158,10 +200,9 @@ impl Implementable for GraphQl {
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
     {
-        let ast = parse_query(&self.query).expect("graphQL ast parsing failed");
         let parsed = Pull {
             variables: vec![],
-            paths: ast_to_paths(ast),
+            paths: self.paths.clone(),
         };
 
         parsed.implement(nested, local_arrangements, context)
