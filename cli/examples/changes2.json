@@ -1,0 +1,9 @@
+[
+  [-1, {"Eid":100}, "age", {"Number": 43}, null],
+  [1, {"Eid":100}, "age", {"Number": 45}, null],
+  [1, {"Eid":100}, "hero", {"Eid": 200}, null],
+  [1, {"Eid":200}, "age", {"Number": 33}, null],
+  [1, {"Eid":200}, "name", {"String": "Alice"}, null],
+  [1, {"Eid":100}, "hero", {"Eid": 300}, null],
+  [1, {"Eid":300}, "name", {"String": "Bob"}, null]
+]

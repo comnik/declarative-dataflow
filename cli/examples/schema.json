@@ -1,0 +1,77 @@
+[
+  {
+    "CreateAttribute": {
+      "name": "hero",
+      "config": {
+        "trace_slack": {
+          "Real": {
+            "secs": 1,
+            "nanos": 0
+          }
+        },
+        "input_semantics": "CardinalityMany",
+        "enable_wco": false,
+        "timeless": false
+      }
+    }
+  },
+  {
+    "CreateAttribute": {
+      "name": "name",
+      "config": {
+        "trace_slack": {
+          "Real": {
+            "secs": 1,
+            "nanos": 0
+          }
+        },
+        "input_semantics": "CardinalityMany",
+        "enable_wco": false,
+        "timeless": false
+      }
+    }
+  },
+  {
+    "CreateAttribute": {
+      "name": "age",
+      "config": {
+        "trace_slack": {
+          "Real": {
+            "secs": 1,
+            "nanos": 0
+          }
+        },
+        "input_semantics": "CardinalityMany",
+        "enable_wco": false,
+        "timeless": false
+      }
+    }
+  },
+  {
+    "CreateAttribute": {
+      "name": "real",
+      "config": {
+        "trace_slack": {
+          "Real": {
+            "secs": 1,
+            "nanos": 0
+          }
+        },
+        "input_semantics": "CardinalityMany",
+        "enable_wco": false,
+        "timeless": false
+      }
+    }
+  },
+  {
+    "Register": {
+      "rules": [
+        {
+          "name": "hero",
+          "plan": {"MatchA": [0, "hero", 1]}
+        }
+      ],
+      "publish": ["hero"]
+    }
+  }
+]
