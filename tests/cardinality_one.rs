@@ -316,75 +316,175 @@ fn cardinality_one_unordered() {
 }
 
 #[test]
-fn bitemporal_toggle() {
-    vec![Case {
-        description: "bitemporal toggle",
-        plan: Plan::MatchA(0, ":flow".to_string(), 1),
-        transactions: vec![vec![
-            TxData(
-                1,
-                Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
-                ":flow".to_string(),
-                Value::from(30.006),
-                Some(Time::Bi(Duration::from_secs(0), 1554120030000)), // 2019-04-01T12:00:30+00:00
-            ),
-            TxData(
-                1,
-                Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
-                ":flow".to_string(),
-                Value::from(31.006),
-                Some(Time::Bi(Duration::from_secs(0), 1554120061000)), // 2019-04-01T12:01:01+00:00
-            ),
-            TxData(
-                1,
-                Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
-                ":flow".to_string(),
-                Value::from(30.006),
-                Some(Time::Bi(Duration::from_secs(0), 1554120150000)), // 2019-04-01T12:02:30+00:00
-            ),
-        ]],
-        expectations: vec![vec![
-            (
+fn bitemporal() {
+    vec![
+        Case {
+            description: "bitemporal conflict",
+            plan: Plan::MatchA(0, ":amount".to_string(), 1),
+            transactions: vec![vec![
+                TxData::add_at(
+                    100,
+                    ":amount",
+                    Number(0),
+                    Time::Bi(Duration::from_secs(0), 0),
+                ),
+                TxData::add_at(
+                    100,
+                    ":amount",
+                    Number(2),
+                    Time::Bi(Duration::from_secs(0), 2),
+                ),
+                TxData::add_at(
+                    100,
+                    ":amount",
+                    Number(1),
+                    Time::Bi(Duration::from_secs(1), 1),
+                ),
+            ]],
+            expectations: vec![vec![
+                (
+                    vec![Eid(100), Number(0)],
+                    Pair::new(Duration::from_secs(0), 0),
+                    1,
+                ),
+                (
+                    vec![Eid(100), Number(0)],
+                    Pair::new(Duration::from_secs(0), 2),
+                    -1,
+                ),
+                (
+                    vec![Eid(100), Number(2)],
+                    Pair::new(Duration::from_secs(0), 2),
+                    1,
+                ),
+            ]],
+        },
+        Case {
+            description: "bitemporal correction",
+            plan: Plan::MatchA(0, ":amount".to_string(), 1),
+            transactions: vec![
                 vec![
-                    Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
-                    Value::from(30.006),
+                    TxData::add_at(
+                        100,
+                        ":amount",
+                        Number(0),
+                        Time::Bi(Duration::from_secs(0), 0),
+                    ),
+                    TxData::add_at(
+                        100,
+                        ":amount",
+                        Number(2),
+                        Time::Bi(Duration::from_secs(0), 2),
+                    ),
                 ],
-                Pair::new(Duration::from_secs(0), 1554120030000),
-                1,
-            ),
-            (
+                vec![TxData::add_at(
+                    100,
+                    ":amount",
+                    Number(1),
+                    Time::Bi(Duration::from_secs(1), 1),
+                )],
+            ],
+            expectations: vec![
                 vec![
-                    Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
-                    Value::from(30.006),
+                    (
+                        vec![Eid(100), Number(0)],
+                        Pair::new(Duration::from_secs(0), 0),
+                        1,
+                    ),
+                    (
+                        vec![Eid(100), Number(0)],
+                        Pair::new(Duration::from_secs(0), 2),
+                        -1,
+                    ),
+                    (
+                        vec![Eid(100), Number(2)],
+                        Pair::new(Duration::from_secs(0), 2),
+                        1,
+                    ),
                 ],
-                Pair::new(Duration::from_secs(0), 1554120061000),
-                -1,
-            ),
-            (
                 vec![
+                    (
+                        vec![Eid(100), Number(0)],
+                        Pair::new(Duration::from_secs(1), 1),
+                        -1,
+                    ),
+                    (
+                        vec![Eid(100), Number(1)],
+                        Pair::new(Duration::from_secs(1), 1),
+                        1,
+                    ),
+                ],
+            ],
+        },
+        Case {
+            description: "bitemporal toggle",
+            plan: Plan::MatchA(0, ":flow".to_string(), 1),
+            transactions: vec![vec![
+                TxData(
+                    1,
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
+                    ":flow".to_string(),
+                    Value::from(30.006),
+                    Some(Time::Bi(Duration::from_secs(0), 1554120030000)), // 2019-04-01T12:00:30+00:00
+                ),
+                TxData(
+                    1,
+                    Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
+                    ":flow".to_string(),
                     Value::from(31.006),
-                ],
-                Pair::new(Duration::from_secs(0), 1554120061000),
-                1,
-            ),
-            (
-                vec![
+                    Some(Time::Bi(Duration::from_secs(0), 1554120061000)), // 2019-04-01T12:01:01+00:00
+                ),
+                TxData(
+                    1,
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
-                    Value::from(31.006),
-                ],
-                Pair::new(Duration::from_secs(0), 1554120150000),
-                -1,
-            ),
-            (
-                vec![
-                    Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
+                    ":flow".to_string(),
                     Value::from(30.006),
-                ],
-                Pair::new(Duration::from_secs(0), 1554120150000),
-                1,
-            ),
-        ]],
-    }]
+                    Some(Time::Bi(Duration::from_secs(0), 1554120150000)), // 2019-04-01T12:02:30+00:00
+                ),
+            ]],
+            expectations: vec![vec![
+                (
+                    vec![
+                        Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
+                        Value::from(30.006),
+                    ],
+                    Pair::new(Duration::from_secs(0), 1554120030000),
+                    1,
+                ),
+                (
+                    vec![
+                        Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
+                        Value::from(30.006),
+                    ],
+                    Pair::new(Duration::from_secs(0), 1554120061000),
+                    -1,
+                ),
+                (
+                    vec![
+                        Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
+                        Value::from(31.006),
+                    ],
+                    Pair::new(Duration::from_secs(0), 1554120061000),
+                    1,
+                ),
+                (
+                    vec![
+                        Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
+                        Value::from(31.006),
+                    ],
+                    Pair::new(Duration::from_secs(0), 1554120150000),
+                    -1,
+                ),
+                (
+                    vec![
+                        Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
+                        Value::from(30.006),
+                    ],
+                    Pair::new(Duration::from_secs(0), 1554120150000),
+                    1,
+                ),
+            ]],
+        },
+    ]
     .run();
 }
