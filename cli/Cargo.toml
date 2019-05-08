@@ -9,7 +9,6 @@ edition = "2018"
 declarative-dataflow = { path = "../", features = ["graphql"] }
 serde = "1"
 serde_json = "1"
-serde_derive = "1"
 log = "0.4"
 env_logger = "0.5.6"
 clap = { version = "~2.33.0", features = ["yaml"] }

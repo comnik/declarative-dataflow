@@ -5,11 +5,8 @@
 extern crate log;
 #[macro_use]
 extern crate clap;
-#[macro_use]
-extern crate serde_derive;
 
 use std::io::Read;
-use std::time::Duration;
 
 use clap::App;
 use uuid::Uuid;
@@ -18,24 +15,7 @@ use ws::{connect, CloseCode};
 use declarative_dataflow::plan::{GraphQl, Plan};
 use declarative_dataflow::server::{Interest, Register, Request};
 use declarative_dataflow::sinks::{AssocIn, Sink};
-use declarative_dataflow::timestamp::pair::Pair;
-use declarative_dataflow::{Error, ResultDiff, Rule, TxData};
-
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-enum Time {
-    TxId(u64),
-    Real(Duration),
-    Bi(Pair<Duration, u64>),
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-enum Output {
-    QueryDiff(String, Vec<ResultDiff<Time>>),
-    Json(String, serde_json::Value, Time, isize),
-    Message(usize, serde_json::Value),
-    Error(usize, Error, u64),
-}
+use declarative_dataflow::{Rule, TxData, Output};
 
 fn main() {
     env_logger::init();

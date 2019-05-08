@@ -82,7 +82,7 @@ impl IntoPaths for OperationDefinition {
 
         match self {
             Query(_) => unimplemented!(),
-            SelectionSet(selection_set) => selection_set_to_paths(&selection_set, &vec![], true),
+            SelectionSet(selection_set) => selection_set_to_paths(&selection_set, &vec![]),
             _ => unimplemented!(),
         }
     }
@@ -102,7 +102,6 @@ impl IntoPaths for OperationDefinition {
 fn selection_set_to_paths(
     selection_set: &SelectionSet,
     parent_path: &Vec<String>,
-    at_root: bool,
 ) -> Vec<PullLevel<Plan>> {
     // We will first gather the attributes that need to be retrieved
     // at this level. These are the fields that do not refer to a
@@ -133,7 +132,7 @@ fn selection_set_to_paths(
                     let mut parent_path = parent_path.to_vec();
                     parent_path.push(field.name.to_string());
 
-                    selection_set_to_paths(&field.selection_set, &parent_path, false)
+                    selection_set_to_paths(&field.selection_set, &parent_path)
                 } else {
                     vec![]
                 }
