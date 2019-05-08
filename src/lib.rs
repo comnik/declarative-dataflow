@@ -215,15 +215,13 @@ pub type Client = usize;
 
 /// Anything that can be returned to clients.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum Output<T> {
+pub enum Output {
     /// A batch of (tuple, time, diff) triples as returned by Datalog
     /// queries.
-    QueryDiff(String, Vec<ResultDiff<T>>),
-    /// An output diff on a multi-tenant query.
-    TenantDiff(String, Client, Vec<ResultDiff<T>>),
+    QueryDiff(String, Vec<ResultDiff<Time>>),
     /// A JSON object, e.g. as returned by GraphQL queries.
     #[cfg(feature = "serde_json")]
-    Json(String, serde_json::Value, T, isize),
+    Json(String, serde_json::Value, Time, isize),
     /// A message forwarded to a specific client.
     #[cfg(feature = "serde_json")]
     Message(Client, serde_json::Value),

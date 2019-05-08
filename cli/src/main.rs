@@ -32,7 +32,6 @@ enum Time {
 #[derive(Serialize, Deserialize, Debug)]
 enum Output {
     QueryDiff(String, Vec<ResultDiff<Time>>),
-    TenantDiff(String, usize, Vec<ResultDiff<Time>>),
     Json(String, serde_json::Value, Time, isize),
     Message(usize, serde_json::Value),
     Error(usize, Error, u64),
@@ -152,7 +151,6 @@ fn main() {
                 }),
                 Request::Interest(Interest {
                     name: name.to_string(),
-                    tenant: None,
                     granularity: None,
                     sink: Some(Sink::AssocIn(AssocIn {
                         stateful: granularity,

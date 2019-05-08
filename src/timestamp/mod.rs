@@ -29,6 +29,12 @@ impl std::convert::From<Time> for u64 {
     }
 }
 
+impl std::convert::From<u64> for Time {
+    fn from(t: u64) -> Time {
+        Time::TxId(t)
+    }
+}
+
 impl std::convert::From<Time> for Duration {
     fn from(t: Time) -> Duration {
         if let Time::Real(time) = t {
@@ -39,6 +45,12 @@ impl std::convert::From<Time> for Duration {
     }
 }
 
+impl std::convert::From<Duration> for Time {
+    fn from(t: Duration) -> Time {
+        Time::Real(t)
+    }
+}
+
 impl std::convert::From<Time> for pair::Pair<Duration, u64> {
     fn from(t: Time) -> Self {
         if let Time::Bi(sys, event) = t {
@@ -46,6 +58,12 @@ impl std::convert::From<Time> for pair::Pair<Duration, u64> {
         } else {
             panic!("Time {:?} can't be converted to Pair", t);
         }
+    }
+}
+
+impl std::convert::From<pair::Pair<Duration, u64>> for Time {
+    fn from(t: pair::Pair<Duration, u64>) -> Time {
+        Time::Bi(t.first, t.second)
     }
 }
 

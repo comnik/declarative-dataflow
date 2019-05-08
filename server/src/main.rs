@@ -7,12 +7,9 @@ extern crate serde_derive;
 extern crate log;
 
 use std::collections::{HashSet, VecDeque};
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::time::{Duration, Instant};
 
 use getopts::Options;
-
-use itertools::Itertools;
 
 use timely::dataflow::channels::pact::{Exchange, Pipeline};
 use timely::dataflow::operators::generic::OutputHandle;
@@ -23,17 +20,13 @@ use timely::synchronization::Sequencer;
 use differential_dataflow::logging::DifferentialEvent;
 use differential_dataflow::operators::Consolidate;
 
-use mio::net::TcpListener;
-use mio::*;
-
-use slab::Slab;
-
-use ws::connection::{ConnEvent, Connection};
-
 use declarative_dataflow::server::{scheduler, Config, CreateAttribute, Request, Server, TxId};
 use declarative_dataflow::sinks::{Sinkable, SinkingContext};
-use declarative_dataflow::timestamp::Coarsen;
-use declarative_dataflow::{Eid, Error, Output, ResultDiff};
+use declarative_dataflow::timestamp::{Coarsen, Time};
+use declarative_dataflow::{Output, ResultDiff};
+
+mod networking;
+use crate::networking::{DomainEvent, Token, IO, SYSTEM};
 
 /// Server timestamp type.
 #[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
@@ -48,10 +41,6 @@ use declarative_dataflow::timestamp::pair::Pair;
 /// Server timestamp type.
 #[cfg(feature = "bitemporal")]
 type T = Pair<Duration, u64>;
-
-const SERVER: Token = Token(std::usize::MAX - 1);
-const RESULTS: Token = Token(std::usize::MAX - 2);
-const SYSTEM: Token = Token(std::usize::MAX - 3);
 
 /// A mutation of server state.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]
@@ -69,56 +58,43 @@ struct Command {
 fn main() {
     env_logger::init();
 
-    let mut opts = Options::new();
-    opts.optopt("", "port", "server port", "PORT");
-    opts.optopt(
-        "",
-        "tick",
-        "advance domain at a regular interval",
-        "SECONDS",
-    );
-    opts.optflag(
-        "",
-        "manual-advance",
-        "forces clients to call AdvanceDomain explicitely",
-    );
-    opts.optflag("", "enable-logging", "enable log event sources");
-    opts.optflag("", "enable-history", "enable historical queries");
-    opts.optflag("", "enable-optimizer", "enable WCO queries");
-    opts.optflag("", "enable-meta", "enable queries on the query graph");
-
     let args: Vec<String> = std::env::args().collect();
     let timely_args = std::env::args().take_while(|ref arg| *arg != "--");
     let timely_config = timely::Configuration::from_args(timely_args).unwrap();
 
     timely::execute(timely_config, move |worker| {
-        // read configuration
-        let server_args = args.iter().rev().take_while(|arg| *arg != "--");
-        let default_config: Config = Default::default();
-        let config = match opts.parse(server_args) {
-            Err(err) => panic!(err),
-            Ok(matches) => {
-                let starting_port = matches
-                    .opt_str("port")
-                    .map(|x| x.parse().expect("failed to parse port"))
-                    .unwrap_or(default_config.port);
+        // Read configuration.
+        let config = {
+            let server_args = args.iter().rev().take_while(|arg| *arg != "--");
+            let default_config: Config = Default::default();
 
-                let tick: Option<Duration> = matches
-                    .opt_str("tick")
-                    .map(|x| Duration::from_secs(x.parse().expect("failed to parse tick duration")));
+            let opts = options();
 
-                Config {
-                    port: starting_port + (worker.index() as u16),
-                    tick,
-                    manual_advance: matches.opt_present("manual-advance"),
-                    enable_logging: matches.opt_present("enable-logging"),
-                    enable_optimizer: matches.opt_present("enable-optimizer"),
-                    enable_meta: matches.opt_present("enable-meta"),
+            match opts.parse(server_args) {
+                Err(err) => panic!(err),
+                Ok(matches) => {
+                    let starting_port = matches
+                        .opt_str("port")
+                        .map(|x| x.parse().expect("failed to parse port"))
+                        .unwrap_or(default_config.port);
+
+                    let tick: Option<Duration> = matches
+                        .opt_str("tick")
+                        .map(|x| Duration::from_secs(x.parse().expect("failed to parse tick duration")));
+
+                    Config {
+                        port: starting_port + (worker.index() as u16),
+                        tick,
+                        manual_advance: matches.opt_present("manual-advance"),
+                        enable_logging: matches.opt_present("enable-logging"),
+                        enable_optimizer: matches.opt_present("enable-optimizer"),
+                        enable_meta: matches.opt_present("enable-meta"),
+                    }
                 }
             }
         };
 
-        // setup interpretation context
+        // Initialize server state (no networking).
         let mut server = Server::<T, Token>::new_at(config.clone(), worker.timer());
 
         if config.enable_logging {
@@ -137,7 +113,7 @@ fn main() {
             requests: builtins,
         };
 
-        // setup serialized command queue (shared between all workers)
+        // Setup serializing command stream between all workers.
         let mut sequencer: Sequencer<Command> =
             Sequencer::preloaded(worker, Instant::now(), VecDeque::from(vec![preload_command]));
 
@@ -151,35 +127,15 @@ fn main() {
             });
         }
 
-        // configure websocket server
-        let ws_settings = ws::Settings {
-            max_connections: 1024,
-            ..ws::Settings::default()
+        // Set up I/O event loop.
+        let mut io = {
+            use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+
+            // let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
+            let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0,0,0,0)), config.port);
+
+            IO::new(addr)
         };
-
-        // setup results channel
-        let (send_results, recv_results) = mio_extras::channel::channel::<Output<T>>();
-
-        // setup server socket
-        // let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), config.port);
-        let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(0,0,0,0)), config.port);
-        let server_socket = TcpListener::bind(&addr).unwrap();
-        let mut connections = Slab::with_capacity(ws_settings.max_connections);
-        let mut next_connection_id: u32 = 0;
-
-        // setup event loop
-        let poll = Poll::new().unwrap();
-        let mut events = Events::with_capacity(1024);
-
-        poll.register(
-            &recv_results,
-            RESULTS,
-            Ready::readable(),
-            PollOpt::edge() | PollOpt::oneshot(),
-        ).unwrap();
-
-        poll.register(&server_socket, SERVER, Ready::readable(), PollOpt::level())
-            .unwrap();
 
         info!(
             "[WORKER {}] running with config {:?}, {} peers",
@@ -192,10 +148,6 @@ fn main() {
         let mut next_tx: TxId = 0;
 
         let mut shutdown = false;
-
-        // Keep a buffer around into which all connection events can
-        // be dropped without having to allocate all over the place.
-        let mut conn_events = Vec::new();
 
         while !shutdown {
             // each worker has to...
@@ -235,256 +187,26 @@ fn main() {
                 // poll.poll(&mut events, None).expect("failed to poll I/O events");
             }
 
-            // We mustn't timeout here, operators are pending!
-            poll.poll(&mut events, Some(Duration::from_millis(0)))
-                .expect("failed to poll I/O events");
+            // Transform low-level I/O events into domain events.
+            io.step(next_tx, &server.interests);
 
-            for event in events.iter() {
-                trace!(
-                    "[WORKER {}] recv event on {:?}",
-                    worker.index(),
-                    event.token()
-                );
-
-                match event.token() {
-                    SERVER => {
-                        if event.readiness().is_readable() {
-                            // new connection arrived on the server socket
-                            match server_socket.accept() {
-                                Err(err) => error!(
-                                    "[WORKER {}] error while accepting connection {:?}",
-                                    worker.index(),
-                                    err
-                                ),
-                                Ok((socket, addr)) => {
-                                    let token = {
-                                        let entry = connections.vacant_entry();
-                                        let token = Token(entry.key());
-                                        let connection_id = next_connection_id;
-                                        next_connection_id = next_connection_id.wrapping_add(1);
-
-                                        entry.insert(Connection::new(
-                                            token,
-                                            socket,
-                                            ws_settings,
-                                            connection_id,
-                                        ));
-
-                                        token
-                                    };
-
-                                    info!(
-                                        "[WORKER {}] new tcp connection from {} (token {:?})",
-                                        worker.index(),
-                                        addr,
-                                        token
-                                    );
-
-                                    let conn = &mut connections[token.into()];
-
-                                    conn.as_server().unwrap();
-
-                                    poll.register(
-                                        conn.socket(),
-                                        conn.token(),
-                                        conn.events(),
-                                        PollOpt::edge() | PollOpt::oneshot(),
-                                    ).unwrap();
-                                }
-                            }
-                        }
+            while let Some(event) = io.next() {
+                match event {
+                    DomainEvent::Requests(token, requests) => {
+                        trace!("[IO] command");
+                        sequencer.push(Command {
+                            owner: worker.index(),
+                            client: token.into(),
+                            requests,
+                        });
                     }
-                    RESULTS => {
-                        while let Ok(out) = recv_results.try_recv() {
-                            let tokens: Box<dyn Iterator<Item=Token>> = match &out {
-                                &Output::QueryDiff(ref name, ref results) => {
-                                    info!("[WORKER {}] {} {} results", worker.index(), name, results.len());
-
-                                    match server.interests.get(name) {
-                                        None => {
-                                            warn!("result on query {} w/o interested clients", name);
-                                            Box::new(std::iter::empty())
-                                        }
-                                        Some(tokens) => Box::new(tokens.iter().cloned()),
-                                    }
-                                }
-                                &Output::TenantDiff(ref name, client, ref results) => {
-                                    info!("[WORKER {}] {} results for tenant {:?} on query {}", worker.index(), results.len(), client, name);
-                                    Box::new(std::iter::once(client.into()))
-                                }
-                                &Output::Json(ref name, _, _, _) => {
-                                    info!("[WORKER {}] json on query {}", worker.index(), name);
-
-                                    match server.interests.get(name) {
-                                        None => {
-                                            warn!("result on query {} w/o interested clients", name);
-                                            Box::new(std::iter::empty())
-                                        }
-                                        Some(tokens) => Box::new(tokens.iter().cloned()),
-                                    }
-                                }
-                                &Output::Message(client, ref msg) => {
-                                    info!("[WORKER {}] {:?}", worker.index(), msg);
-                                    Box::new(std::iter::once(client.into()))
-                                }
-                                &Output::Error(client, ref error, _) => {
-                                    error!("[WORKER {}] {:?}", worker.index(), error);
-                                    Box::new(std::iter::once(client.into()))
-                                }
-                            };
-
-                            let serialized = serde_json::to_string::<Output<T>>(&out)
-                                .expect("failed to serialize output");
-
-                            let msg = ws::Message::text(serialized);
-
-                            for token in tokens {
-                                match connections.get_mut(token.into()) {
-                                    None => {
-                                        warn!("client {:?} has gone away undetected, notifying", token);
-                                        sequencer.push(Command {
-                                            owner: worker.index(),
-                                            client: token.into(),
-                                            requests: vec![Request::Disconnect],
-                                        });
-                                    }
-                                    Some(conn) => {
-                                        conn.send_message(msg.clone())
-                                            .expect("failed to send message");
-
-                                        poll.reregister(
-                                            conn.socket(),
-                                            conn.token(),
-                                            conn.events(),
-                                            PollOpt::edge() | PollOpt::oneshot(),
-                                        ).unwrap();
-                                    }
-                                }
-                            }
-                        }
-
-                        poll.reregister(
-                            &recv_results,
-                            RESULTS,
-                            Ready::readable(),
-                            PollOpt::edge() | PollOpt::oneshot(),
-                        ).unwrap();
-                    }
-                    _ => {
-                        let token = event.token();
-                        let active = {
-                            let event_readiness = event.readiness();
-
-                            let conn_readiness = connections[token.into()].events();
-                            if (event_readiness & conn_readiness).is_readable() {
-                                if let Err(err) = connections[token.into()].read(&mut conn_events) {
-                                    trace!(
-                                        "[WORKER {}] error while reading: {}",
-                                        worker.index(),
-                                        err
-                                    );
-                                    // @TODO error handling
-                                    connections[token.into()].error(err)
-                                }
-                            }
-
-                            let conn_readiness = connections[token.into()].events();
-                            if (event_readiness & conn_readiness).is_writable() {
-                                if let Err(err) = connections[token.into()].write(&mut conn_events) {
-                                    trace!(
-                                        "[WORKER {}] error while writing: {}",
-                                        worker.index(),
-                                        err
-                                    );
-                                    // @TODO error handling
-                                    connections[token.into()].error(err)
-                                }
-                            }
-
-                            trace!("read {} connection events", conn_events.len());
-
-                            for conn_event in conn_events.drain(..) {
-                                match conn_event {
-                                    ConnEvent::Message(msg) => {
-                                        trace!("[WS] ConnEvent::Message");
-                                        match msg {
-                                            ws::Message::Text(string) => {
-                                                match serde_json::from_str::<Vec<Request>>(&string) {
-                                                    Err(serde_error) => {
-                                                        send_results
-                                                            .send(Output::Error(token.into(), Error::incorrect(serde_error), next_tx - 1))
-                                                            .unwrap();
-                                                    }
-                                                    Ok(requests) => {
-                                                        trace!("[WORKER {}] push command", worker.index());
-                                                        sequencer.push(
-                                                            Command {
-                                                                owner: worker.index(),
-                                                                client: token.into(),
-                                                                requests,
-                                                            }
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                            ws::Message::Binary(bytes) => {
-                                                match rmp_serde::decode::from_slice::<Vec<Request>>(&bytes) {
-                                                    Err(rmp_error) => {
-                                                        send_results
-                                                            .send(Output::Error(token.into(), Error::incorrect(rmp_error), next_tx - 1))
-                                                            .unwrap();
-                                                    }
-                                                    Ok(requests) => {
-                                                        trace!("[WORKER {}] push binary command", worker.index());
-                                                        sequencer.push(
-                                                            Command {
-                                                                owner: worker.index(),
-                                                                client: token.into(),
-                                                                requests,
-                                                            }
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                    ConnEvent::Close(code, reason) => {
-                                        trace!("[WS] ConnEvent::Close");
-                                        info!("[WORKER {}] connection closing (token {:?}, {:?}, {})", worker.index(), token, code, reason);
-                                    }
-                                    other => {
-                                        trace!("[WS] {:?}", other);
-                                    }
-                                }
-                            }
-
-                            // connection events may have changed
-                            connections[token.into()].events().is_readable()
-                                || connections[token.into()].events().is_writable()
-                        };
-
-                        // NOTE: Closing state only applies after a ws connection was successfully
-                        // established. It's possible that we may go inactive while in a connecting
-                        // state if the handshake fails.
-                        if !active {
-                            info!("[WORKER {}] token={:?} disconnected", worker.index(), token);
-
-                            sequencer.push(Command {
-                                owner: worker.index(),
-                                client: token.into(),
-                                requests: vec![Request::Disconnect],
-                            });
-
-                            connections.remove(token.into());
-                        } else {
-                            let conn = &connections[token.into()];
-                            poll.reregister(
-                                conn.socket(),
-                                conn.token(),
-                                conn.events(),
-                                PollOpt::edge() | PollOpt::oneshot(),
-                            ).unwrap();
-                        }
+                    DomainEvent::Disconnect(token) => {
+                        info!("[IO] token={:?} disconnected", token);
+                        sequencer.push(Command {
+                            owner: worker.index(),
+                            client: token.into(),
+                            requests: vec![Request::Disconnect],
+                        });
                     }
                 }
             }
@@ -508,12 +230,8 @@ fn main() {
 
                     trace!("[WORKER {}] {:?}", worker.index(), req);
 
-                    match req {
-                        Request::Transact(req) => {
-                            if let Err(error) = server.transact(req, owner, worker.index()) {
-                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
-                            }
-                        }
+                    let result = match req {
+                        Request::Transact(req) => server.transact(req, owner, worker.index()),
                         Request::Interest(req) => {
                             let interests = server.interests
                                 .entry(req.name.clone())
@@ -527,14 +245,8 @@ fn main() {
                             // know when to clean up unused dataflows.
                             interests.insert(Token(client));
 
-                            // For multi-tenant flows, we need to keep track of the worker
-                            // that is managing this client's connection.
-                            if let Some(_) = req.tenant {
-                                server.tenant_owner.borrow_mut().insert(Token(client), command.owner as u64);
-                            }
-
                             if was_first {
-                                let send_results_handle = send_results.clone();
+                                let send_results = io.send.clone();
 
                                 let disable_logging = req.disable_logging.unwrap_or(false);
                                 let mut timely_logger = None;
@@ -546,111 +258,77 @@ fn main() {
                                     differential_logger = worker.log_register().remove("differential/arrange");
                                 }
 
-                                worker.dataflow::<T, _, _>(|scope| {
+                                let result = worker.dataflow::<T, _, _>(|scope| {
                                     let sink_context: SinkingContext = (&req).into();
 
-                                    match server.interest(&req.name, scope) {
-                                        Err(error) => {
-                                            send_results.send(Output::Error(client, error, last_tx)).unwrap();
+                                    let relation = match server.interest(&req.name, scope) {
+                                        Err(error) => { return Err(error); }
+                                        Ok(relation) => relation,
+                                    };
+
+                                    let delayed = match req.granularity {
+                                        None => relation.consolidate(),
+                                        Some(granularity) => {
+                                            let granularity: T = granularity.into();
+                                            relation
+                                                .delay(move |t| t.coarsen(&granularity))
+                                                .consolidate()
                                         }
-                                        Ok(relation) => {
-                                            let delayed = match req.granularity {
-                                                None => relation.consolidate(),
-                                                Some(granularity) => {
-                                                    let granularity: T = granularity.into();
-                                                    relation
-                                                        .delay(move |t| t.coarsen(&granularity))
-                                                        .consolidate()
-                                                }
+                                    };
+
+                                    let pact = Exchange::new(move |_| owner as u64);
+
+                                    match req.sink {
+                                        Some(sink) => {
+                                            let sunk = match sink.sink(&delayed.inner, pact, &mut server.probe, sink_context) {
+                                                Err(error) => { return Err(error); }
+                                                Ok(sunk) => sunk,
                                             };
 
-                                            if let Some(offset) = req.tenant {
-                                                let mut buffer = Vec::new();
-                                                let tenant_owner = server.tenant_owner.clone();
+                                            if let Some(sunk) = sunk {
+                                                let mut vector = Vec::new();
+                                                sunk
+                                                    .unary(Pipeline, "SinkResults", move |_cap, _info| {
+                                                        move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
+                                                            input.for_each(|_time, data| {
+                                                                data.swap(&mut vector);
 
-                                                let pact = Exchange::new(move |(ref tuple, _t, _diff): &ResultDiff<T>| {
-                                                    let tenant: Eid = tuple[offset].clone().into();
-                                                    tenant_owner.borrow().get(&Token(tenant as usize)).unwrap().clone()
-                                                });
-
-                                                match req.sink {
-                                                    Some(sink) => {
-                                                        sink.sink(&delayed.inner, pact, &mut server.probe, sink_context)
-                                                            .expect("sinking failed");
-                                                    }
-                                                    None => {
-                                                        delayed
-                                                            .inner
-                                                            .unary(pact, "MultiTenantResults", move |_cap, _info| {
-                                                                move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
-                                                                    input.for_each(|_time, data| {
-                                                                        data.swap(&mut buffer);
-
-                                                                        let per_tenant = buffer
-                                                                            .drain(..)
-                                                                            .group_by(|(tuple, _, _)| {
-                                                                                let tenant: Eid = tuple[offset].clone().into();
-                                                                                tenant as usize
-                                                                            });
-
-                                                                        for (tenant, batch) in &per_tenant {
-                                                                            send_results_handle
-                                                                                .send(Output::TenantDiff(sink_context.name.clone(), tenant, batch.collect()))
-                                                                                .unwrap();
-                                                                        }
-                                                                    });
+                                                                for out in vector.drain(..) {
+                                                                    send_results.send(out)
+                                                                        .expect("internal channel send failed");
                                                                 }
-                                                            })
-                                                            .probe_with(&mut server.probe);
-                                                    }
-                                                }
-                                            } else {
-                                                let pact = Exchange::new(move |_| owner as u64);
-
-                                                match req.sink {
-                                                    Some(sink) => {
-                                                        let sunk = sink.sink(&delayed.inner, pact, &mut server.probe, sink_context)
-                                                            .expect("sinking failed");
-
-                                                        if let Some(sunk) = sunk {
-                                                            let mut vector = Vec::new();
-                                                            sunk
-                                                                .unary(Pipeline, "SinkResults", move |_cap, _info| {
-                                                                    move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
-                                                                        input.for_each(|_time, data| {
-                                                                            data.swap(&mut vector);
-
-                                                                            for out in vector.drain(..) {
-                                                                                send_results_handle.send(out)
-                                                                                    .unwrap();
-                                                                            }
-                                                                        });
-                                                                    }
-                                                                })
-                                                                .probe_with(&mut server.probe);
+                                                            });
                                                         }
-                                                    }
-                                                    None => {
-                                                        delayed
-                                                            .inner
-                                                            .unary(pact, "ResultsRecv", move |_cap, _info| {
-                                                                move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
-                                                                    // due to the exchange pact, this closure is only
-                                                                    // executed by the owning worker
-
-                                                                    // @TODO only forward inputs up to the frontier!
-
-                                                                    input.for_each(|_time, data| {
-                                                                        send_results_handle
-                                                                            .send(Output::QueryDiff(sink_context.name.clone(), data.to_vec()))
-                                                                            .unwrap();
-                                                                    });
-                                                                }
-                                                            })
-                                                            .probe_with(&mut server.probe);
-                                                    }
-                                                }
+                                                    })
+                                                    .probe_with(&mut server.probe);
                                             }
+
+                                            Ok(())
+                                        }
+                                        None => {
+                                            delayed
+                                                .inner
+                                                .unary(pact, "ResultsRecv", move |_cap, _info| {
+                                                    move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
+                                                        // due to the exchange pact, this closure is only
+                                                        // executed by the owning worker
+
+                                                        // @TODO only forward inputs up to the frontier!
+
+                                                        input.for_each(|_time, data| {
+                                                            let data = data.iter()
+                                                                .map(|(tuple, t, diff)| (tuple.clone(), t.clone().into(), *diff))
+                                                                .collect::<Vec<ResultDiff<Time>>>();
+
+                                                            send_results
+                                                                .send(Output::QueryDiff(sink_context.name.clone(), data))
+                                                                .expect("internal channel send failed");
+                                                        });
+                                                    }
+                                                })
+                                                .probe_with(&mut server.probe);
+
+                                            Ok(())
                                         }
                                     }
                                 });
@@ -672,38 +350,26 @@ fn main() {
                                         }
                                     }
                                 }
+
+                                result
+                            } else {
+                                Ok(())
                             }
                         }
                         Request::Uninterest(name) => server.uninterest(Token(command.client), &name),
-                        Request::Register(req) => {
-                            if let Err(error) = server.register(req) {
-                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
-                            }
-                        }
+                        Request::Register(req) => server.register(req),
                         Request::RegisterSource(source) => {
                             worker.dataflow::<T, _, _>(|scope| {
-                                if let Err(error) = server.register_source(Box::new(source), scope) {
-                                    send_results.send(Output::Error(client, error, last_tx)).unwrap();
-                                }
-                            });
+                                server.register_source(Box::new(source), scope)
+                            })
                         }
                         Request::CreateAttribute(CreateAttribute { name, config }) => {
                             worker.dataflow::<T, _, _>(|scope| {
-                                if let Err(error) = server.context.internal.create_transactable_attribute(&name, config, scope) {
-                                    send_results.send(Output::Error(client, error, last_tx)).unwrap();
-                                }
-                            });
+                                server.context.internal.create_transactable_attribute(&name, config, scope)
+                            })
                         }
-                        Request::AdvanceDomain(name, next) => {
-                            if let Err(error) = server.advance_domain(name, next.into()) {
-                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
-                            }
-                        }
-                        Request::CloseInput(name) => {
-                            if let Err(error) = server.context.internal.close_input(name) {
-                                send_results.send(Output::Error(client, error, last_tx)).unwrap();
-                            }
-                        }
+                        Request::AdvanceDomain(name, next) => server.advance_domain(name, next.into()),
+                        Request::CloseInput(name) => server.context.internal.close_input(name),
                         Request::Disconnect => server.disconnect_client(Token(command.client)),
                         Request::Setup => unimplemented!(),
                         Request::Tick => {
@@ -720,6 +386,8 @@ fn main() {
                                     server.scheduler.borrow_mut().event_at(at, scheduler::Event::Tick);
                                 }
                             }
+
+                            Ok(())
                         }
                         Request::Status => {
                             let status = serde_json::json!({
@@ -727,11 +395,18 @@ fn main() {
                                 "message": "running",
                             });
 
-                            send_results.send(Output::Message(client, status)).unwrap();
+                            io.send.send(Output::Message(client, status)).unwrap();
+
+                            Ok(())
                         }
                         Request::Shutdown => {
-                            shutdown = true
+                            shutdown = true;
+                            Ok(())
                         }
+                    };
+
+                    if let Err(error) = result {
+                        io.send.send(Output::Error(client, error, last_tx)).unwrap();
                     }
                 }
 
@@ -777,4 +452,26 @@ fn main() {
         server.shutdown_logging(worker).unwrap();
 
     }).expect("Timely computation did not exit cleanly");
+}
+
+fn options() -> Options {
+    let mut opts = Options::new();
+    opts.optopt("", "port", "server port", "PORT");
+    opts.optopt(
+        "",
+        "tick",
+        "advance domain at a regular interval",
+        "SECONDS",
+    );
+    opts.optflag(
+        "",
+        "manual-advance",
+        "forces clients to call AdvanceDomain explicitely",
+    );
+    opts.optflag("", "enable-logging", "enable log event sources");
+    opts.optflag("", "enable-history", "enable historical queries");
+    opts.optflag("", "enable-optimizer", "enable WCO queries");
+    opts.optflag("", "enable-meta", "enable queries on the query graph");
+
+    opts
 }

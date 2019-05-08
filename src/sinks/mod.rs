@@ -35,7 +35,7 @@ pub struct SinkingContext {
 /// An external system that wants to receive result diffs.
 pub trait Sinkable<T>
 where
-    T: Timestamp + Lattice,
+    T: Timestamp + Lattice + std::convert::Into<Time>,
 {
     /// Creates a timely operator feeding dataflow outputs to a
     /// specialized data sink.
@@ -45,7 +45,7 @@ where
         pact: P,
         probe: &mut ProbeHandle<T>,
         context: SinkingContext,
-    ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
+    ) -> Result<Option<Stream<S, Output>>, Error>
     where
         S: Scope<Timestamp = T>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<T>>;
@@ -64,14 +64,17 @@ pub enum Sink {
     AssocIn(AssocIn),
 }
 
-impl<T: Timestamp + Lattice + Default> Sinkable<T> for Sink {
+impl<T> Sinkable<T> for Sink
+where
+    T: Timestamp + Lattice + Default + std::convert::Into<Time>,
+{
     fn sink<S, P>(
         &self,
         stream: &Stream<S, ResultDiff<T>>,
         pact: P,
         probe: &mut ProbeHandle<T>,
         context: SinkingContext,
-    ) -> Result<Option<Stream<S, Output<S::Timestamp>>>, Error>
+    ) -> Result<Option<Stream<S, Output>>, Error>
     where
         S: Scope<Timestamp = T>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<T>>,

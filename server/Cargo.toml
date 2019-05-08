@@ -15,7 +15,6 @@ declarative-dataflow = { path = "../", features = ["serde_json", "uuid"] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"
-rmp-serde = "0.13.7"
 mio = "0.6.16"
 mio-extras = "2.0.5"
 slab = "0.4.1"
@@ -23,7 +22,6 @@ ws = { git = "https://github.com/comnik/ws-rs", rev = "8312a820959828a0022008495
 log = "0.4"
 env_logger = "0.5.6"
 getopts = "0.2.18"
-itertools = "0.8.0"
 
 [features]
 blocking = []

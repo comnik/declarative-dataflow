@@ -12,7 +12,7 @@ use differential_dataflow::lattice::Lattice;
 use serde_json::map::Map;
 use serde_json::Value::Object;
 
-use crate::{Error, Output, ResultDiff};
+use crate::{Error, Output, ResultDiff, Time};
 
 use super::{Sinkable, SinkingContext};
 
@@ -32,7 +32,7 @@ pub struct AssocIn {
 
 impl<T> Sinkable<T> for AssocIn
 where
-    T: Timestamp + Lattice,
+    T: Timestamp + Lattice + std::convert::Into<Time>,
 {
     fn sink<S, P>(
         &self,
@@ -40,7 +40,7 @@ where
         pact: P,
         _probe: &mut ProbeHandle<T>,
         context: SinkingContext,
-    ) -> Result<Option<Stream<S, Output<T>>>, Error>
+    ) -> Result<Option<Stream<S, Output>>, Error>
     where
         S: Scope<Timestamp = T>,
         P: ParallelizationContract<S::Timestamp, ResultDiff<T>>,
@@ -93,7 +93,7 @@ where
                                     Output::Json(
                                         name.clone(),
                                         map.remove(key).unwrap(),
-                                        t.clone(),
+                                        t.clone().into(),
                                         1,
                                     )
                                 }));
@@ -111,7 +111,12 @@ where
                                                 snapshot = &map[key];
                                             }
                                         }
-                                        Output::Json(name.clone(), snapshot.clone(), t.clone(), 1)
+                                        Output::Json(
+                                            name.clone(),
+                                            snapshot.clone(),
+                                            t.clone().into(),
+                                            1,
+                                        )
                                     },
                                 ));
                             }

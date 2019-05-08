@@ -69,8 +69,6 @@ pub type TxId = u64;
 pub struct Interest {
     /// The name of a previously registered dataflow.
     pub name: String,
-    /// Result offset holding client token (for multi-tenant flows).
-    pub tenant: Option<usize>,
     /// Granularity at which to send results. None indicates no delay.
     pub granularity: Option<Time>,
     /// An optional sink configuration.
@@ -162,10 +160,6 @@ where
     pub context: Context<T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, HashSet<Token>>,
-    /// Mapping from client tokens to the workers managing their
-    /// connections. Only maintained for clients participating in
-    /// multi-tenant queries.
-    pub tenant_owner: Rc<RefCell<HashMap<Token, u64>>>,
     // Mapping from query names to their shutdown handles.
     shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
@@ -275,7 +269,6 @@ where
                 underconstrained: HashSet::new(),
             },
             interests: HashMap::new(),
-            tenant_owner: Rc::new(RefCell::new(HashMap::new())),
             shutdown_handles: HashMap::new(),
             probe: ProbeHandle::new(),
             scheduler: Rc::new(RefCell::new(Scheduler::new())),
@@ -455,7 +448,7 @@ where
 
     /// Handles an Uninterest request, possibly cleaning up dataflows
     /// that are no longer interesting to any client.
-    pub fn uninterest(&mut self, client: Token, name: &str) {
+    pub fn uninterest(&mut self, client: Token, name: &str) -> Result<(), Error> {
         // All workers keep track of every client's interests, s.t. they
         // know when to clean up unused dataflows.
         if let Some(entry) = self.interests.get_mut(name) {
@@ -466,17 +459,19 @@ where
                 self.interests.remove(name);
             }
         }
+
+        Ok(())
     }
 
     /// Cleans up all bookkeeping state for the specified client.
-    pub fn disconnect_client(&mut self, client: Token) {
+    pub fn disconnect_client(&mut self, client: Token) -> Result<(), Error> {
         let names: Vec<String> = self.interests.keys().cloned().collect();
 
         for query_name in names.iter() {
-            self.uninterest(client, query_name);
+            self.uninterest(client, query_name)?
         }
 
-        self.tenant_owner.borrow_mut().remove(&client);
+        Ok(())
     }
 
     /// Returns true iff the probe is behind any input handle. Mostly
