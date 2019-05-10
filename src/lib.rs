@@ -84,13 +84,22 @@ pub enum Value {
     Real(fixed::types::I16F16),
 }
 
-#[cfg(feature = "uuid")]
 impl Value {
+    /// Helper to create an Aid value from a string representation.
+    pub fn aid(v: &str) -> Self {
+        Value::Aid(v.to_string())
+    }
+
     /// Helper to create a UUID value from a string representation.
+    #[cfg(feature = "uuid")]
     pub fn uuid_str(v: &str) -> Self {
         let uuid = Uuid::parse_str(v).expect("failed to parse UUID");
         Value::Uuid(uuid)
     }
+}
+
+impl std::convert::From<&str> for Value {
+    fn from(v: &str) -> Self { Value::String(v.to_string()) }
 }
 
 #[cfg(feature = "real")]
