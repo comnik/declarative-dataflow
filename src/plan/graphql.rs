@@ -8,10 +8,12 @@ use differential_dataflow::lattice::Lattice;
 
 use graphql_parser::parse_query;
 use graphql_parser::query::{Definition, Document, OperationDefinition, Selection, SelectionSet};
+use graphql_parser::query::{Name, Value};
 
-use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::plan::{Plan, Pull, PullLevel};
-use crate::Aid;
+use crate::binding::Binding;
+use crate::plan::{gensym, Dependencies, ImplContext, Implementable};
+use crate::plan::{Hector, Plan, Pull, PullLevel};
+use crate::{Aid, Var};
 use crate::{Implemented, ShutdownHandle, VariableMap};
 
 /// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`.
@@ -82,7 +84,7 @@ impl IntoPaths for OperationDefinition {
 
         match self {
             Query(_) => unimplemented!(),
-            SelectionSet(selection_set) => selection_set_to_paths(&selection_set, &vec![]),
+            SelectionSet(selection_set) => selection_set_to_paths(&selection_set, &vec![], &vec![]),
             _ => unimplemented!(),
         }
     }
@@ -101,6 +103,7 @@ impl IntoPaths for OperationDefinition {
 /// part of a `PullLevel`'s `pull_attributes`.
 fn selection_set_to_paths(
     selection_set: &SelectionSet,
+    arguments: &Vec<(Name, Value)>,
     parent_path: &Vec<String>,
 ) -> Vec<PullLevel<Plan>> {
     // We will first gather the attributes that need to be retrieved
@@ -132,7 +135,7 @@ fn selection_set_to_paths(
                     let mut parent_path = parent_path.to_vec();
                     parent_path.push(field.name.to_string());
 
-                    selection_set_to_paths(&field.selection_set, &parent_path)
+                    selection_set_to_paths(&field.selection_set, &field.arguments, &parent_path)
                 } else {
                     vec![]
                 }
@@ -161,13 +164,38 @@ fn selection_set_to_paths(
                 )),
             }
         } else {
-            // We select children via a [?e a ?v] clause.
+            // We select children via [?e a ?v] clauses.
+            let mut variables = Vec::with_capacity(parent_path.len());
+            let mut bindings = Vec::with_capacity(parent_path.len());
+
+            variables.push(0 as Var);
+
+            for aid in parent_path.iter() {
+                let parent = *variables.last().unwrap();
+                let child = variables.len() as Var;
+                variables.push(child);
+
+                bindings.push(Binding::attribute(parent, aid, child));
+            }
+
+            let this = variables.last().unwrap();
+
+            for (aid, v) in arguments.iter() {
+                let vsym = gensym();
+
+                bindings.push(Binding::attribute(*this, aid, vsym));
+                bindings.push(Binding::constant(vsym, v.clone().into()));
+            }
+
             PullLevel {
                 pull_attributes,
                 path_attributes: parent_path.to_vec(),
-                pull_variable: 1,
+                pull_variable: *this,
                 variables: vec![],
-                plan: Box::new(Plan::MatchA(0, parent_path.last().unwrap().to_string(), 1)),
+                plan: Box::new(Plan::Hector(Hector {
+                    variables,
+                    bindings,
+                })),
             }
         };
 
@@ -205,5 +233,16 @@ impl Implementable for GraphQl {
         };
 
         parsed.implement(nested, local_arrangements, context)
+    }
+}
+
+impl std::convert::From<Value> for crate::Value {
+    fn from(v: Value) -> crate::Value {
+        match v {
+            Value::Int(v) => crate::Value::Number(v.as_i64().expect("failed to convert to i64")),
+            Value::String(v) => crate::Value::String(v),
+            Value::Boolean(v) => crate::Value::Bool(v),
+            _ => unimplemented!(),
+        }
     }
 }

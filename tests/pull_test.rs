@@ -31,6 +31,8 @@ fn run_cases(mut cases: Vec<Case>) {
             let plan = case.plan.clone();
             let root_plan = case.root_plan.clone();
 
+            dbg!(&plan);
+
             if let Some(ref root_plan) = root_plan {
                 deps = Dependencies::merge(deps, root_plan.dependencies());
             }
@@ -43,14 +45,14 @@ fn run_cases(mut cases: Vec<Case>) {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.attributes.iter() {
+                    let mut config = AttributeConfig::tx_time(InputSemantics::Raw);
+                    // @TODO get rid of this eventually, we only need delta queries
+                    config.enable_wco = true;
+
                     server
                         .context
                         .internal
-                        .create_transactable_attribute(
-                            dep,
-                            AttributeConfig::tx_time(InputSemantics::Raw),
-                            scope,
-                        )
+                        .create_transactable_attribute(dep, config, scope)
                         .unwrap();
                 }
 
@@ -58,10 +60,10 @@ fn run_cases(mut cases: Vec<Case>) {
                     server
                         .register(Register {
                             rules: vec![Rule {
-                                name: "root".to_string(),
+                                name: "hero".to_string(),
                                 plan: root_plan,
                             }],
-                            publish: vec!["root".to_string()],
+                            publish: vec!["hero".to_string()],
                         })
                         .unwrap();
                 }
@@ -329,71 +331,106 @@ fn pull() {
 
 #[cfg(feature = "graphql")]
 #[test]
+#[rustfmt::skip]
 fn graph_ql() {
     use declarative_dataflow::plan::GraphQl;
 
-    run_cases(vec![{
-        let q = "{root {name age height mass}}";
-        Case {
-            description: q,
-            plan: Plan::GraphQl(GraphQl::new(q.to_string())),
-            root_plan: Some(Plan::MatchA(0, "hero".to_string(), 1)),
-            transactions: vec![vec![
-                TxData::add(100, "name", String("Alice".to_string())),
-                TxData::add(100, "hero", Eid(300)),
-                TxData::add(200, "name", String("Bob".to_string())),
-                TxData::add(200, "hero", Eid(400)),
-                TxData::add(300, "name", String("Mabel".to_string())),
-                TxData::add(300, "age", Number(13)),
-                TxData::add(400, "name", String("Dipper".to_string())),
-                TxData::add(400, "age", Number(12)),
-            ]],
-            expectations: vec![vec![
-                (
-                    vec![
-                        Eid(100),
-                        Aid("root".to_string()),
-                        Eid(300),
-                        Aid("age".to_string()),
-                        Number(13),
-                    ],
-                    0,
-                    1,
-                ),
-                (
-                    vec![
-                        Eid(100),
-                        Aid("root".to_string()),
-                        Eid(300),
-                        Aid("name".to_string()),
-                        String("Mabel".to_string()),
-                    ],
-                    0,
-                    1,
-                ),
-                (
-                    vec![
-                        Eid(200),
-                        Aid("root".to_string()),
-                        Eid(400),
-                        Aid("age".to_string()),
-                        Number(12),
-                    ],
-                    0,
-                    1,
-                ),
-                (
-                    vec![
-                        Eid(200),
-                        Aid("root".to_string()),
-                        Eid(400),
-                        Aid("name".to_string()),
-                        String("Dipper".to_string()),
-                    ],
-                    0,
-                    1,
-                ),
-            ]],
+    let transactions = vec![vec![
+        TxData::add(100, "hero", Eid(100)),
+        TxData::add(100, "hero", Eid(200)),
+        TxData::add(100, "hero", Eid(300)),
+        TxData::add(100, "hero", Eid(400)),
+        
+        TxData::add(100, "name", Value::from("Alice")),
+        TxData::add(200, "name", Value::from("Bob")),
+        TxData::add(300, "name", Value::from("Mabel")),
+        TxData::add(400, "name", Value::from("Dipper")),
+        
+        TxData::add(300, "bested", Eid(400)),
+        TxData::add(200, "bested", Eid(100)),
+
+        TxData::add(300, "age", Number(13)),
+        TxData::add(400, "age", Number(12)),
+    ]];
+
+    run_cases(vec![
+        {
+            let q = "{hero {name age height mass}}";
+
+            let expectations = vec![vec![
+                (vec![Eid(100), Value::aid("hero"), Eid(100), Value::aid("name"), Value::from("Alice")], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(200), Value::aid("name"), Value::from("Bob")], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(300), Value::aid("name"), Value::from("Mabel")], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(400), Value::aid("name"), Value::from("Dipper")], 0, 1),
+                
+                (vec![Eid(100), Value::aid("hero"), Eid(300), Value::aid("age"), Number(13)], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(400), Value::aid("age"), Number(12)], 0, 1),
+            ]];
+            
+            Case {
+                description: q,
+                plan: Plan::GraphQl(GraphQl::new(q.to_string())),
+                root_plan: Some(Plan::MatchA(0, "hero".to_string(), 1)),
+                transactions: transactions.clone(),
+                expectations,
+            }
+        },
+        {
+            let q = "{hero {name bested { name }}}";
+            
+            let expectations = vec![vec![
+                (vec![Eid(100), Value::aid("hero"), Eid(100), Value::aid("name"), Value::from("Alice")], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(200), Value::aid("name"), Value::from("Bob")], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(300), Value::aid("name"), Value::from("Mabel")], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(400), Value::aid("name"), Value::from("Dipper")], 0, 1),
+
+                (vec![Eid(100), Value::aid("hero"), Eid(300), Value::aid("bested"), Eid(400), Value::aid("name"), Value::from("Dipper")], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(200), Value::aid("bested"), Eid(100), Value::aid("name"), Value::from("Alice")], 0, 1),
+            ]];
+            
+            Case {
+                description: q,
+                plan: Plan::GraphQl(GraphQl::new(q.to_string())),
+                root_plan: Some(Plan::MatchA(0, "hero".to_string(), 1)),
+                transactions: transactions.clone(),
+                expectations,
+            }
+        },
+        {
+            let q = "{hero(name: \"Mabel\") {bested { name age }}}";
+
+            let expectations = vec![vec![
+                (vec![Eid(100), Value::aid("hero"), Eid(300),
+                      Value::aid("bested"), Eid(400),
+                      Value::aid("name"), Value::from("Dipper")
+                ], 0, 1),
+            ]];
+
+            Case {
+                description: q,
+                plan: Plan::GraphQl(GraphQl::new(q.to_string())),
+                root_plan: Some(Plan::MatchA(0, "hero".to_string(), 1)),
+                transactions: transactions.clone(),
+                expectations,
+            }
+        },
+        {
+            let q = "{hero {bested(name: \"Alice\") { name age }}}";
+
+            let expectations = vec![vec![
+                (vec![Eid(100), Value::aid("hero"), Eid(300),
+                      Value::aid("bested"), Eid(400),
+                      Value::aid("name"), Value::from("Dipper")
+                ], 0, 1),
+            ]];
+
+            Case {
+                description: q,
+                plan: Plan::GraphQl(GraphQl::new(q.to_string())),
+                root_plan: Some(Plan::MatchA(0, "hero".to_string(), 1)),
+                transactions: transactions.clone(),
+                expectations,
+            }
         }
-    }]);
+    ]);
 }

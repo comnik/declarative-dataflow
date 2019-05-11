@@ -99,7 +99,9 @@ impl Value {
 }
 
 impl std::convert::From<&str> for Value {
-    fn from(v: &str) -> Self { Value::String(v.to_string()) }
+    fn from(v: &str) -> Self {
+        Value::String(v.to_string())
+    }
 }
 
 #[cfg(feature = "real")]
