@@ -8,4 +8,4 @@ script:
   - cargo fmt --all -- --check
   - cargo clippy --all-targets --all-features
   - cargo build
-  - cargo test --all-features
+  - cargo test --features "uuid, real"
