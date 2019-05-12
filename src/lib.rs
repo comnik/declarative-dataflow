@@ -343,9 +343,8 @@ pub struct AttributeConfig {
     /// How close indexed traces should follow the computation
     /// frontier.
     pub trace_slack: Option<Time>,
-    // @TODO
-    // /// Will this attribute require reverse indices?
-    // pub enable_reverse: bool,
+    /// Will this attribute require reverse indices?
+    pub enable_reverse: bool,
     /// Will this attribute be used in worst-case optimal queries?
     pub enable_wco: bool,
     /// Does this attribute care about its respective time
@@ -359,7 +358,7 @@ impl Default for AttributeConfig {
         AttributeConfig {
             input_semantics: InputSemantics::Raw,
             trace_slack: None,
-            // enable_reverse: true,
+            enable_reverse: false,
             enable_wco: false,
             timeless: false,
         }

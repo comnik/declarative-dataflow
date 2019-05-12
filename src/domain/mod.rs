@@ -131,12 +131,15 @@ where
                 name.to_string(),
                 tuples.arrange_named(&format!("Proposals({})", &name)).trace,
             );
-            self.reverse_propose.insert(
-                name.to_string(),
-                tuples_reverse
-                    .arrange_named(&format!("_Proposals({})", &name))
-                    .trace,
-            );
+
+            if config.enable_reverse {
+                self.reverse_propose.insert(
+                    name.to_string(),
+                    tuples_reverse
+                        .arrange_named(&format!("_Proposals({})", &name))
+                        .trace,
+                );
+            }
 
             // CardinalityOne is a special case, because count,
             // propose, and validate are all essentially the same.
