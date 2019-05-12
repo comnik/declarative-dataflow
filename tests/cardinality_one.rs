@@ -316,6 +316,8 @@ fn cardinality_one_unordered() {
 }
 
 #[test]
+#[cfg(feature = "uuid")]
+#[cfg(feature = "real")]
 fn bitemporal() {
     vec![
         Case {
