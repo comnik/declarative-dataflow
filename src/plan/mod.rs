@@ -51,7 +51,7 @@ pub use self::transform::{Function, Transform};
 pub use self::union::Union;
 
 static ID: AtomicUsize = AtomicUsize::new(0);
-static SYM: AtomicUsize = AtomicUsize::new(0);
+static SYM: AtomicUsize = AtomicUsize::new(std::usize::MAX);
 
 /// @FIXME
 pub fn next_id() -> Eid {

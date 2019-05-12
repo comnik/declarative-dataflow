@@ -84,10 +84,35 @@ impl IntoPaths for OperationDefinition {
 
         match self {
             Query(_) => unimplemented!(),
-            SelectionSet(selection_set) => selection_set_to_paths(&selection_set, &vec![], &vec![]),
+            SelectionSet(selection_set) => {
+                let empty_plan = Hector {
+                    variables: vec![0],
+                    bindings: vec![],
+                };
+                selection_set_to_paths(&selection_set, empty_plan, &vec![], &vec![])
+            }
             _ => unimplemented!(),
         }
     }
+}
+
+/// Gathers the fields that we want to pull at a specific level. These
+/// only include fields that do not refer to nested entities.
+fn pull_attributes(selection_set: &SelectionSet) -> Vec<Aid> {
+    selection_set
+        .items
+        .iter()
+        .flat_map(|item| match item {
+            Selection::Field(field) => {
+                if field.selection_set.items.is_empty() {
+                    Some(field.name.to_string())
+                } else {
+                    None
+                }
+            }
+            _ => unimplemented!(),
+        })
+        .collect::<Vec<Aid>>()
 }
 
 /// Takes a GraphQL `SelectionSet` and recursively transforms it into
@@ -103,29 +128,47 @@ impl IntoPaths for OperationDefinition {
 /// part of a `PullLevel`'s `pull_attributes`.
 fn selection_set_to_paths(
     selection_set: &SelectionSet,
+    mut plan: Hector,
     arguments: &Vec<(Name, Value)>,
     parent_path: &Vec<String>,
 ) -> Vec<PullLevel<Plan>> {
+    // We must first construct the correct plan for this level,
+    // starting from that for the parent level. We do this even if no
+    // attributes are actually pulled at this level. In that case we
+    // will not synthesize this plan, but it still is required in
+    // order to pass all necessary bindings to nested levels.
+
+    // For any level after the first, we must introduce a binding
+    // linking the parent level to the current one.
+    if !parent_path.is_empty() {
+        let parent = *plan.variables.last().unwrap();
+        let this = plan.variables.len() as Var;
+        let aid = parent_path.last().clone().unwrap();
+
+        plan.variables.push(this);
+        plan.bindings.push(Binding::attribute(parent, aid, this));
+    }
+
+    let this = *plan.variables.last().unwrap();
+
+    // Then we must introduce additional bindings for any arguments.
+    for (aid, v) in arguments.iter() {
+        // This variable is only relevant for tying the two clauses
+        // together, we do not want to include it into the output
+        // projection.
+        let vsym = gensym();
+
+        plan.bindings.push(Binding::attribute(this, aid, vsym));
+        plan.bindings
+            .push(Binding::constant(vsym, v.clone().into()));
+    }
+
     // We will first gather the attributes that need to be retrieved
     // at this level. These are the fields that do not refer to a
-    // nested entity.
-    let pull_attributes = selection_set
-        .items
-        .iter()
-        .flat_map(|item| match item {
-            Selection::Field(field) => {
-                if field.selection_set.items.is_empty() {
-                    Some(field.name.to_string())
-                } else {
-                    None
-                }
-            }
-            _ => unimplemented!(),
-        })
-        .collect::<Vec<Aid>>();
+    // nested entity. This is the easy part.
+    let pull_attributes = pull_attributes(selection_set);
 
-    // We then gather any nested levels that need to be transformed
-    // into their own plans.
+    // Now we process nested levels.
     let nested_levels = selection_set
         .items
         .iter()
@@ -135,7 +178,12 @@ fn selection_set_to_paths(
                     let mut parent_path = parent_path.to_vec();
                     parent_path.push(field.name.to_string());
 
-                    selection_set_to_paths(&field.selection_set, &field.arguments, &parent_path)
+                    selection_set_to_paths(
+                        &field.selection_set,
+                        plan.clone(),
+                        &field.arguments,
+                        &parent_path,
+                    )
                 } else {
                     vec![]
                 }
@@ -146,60 +194,16 @@ fn selection_set_to_paths(
 
     let mut levels = nested_levels;
 
-    // Finally we construct a plan stage for our current level.
-    if !pull_attributes.is_empty() && !parent_path.is_empty() {
-        let current_level = if parent_path.len() == 1 {
-            // @TODO
-            // The root selection of the GraphQL query is currently
-            // assumed to be defined by a named, binary query of the
-            // form (root _ ?e).
-            PullLevel {
-                pull_attributes,
-                path_attributes: parent_path.to_vec(),
-                pull_variable: 1,
-                variables: vec![],
-                plan: Box::new(Plan::NameExpr(
-                    vec![0, 1],
-                    parent_path.last().unwrap().to_string(),
-                )),
-            }
-        } else {
-            // We select children via [?e a ?v] clauses.
-            let mut variables = Vec::with_capacity(parent_path.len());
-            let mut bindings = Vec::with_capacity(parent_path.len());
-
-            variables.push(0 as Var);
-
-            for aid in parent_path.iter() {
-                let parent = *variables.last().unwrap();
-                let child = variables.len() as Var;
-                variables.push(child);
-
-                bindings.push(Binding::attribute(parent, aid, child));
-            }
-
-            let this = variables.last().unwrap();
-
-            for (aid, v) in arguments.iter() {
-                let vsym = gensym();
-
-                bindings.push(Binding::attribute(*this, aid, vsym));
-                bindings.push(Binding::constant(vsym, v.clone().into()));
-            }
-
-            PullLevel {
-                pull_attributes,
-                path_attributes: parent_path.to_vec(),
-                pull_variable: *this,
-                variables: vec![],
-                plan: Box::new(Plan::Hector(Hector {
-                    variables,
-                    bindings,
-                })),
-            }
-        };
-
-        levels.push(current_level);
+    // Here we don't actually want to include the current plan, if
+    // we're not interested in any attributes at this level.
+    if !pull_attributes.is_empty() {
+        levels.push(PullLevel {
+            pull_attributes,
+            path_attributes: parent_path.to_vec(),
+            pull_variable: this,
+            variables: vec![],
+            plan: Box::new(Plan::Hector(plan)),
+        });
     }
 
     levels

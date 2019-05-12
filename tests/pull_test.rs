@@ -404,6 +404,10 @@ fn graph_ql() {
                       Value::aid("bested"), Eid(400),
                       Value::aid("name"), Value::from("Dipper")
                 ], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(300),
+                      Value::aid("bested"), Eid(400),
+                      Value::aid("age"), Number(12)
+                ], 0, 1)
             ]];
 
             Case {
@@ -415,13 +419,29 @@ fn graph_ql() {
             }
         },
         {
-            let q = "{hero {bested(name: \"Alice\") { name age }}}";
+            let q = "{hero {bested(name: \"Dipper\") { age }}}";
 
             let expectations = vec![vec![
                 (vec![Eid(100), Value::aid("hero"), Eid(300),
                       Value::aid("bested"), Eid(400),
-                      Value::aid("name"), Value::from("Dipper")
+                      Value::aid("age"), Number(12)
                 ], 0, 1),
+            ]];
+
+            Case {
+                description: q,
+                plan: Plan::GraphQl(GraphQl::new(q.to_string())),
+                root_plan: Some(Plan::MatchA(0, "hero".to_string(), 1)),
+                transactions: transactions.clone(),
+                expectations,
+            }
+        },
+        {
+            let q = "{hero(name: \"Mabel\") {age bested(name: \"Dipper\") { age }}}";
+
+            let expectations = vec![vec![
+                (vec![Eid(100), Value::aid("hero"), Eid(300), Value::aid("age"), Number(13)], 0, 1),
+                (vec![Eid(100), Value::aid("hero"), Eid(300), Value::aid("bested"), Eid(400), Value::aid("age"), Number(12)], 0, 1),
             ]];
 
             Case {
