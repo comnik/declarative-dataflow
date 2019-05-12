@@ -643,13 +643,13 @@ where
                 });
 
                 let (e, v) = self.variables;
-                let projected = if target_variables == &[e, v] {
+                let projected = if target_variables == [e, v] {
                     tuples.as_collection(|e, v| vec![e.clone(), v.clone()])
-                } else if target_variables == &[v, e] {
+                } else if target_variables == [v, e] {
                     tuples.as_collection(|e, v| vec![v.clone(), e.clone()])
-                } else if target_variables == &[e] {
+                } else if target_variables == [e] {
                     tuples.as_collection(|e, _v| vec![e.clone()])
-                } else if target_variables == &[v] {
+                } else if target_variables == [v] {
                     tuples.as_collection(|_e, v| vec![v.clone()])
                 } else {
                     panic!("invalid projection")
@@ -683,13 +683,13 @@ where
                 });
 
                 let (e, v) = self.variables;
-                let arranged = if variables == &[e, v] {
+                let arranged = if variables == [e, v] {
                     tuples.as_collection(|e, v| (vec![e.clone(), v.clone()], vec![]))
-                } else if variables == &[v, e] {
+                } else if variables == [v, e] {
                     tuples.as_collection(|e, v| (vec![v.clone(), e.clone()], vec![]))
-                } else if variables == &[e] {
+                } else if variables == [e] {
                     tuples.as_collection(|e, v| (vec![e.clone()], vec![v.clone()]))
-                } else if variables == &[v] {
+                } else if variables == [v] {
                     tuples.as_collection(|e, v| (vec![v.clone()], vec![e.clone()]))
                 } else {
                     panic!("invalid projection")

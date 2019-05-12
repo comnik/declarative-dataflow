@@ -425,21 +425,21 @@ fn bitemporal() {
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),
                     Value::from(30.006),
-                    Some(Time::Bi(Duration::from_secs(0), 1554120030000)), // 2019-04-01T12:00:30+00:00
+                    Some(Time::Bi(Duration::from_secs(0), 1_554_120_030_000)), // 2019-04-01T12:00:30+00:00
                 ),
                 TxData(
                     1,
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),
                     Value::from(31.006),
-                    Some(Time::Bi(Duration::from_secs(0), 1554120061000)), // 2019-04-01T12:01:01+00:00
+                    Some(Time::Bi(Duration::from_secs(0), 1_554_120_061_000)), // 2019-04-01T12:01:01+00:00
                 ),
                 TxData(
                     1,
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),
                     Value::from(30.006),
-                    Some(Time::Bi(Duration::from_secs(0), 1554120150000)), // 2019-04-01T12:02:30+00:00
+                    Some(Time::Bi(Duration::from_secs(0), 1_554_120_150_000)), // 2019-04-01T12:02:30+00:00
                 ),
             ]],
             expectations: vec![vec![
@@ -448,7 +448,7 @@ fn bitemporal() {
                         Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                         Value::from(30.006),
                     ],
-                    Pair::new(Duration::from_secs(0), 1554120030000),
+                    Pair::new(Duration::from_secs(0), 1_554_120_030_000),
                     1,
                 ),
                 (
@@ -456,7 +456,7 @@ fn bitemporal() {
                         Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                         Value::from(30.006),
                     ],
-                    Pair::new(Duration::from_secs(0), 1554120061000),
+                    Pair::new(Duration::from_secs(0), 1_554_120_061_000),
                     -1,
                 ),
                 (
@@ -464,7 +464,7 @@ fn bitemporal() {
                         Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                         Value::from(31.006),
                     ],
-                    Pair::new(Duration::from_secs(0), 1554120061000),
+                    Pair::new(Duration::from_secs(0), 1_554_120_061_000),
                     1,
                 ),
                 (
@@ -472,7 +472,7 @@ fn bitemporal() {
                         Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                         Value::from(31.006),
                     ],
-                    Pair::new(Duration::from_secs(0), 1554120150000),
+                    Pair::new(Duration::from_secs(0), 1_554_120_150_000),
                     -1,
                 ),
                 (
@@ -480,7 +480,7 @@ fn bitemporal() {
                         Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                         Value::from(30.006),
                     ],
-                    Pair::new(Duration::from_secs(0), 1554120150000),
+                    Pair::new(Duration::from_secs(0), 1_554_120_150_000),
                     1,
                 ),
             ]],

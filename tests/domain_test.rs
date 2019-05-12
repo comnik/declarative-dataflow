@@ -27,7 +27,7 @@ fn test_advance_only_epoch() {
     timely::execute_directly(move |worker| {
         let mut domain = Domain::<u64>::new(0);
 
-        let (_handle, mut cap) = worker.dataflow::<u64, _, _>(|scope| {
+        let (_handle, _cap) = worker.dataflow::<u64, _, _>(|scope| {
             let ((handle, cap), pairs) =
                 scope.new_unordered_input::<((Value, Value), u64, isize)>();
 

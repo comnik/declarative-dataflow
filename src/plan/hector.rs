@@ -892,7 +892,7 @@ impl Implementable for Hector {
                                         // @TODO impl ProposeExtensionMethod for Arranged
                                         let extended = source.extend(&mut extenders[..]);
 
-                                        if let Some(_) = &logger {
+                                        if logger.is_some() {
                                             let worker_index = scope.index();
                                             let source_attribute = delta_binding.source_attribute.to_string();
                                             extended

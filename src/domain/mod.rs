@@ -143,7 +143,7 @@ where
 
             // CardinalityOne is a special case, because count,
             // propose, and validate are all essentially the same.
-            if !(config.input_semantics == InputSemantics::CardinalityOne) {
+            if config.input_semantics != InputSemantics::CardinalityOne {
                 // Count traces are only required for use in
                 // worst-case optimal joins.
                 if config.enable_wco {

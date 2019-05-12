@@ -75,7 +75,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
             let activator = Rc::new(scope.activator_for(&operator_info.address[..]));
 
             let worker_index = scope.index();
-            let num_workers = scope.peers();
+            // let num_workers = scope.peers();
 
             let reader = csv::ReaderBuilder::new()
                 .has_headers(self.has_headers)
@@ -91,7 +91,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
 
             let schema = self.schema.clone();
             let eid_offset = self.eid_offset;
-            let timestamp_offset = self.timestamp_offset;
+            // let timestamp_offset = self.timestamp_offset;
             let total_fuel: i64 = self.fuel.unwrap_or(256) as i64;
 
             // Grab scheduler handle for deferred re-activation.
@@ -116,7 +116,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
 
                     let mut sessions = Vec::with_capacity(schema.len());
                     for (idx, handle) in handles.iter_mut().enumerate() {
-                        sessions.push(handle.session(capabilities.get(idx).unwrap()));
+                        sessions.push(handle.session(&capabilities[idx]));
                     }
 
                     let time = Instant::now().duration_since(t0);
@@ -159,7 +159,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                             };
 
                             let tuple = (eid.clone(), v);
-                            sessions.get_mut(idx).unwrap().give((tuple, time, 1));
+                            sessions[idx].give((tuple, time, 1));
                         }
 
                         num_datums_read += 1;

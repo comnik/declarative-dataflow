@@ -36,7 +36,7 @@ impl<P: Implementable> Implementable for Union<P> {
     fn into_bindings(&self) -> Vec<Binding> {
         self.plans
             .iter()
-            .flat_map(|plan| plan.into_bindings())
+            .flat_map(Implementable::into_bindings)
             .collect()
     }
 

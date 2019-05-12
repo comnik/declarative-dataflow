@@ -44,7 +44,7 @@ impl<T: Timestamp + Clone, D: Data, R: Monoid> UnorderedSession<T, D, R> {
     /// Adds to the weight of an element in the collection.
     pub fn update(&mut self, element: D, change: R) {
         if self.buffer.len() == self.buffer.capacity() {
-            if self.buffer.len() > 0 {
+            if !self.buffer.is_empty() {
                 self.handle
                     .session(self.cap.clone())
                     .give_iterator(self.buffer.drain(..));
@@ -59,7 +59,7 @@ impl<T: Timestamp + Clone, D: Data, R: Monoid> UnorderedSession<T, D, R> {
     pub fn update_at(&mut self, element: D, time: T, change: R) {
         assert!(self.cap.time().less_equal(&time));
         if self.buffer.len() == self.buffer.capacity() {
-            if self.buffer.len() > 0 {
+            if !self.buffer.is_empty() {
                 self.handle
                     .session(self.cap.clone())
                     .give_iterator(self.buffer.drain(..));
@@ -109,10 +109,11 @@ impl<T: Timestamp + Clone, D: Data, R: Monoid> UnorderedSession<T, D, R> {
     pub fn epoch(&self) -> &T {
         &self.time
     }
-    /// Reveals the current time of the session.
-    pub fn time(&self) -> &T {
-        &self.time
-    }
+
+    // /// Reveals the current time of the session.
+    // pub fn time(&self) -> &T {
+    //     &self.time
+    // }
 
     /// Closes the input, flushing and sealing the wrapped timely input.
     pub fn close(self) {}

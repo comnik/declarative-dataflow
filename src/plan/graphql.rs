@@ -64,7 +64,7 @@ impl IntoPaths for Document {
     fn into_paths(&self) -> Vec<PullLevel<Plan>> {
         self.definitions
             .iter()
-            .flat_map(|definition| definition.into_paths())
+            .flat_map(IntoPaths::into_paths)
             .collect()
     }
 }
@@ -89,7 +89,7 @@ impl IntoPaths for OperationDefinition {
                     variables: vec![0],
                     bindings: vec![],
                 };
-                selection_set_to_paths(&selection_set, empty_plan, &vec![], &vec![])
+                selection_set_to_paths(&selection_set, empty_plan, &[], &[])
             }
             _ => unimplemented!(),
         }
@@ -129,8 +129,8 @@ fn pull_attributes(selection_set: &SelectionSet) -> Vec<Aid> {
 fn selection_set_to_paths(
     selection_set: &SelectionSet,
     mut plan: Hector,
-    arguments: &Vec<(Name, Value)>,
-    parent_path: &Vec<String>,
+    arguments: &[(Name, Value)],
+    parent_path: &[String],
 ) -> Vec<PullLevel<Plan>> {
     // We must first construct the correct plan for this level,
     // starting from that for the parent level. We do this even if no
@@ -143,7 +143,7 @@ fn selection_set_to_paths(
     if !parent_path.is_empty() {
         let parent = *plan.variables.last().unwrap();
         let this = plan.variables.len() as Var;
-        let aid = parent_path.last().clone().unwrap();
+        let aid = parent_path.last().unwrap();
 
         plan.variables.push(this);
         plan.bindings.push(Binding::attribute(parent, aid, this));
