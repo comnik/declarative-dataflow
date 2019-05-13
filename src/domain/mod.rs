@@ -132,7 +132,7 @@ where
                 tuples.arrange_named(&format!("Proposals({})", &name)).trace,
             );
 
-            if config.enable_reverse {
+            if config.enable_reverse || config.enable_wco {
                 self.reverse_propose.insert(
                     name.to_string(),
                     tuples_reverse
