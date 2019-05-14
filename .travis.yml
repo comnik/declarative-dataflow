@@ -8,4 +8,6 @@ script:
   - cargo fmt --all -- --check
   - cargo clippy --all-targets --all-features
   - cargo build
-  - cargo test
+  - cargo test --test hector_test
+  - cargo test --test query_test
+  - cargo test --all --exclude hector_test --exclude query_test
