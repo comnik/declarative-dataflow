@@ -9,8 +9,10 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Hector, Implementable, Union};
 use declarative_dataflow::server::Server;
+use declarative_dataflow::timestamp::Time;
 use declarative_dataflow::{Aid, Value};
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData};
+use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
+use declarative_dataflow::{Plan, Rule, TxData};
 use Value::{Eid, Number, String};
 
 struct Case {
