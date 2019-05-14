@@ -10,7 +10,8 @@
           }
         },
         "input_semantics": "CardinalityMany",
-        "enable_wco": false,
+        "query_support": "AdaptiveWCO",
+        "index_direction": "Forward",
         "timeless": false
       }
     }
@@ -26,7 +27,8 @@
           }
         },
         "input_semantics": "CardinalityMany",
-        "enable_wco": false,
+        "query_support": "AdaptiveWCO",
+        "index_direction": "Forward",
         "timeless": false
       }
     }
@@ -42,7 +44,8 @@
           }
         },
         "input_semantics": "CardinalityMany",
-        "enable_wco": false,
+        "query_support": "AdaptiveWCO",
+        "index_direction": "Forward",
         "timeless": false
       }
     }
@@ -58,20 +61,10 @@
           }
         },
         "input_semantics": "CardinalityMany",
-        "enable_wco": false,
+        "query_support": "AdaptiveWCO",
+        "index_direction": "Forward",
         "timeless": false
       }
-    }
-  },
-  {
-    "Register": {
-      "rules": [
-        {
-          "name": "hero",
-          "plan": {"MatchA": [0, "hero", 1]}
-        }
-      ],
-      "publish": ["hero"]
     }
   }
 ]

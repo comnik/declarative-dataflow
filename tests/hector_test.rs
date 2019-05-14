@@ -11,7 +11,9 @@ use declarative_dataflow::binding::{AsBinding, Binding};
 use declarative_dataflow::plan::hector::{plan_order, source_conflicts};
 use declarative_dataflow::plan::{Hector, Implementable};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
+use declarative_dataflow::{Plan, Rule, TxData, Value};
 use Value::{Bool, Eid, Number, String};
 
 struct Case {
@@ -373,8 +375,12 @@ fn run_hector_cases() {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.attributes.iter() {
-                    let mut config = AttributeConfig::tx_time(InputSemantics::Raw);
-                    config.enable_wco = true;
+                    let config = AttributeConfig {
+                        trace_slack: Some(Time::TxId(1)),
+                        query_support: QuerySupport::AdaptiveWCO,
+                        index_direction: IndexDirection::Both,
+                        ..Default::default()
+                    };
 
                     server
                         .context

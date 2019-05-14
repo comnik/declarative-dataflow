@@ -2,8 +2,9 @@ use std::sync::mpsc::channel;
 
 use declarative_dataflow::plan::{Join, Project};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
-use InputSemantics::Raw;
+use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
+use declarative_dataflow::{Plan, Rule, TxData, Value};
 use Value::{Eid, String};
 
 #[test]
@@ -16,10 +17,17 @@ fn match_ea_after_input() {
         let plan = Plan::MatchEA(1, ":name".to_string(), 1);
 
         worker.dataflow::<u64, _, _>(|scope| {
+            let config = AttributeConfig {
+                index_direction: IndexDirection::Both,
+                query_support: QuerySupport::Basic,
+                trace_slack: Some(Time::TxId(1)),
+                ..Default::default()
+            };
+
             server
                 .context
                 .internal
-                .create_transactable_attribute(":name", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute(":name", config, scope)
                 .unwrap();
         });
 
@@ -76,14 +84,28 @@ fn join_after_input() {
                 .internal
                 .create_transactable_attribute(
                     ":transfer/from",
-                    AttributeConfig::tx_time(Raw),
+                    AttributeConfig {
+                        index_direction: IndexDirection::Both,
+                        query_support: QuerySupport::Basic,
+                        trace_slack: Some(Time::TxId(1)),
+                        ..Default::default()
+                    },
                     scope,
                 )
                 .unwrap();
             server
                 .context
                 .internal
-                .create_transactable_attribute(":user/id", AttributeConfig::tx_time(Raw), scope)
+                .create_transactable_attribute(
+                    ":user/id",
+                    AttributeConfig {
+                        index_direction: IndexDirection::Both,
+                        query_support: QuerySupport::Basic,
+                        trace_slack: Some(Time::TxId(1)),
+                        ..Default::default()
+                    },
+                    scope,
+                )
                 .unwrap();
         });
 

@@ -9,7 +9,9 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Implementable, Join, Project};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{q, Aid, AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{q, Aid, Plan, Rule, TxData, Value};
+use declarative_dataflow::{AttributeConfig, IndexDirection, InputSemantics, QuerySupport};
 use Value::{Eid, Number, String};
 
 struct Case {
@@ -50,8 +52,13 @@ fn run_cases(mut cases: Vec<Case>) {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
-                    let mut config = AttributeConfig::tx_time(InputSemantics::CardinalityMany);
-                    config.enable_wco = true;
+                    let config = AttributeConfig {
+                        input_semantics: InputSemantics::CardinalityMany,
+                        trace_slack: Some(Time::TxId(1)),
+                        query_support: QuerySupport::AdaptiveWCO,
+                        index_direction: IndexDirection::Both,
+                        ..Default::default()
+                    };
 
                     server
                         .context

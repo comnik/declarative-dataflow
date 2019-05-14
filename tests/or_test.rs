@@ -51,8 +51,12 @@ fn run_cases(mut cases: Vec<Case>) {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
-                    let mut config = AttributeConfig::tx_time(InputSemantics::Raw);
-                    config.enable_wco = true;
+                    let config = AttributeConfig {
+                        trace_slack: Some(Time::TxId(1)),
+                        query_support: QuerySupport::AdaptiveWCO,
+                        index_direction: IndexDirection::Both,
+                        ..Default::default()
+                    };
 
                     server
                         .context

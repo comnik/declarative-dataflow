@@ -8,7 +8,9 @@ use timely::dataflow::operators::Operator;
 
 use declarative_dataflow::plan::{Dependencies, Implementable, Pull, PullLevel};
 use declarative_dataflow::server::{Register, Server};
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
+use declarative_dataflow::{Plan, Rule, TxData, Value};
 use Value::{Aid, Bool, Eid, Number, String};
 
 struct Case {
@@ -45,9 +47,15 @@ fn run_cases(mut cases: Vec<Case>) {
 
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.attributes.iter() {
-                    let mut config = AttributeConfig::tx_time(InputSemantics::Raw);
-                    // @TODO get rid of this eventually, we only need delta queries
-                    config.enable_wco = true;
+                    let config = AttributeConfig {
+                        trace_slack: Some(Time::TxId(1)),
+                        // @TODO Forward delta should be enough eventually
+                        query_support: QuerySupport::AdaptiveWCO,
+                        index_direction: IndexDirection::Both,
+                        // query_support: QuerySupport::Delta,
+                        // index_direction: IndexDirection::Forward,
+                        ..Default::default()
+                    };
 
                     server
                         .context

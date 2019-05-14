@@ -51,13 +51,13 @@ where
             variables.push(left.variables.1);
             context
                 .forward_propose(&left.source_attribute)
-                .unwrap()
+                .expect("forward propose trace does not exist")
                 .import_core(&nested.parent, &left.source_attribute)
         } else if target == left.variables.1 {
             variables.push(left.variables.0);
             context
                 .reverse_propose(&left.source_attribute)
-                .unwrap()
+                .expect("reverse propose trace does not exist")
                 .import_core(&nested.parent, &left.source_attribute)
         } else {
             panic!("Unbound target variable in Attribute<->Attribute join.");
@@ -78,13 +78,13 @@ where
             variables.push(right.variables.1);
             context
                 .forward_propose(&right.source_attribute)
-                .unwrap()
+                .expect("forward propose trace does not exist")
                 .import_core(&nested.parent, &right.source_attribute)
         } else if target == right.variables.1 {
             variables.push(right.variables.0);
             context
                 .reverse_propose(&right.source_attribute)
-                .unwrap()
+                .expect("reverse propose trace does not exist")
                 .import_core(&nested.parent, &right.source_attribute)
         } else {
             panic!("Unbound target variable in Attribute<->Attribute join.");

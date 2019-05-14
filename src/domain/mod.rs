@@ -16,7 +16,8 @@ use differential_dataflow::AsCollection;
 
 use crate::operators::CardinalityOne;
 use crate::{Aid, Error, Rewind, TxData, Value};
-use crate::{AttributeConfig, InputSemantics, RelationConfig, RelationHandle};
+use crate::{AttributeConfig, IndexDirection, InputSemantics, QuerySupport};
+use crate::{RelationConfig, RelationHandle};
 use crate::{TraceKeyHandle, TraceValHandle};
 
 mod unordered_session;
@@ -132,7 +133,7 @@ where
                 tuples.arrange_named(&format!("Proposals({})", &name)).trace,
             );
 
-            if config.enable_reverse || config.enable_wco {
+            if config.index_direction == IndexDirection::Both {
                 self.reverse_propose.insert(
                     name.to_string(),
                     tuples_reverse
@@ -146,7 +147,7 @@ where
             if config.input_semantics != InputSemantics::CardinalityOne {
                 // Count traces are only required for use in
                 // worst-case optimal joins.
-                if config.enable_wco {
+                if config.query_support == QuerySupport::AdaptiveWCO {
                     self.forward_count.insert(
                         name.to_string(),
                         tuples
@@ -154,29 +155,37 @@ where
                             .arrange_named(&format!("Counts({})", name))
                             .trace,
                     );
-                    self.reverse_count.insert(
-                        name.to_string(),
-                        tuples_reverse
-                            .map(|(k, _v)| (k, ()))
-                            .arrange_named(&format!("_Counts({})", name))
-                            .trace,
-                    );
+
+                    if config.index_direction == IndexDirection::Both {
+                        self.reverse_count.insert(
+                            name.to_string(),
+                            tuples_reverse
+                                .map(|(k, _v)| (k, ()))
+                                .arrange_named(&format!("_Counts({})", name))
+                                .trace,
+                        );
+                    }
                 }
 
-                self.forward_validate.insert(
-                    name.to_string(),
-                    tuples
-                        .map(|t| (t, ()))
-                        .arrange_named(&format!("Validations({})", &name))
-                        .trace,
-                );
-                self.reverse_validate.insert(
-                    name.to_string(),
-                    tuples_reverse
-                        .map(|t| (t, ()))
-                        .arrange_named(&format!("_Validations({})", &name))
-                        .trace,
-                );
+                if config.query_support >= QuerySupport::Delta {
+                    self.forward_validate.insert(
+                        name.to_string(),
+                        tuples
+                            .map(|t| (t, ()))
+                            .arrange_named(&format!("Validations({})", &name))
+                            .trace,
+                    );
+
+                    if config.index_direction == IndexDirection::Both {
+                        self.reverse_validate.insert(
+                            name.to_string(),
+                            tuples_reverse
+                                .map(|t| (t, ()))
+                                .arrange_named(&format!("_Validations({})", &name))
+                                .trace,
+                        );
+                    }
+                }
             }
 
             // This is crucial. If we forget to install the attribute

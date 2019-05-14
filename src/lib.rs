@@ -334,6 +334,35 @@ pub enum InputSemantics {
     // CAS,
 }
 
+/// Attributes can be indexed in two ways, once from eid to value and
+/// the other way around. More powerful query capabilities may rely on
+/// both directions being available, whereas simple queries, such as
+/// star-joins and pull queries, might get by with just a forward
+/// index.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub enum IndexDirection {
+    /// Forward index only.
+    Forward,
+    /// Both directions are maintained.
+    Both,
+}
+
+/// Attributes might only appear in certain classes of queries. If
+/// that is the case, indexing overhead can be reduced.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub enum QuerySupport {
+    /// Simple pull queries and star-joins require only a single
+    /// index.
+    Basic = 0,
+    /// Delta queries require an additional index for validation of
+    /// proposals.
+    Delta = 1,
+    /// Adaptive, worst-case optimal queries require three indices per
+    /// direction, one for proposals, one for validation, and one for
+    /// per-key statistics.
+    AdaptiveWCO = 2,
+}
+
 /// Per-attribute semantics.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct AttributeConfig {
@@ -343,10 +372,10 @@ pub struct AttributeConfig {
     /// How close indexed traces should follow the computation
     /// frontier.
     pub trace_slack: Option<Time>,
-    /// Will this attribute require reverse indices?
-    pub enable_reverse: bool,
-    /// Will this attribute be used in worst-case optimal queries?
-    pub enable_wco: bool,
+    /// Index directions to maintain for this attribute.
+    pub index_direction: IndexDirection,
+    /// Query capabilities supported by this attribute.
+    pub query_support: QuerySupport,
     /// Does this attribute care about its respective time
     /// dimension? Timeless attributes do not have an
     /// influence on the overall progress in the system.
@@ -358,8 +387,8 @@ impl Default for AttributeConfig {
         AttributeConfig {
             input_semantics: InputSemantics::Raw,
             trace_slack: None,
-            enable_reverse: false,
-            enable_wco: false,
+            index_direction: IndexDirection::Forward,
+            query_support: QuerySupport::Basic,
             timeless: false,
         }
     }
