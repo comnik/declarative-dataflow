@@ -317,6 +317,18 @@ impl IndexNode<Value> for (Value, Value) {
     }
 }
 
+impl IndexNode<Value> for (&Value, &Value) {
+    #[inline(always)]
+    fn index(&self, index: usize) -> Value {
+        assert!(index <= 1);
+        if index == 0 {
+            self.0.clone()
+        } else {
+            self.1.clone()
+        }
+    }
+}
+
 impl IndexNode<Value> for Vec<Value> {
     #[inline(always)]
     fn index(&self, index: usize) -> Value {
@@ -344,24 +356,25 @@ impl Hector {
 
         match self.bindings.first().unwrap() {
             Binding::Attribute(binding) => {
-                match context.forward_validate(&binding.source_attribute) {
+                match context.forward_propose(&binding.source_attribute) {
                     None => panic!("Unknown attribute {}", &binding.source_attribute),
-                    Some(validate_trace) => {
-                        let frontier: Vec<T> = validate_trace.advance_frontier().to_vec();
-                        let (validate, shutdown_validate) = validate_trace.import_core(
+                    Some(forward_trace) => {
+                        let frontier: Vec<T> = forward_trace.advance_frontier().to_vec();
+                        let (forward, shutdown_forward) = forward_trace.import_core(
                             &nested.parent,
                             &format!("Validate({})", &binding.source_attribute),
                         );
 
                         let prefix = binding.variables();
                         let target_variables = self.variables.clone();
-                        let tuples = validate
+                        let tuples = forward
                             .enter_at(nested, move |_, _, time| {
                                 let mut forwarded = time.clone();
                                 forwarded.advance_by(&frontier);
                                 Product::new(forwarded, 0)
                             })
-                            .as_collection(move |tuple, ()| {
+                            .as_collection(move |e, v| {
+                                let tuple = (e, v);
                                 target_variables
                                     .iter()
                                     .flat_map(|x| {
@@ -377,7 +390,7 @@ impl Hector {
 
                         (
                             Implemented::Collection(relation),
-                            ShutdownHandle::from_button(shutdown_validate),
+                            ShutdownHandle::from_button(shutdown_forward),
                         )
                     }
                 }

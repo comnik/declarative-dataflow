@@ -10,7 +10,7 @@
           }
         },
         "input_semantics": "CardinalityMany",
-        "query_support": "AdaptiveWCO",
+        "query_support": "Basic",
         "index_direction": "Forward",
         "timeless": false
       }
@@ -27,7 +27,7 @@
           }
         },
         "input_semantics": "CardinalityMany",
-        "query_support": "AdaptiveWCO",
+        "query_support": "Basic",
         "index_direction": "Forward",
         "timeless": false
       }
@@ -44,7 +44,7 @@
           }
         },
         "input_semantics": "CardinalityMany",
-        "query_support": "AdaptiveWCO",
+        "query_support": "Basic",
         "index_direction": "Forward",
         "timeless": false
       }
@@ -61,7 +61,7 @@
           }
         },
         "input_semantics": "CardinalityMany",
-        "query_support": "AdaptiveWCO",
+        "query_support": "Basic",
         "index_direction": "Forward",
         "timeless": false
       }
