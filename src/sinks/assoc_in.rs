@@ -10,6 +10,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 
 use serde_json::map::Map;
+use serde_json::Value as JValue;
 use serde_json::Value::Object;
 
 use crate::{Error, Output, ResultDiff, Time};
@@ -72,7 +73,7 @@ where
                     paths
                         .entry(cap.time().clone())
                         .or_insert_with(Vec::new)
-                        .extend(vector.drain(..).map(|(x, _t, diff)| (x, diff)));
+                        .extend(vector.drain(..));
 
                     notificator.notify_at(cap.retain());
                 });
@@ -132,11 +133,14 @@ where
 
 /// Outbound direction: Transform the provided query result paths into
 /// a GraphQL-like / JSONy nested value to be provided to the user.
-fn merge_paths(
-    acc: &mut Map<String, serde_json::Value>,
-    mut paths: Vec<(Vec<crate::Value>, isize)>,
+fn merge_paths<T>(
+    acc: &mut Map<String, JValue>,
+    mut paths: Vec<(Vec<crate::Value>, T, isize)>,
     granularity: usize,
-) -> Vec<Vec<String>> {
+) -> Vec<Vec<String>>
+where
+    T: Timestamp + Lattice + std::convert::Into<Time>,
+{
     use crate::Value;
 
     // `paths` has the structure `[[aid/eid val aid/eid val leaf-aid
@@ -160,11 +164,12 @@ fn merge_paths(
 
     // It's important to treat retractions first, otherwise we might
     // dissoc the new value.
-    paths.sort_by_key(|(_path, diff)| *diff);
+    paths.sort_by_key(|(_path, _t, diff)| *diff);
+    paths.sort_by_key(|(_path, t, _diff)| t.clone());
 
     let mut changes: Vec<Vec<String>> = Vec::new();
 
-    for (mut path, diff) in paths {
+    for (mut path, t, diff) in paths {
         let mut change_key: Vec<String> = Vec::new();
 
         let leaf_val: Value = path.pop().expect("leaf value missing");
@@ -210,6 +215,11 @@ fn merge_paths(
                 } else {
                     map.remove(&leaf_key);
                 }
+
+                map.insert(
+                    "__last_modified".to_string(),
+                    JValue::String(format!("{:?}", t)),
+                );
             }
         }
 
