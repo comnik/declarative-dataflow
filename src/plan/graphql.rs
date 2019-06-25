@@ -142,14 +142,24 @@ fn selection_set_to_paths(
     // linking the parent level to the current one.
     if !parent_path.is_empty() {
         let parent = *plan.variables.last().unwrap();
-        let this = plan.variables.len() as Var;
+
+        let this = if parent_path.len() == 1 {
+            0 as Var
+        } else {
+            plan.variables.len() as Var
+        };
+
         let aid = parent_path.last().unwrap();
 
         plan.variables.push(this);
         plan.bindings.push(Binding::attribute(parent, aid, this));
     }
 
-    let this = *plan.variables.last().unwrap();
+    let this = if parent_path.len() == 1 {
+        *plan.variables.first().unwrap()
+    } else {
+        *plan.variables.last().unwrap()
+    };
 
     // Then we must introduce additional bindings for any arguments.
     for (aid, v) in arguments.iter() {
