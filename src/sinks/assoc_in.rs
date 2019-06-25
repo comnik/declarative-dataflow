@@ -134,7 +134,7 @@ where
 /// a GraphQL-like / JSONy nested value to be provided to the user.
 fn merge_paths(
     acc: &mut Map<String, serde_json::Value>,
-    paths: Vec<(Vec<crate::Value>, isize)>,
+    mut paths: Vec<(Vec<crate::Value>, isize)>,
     granularity: usize,
 ) -> Vec<Vec<String>> {
     use crate::Value;
@@ -154,14 +154,17 @@ fn merge_paths(
     let parse_key = |v: Value| match v {
         Value::Aid(x) => x,
         Value::Eid(x) => x.to_string(),
+        Value::String(x) => x,
         _ => panic!("Malformed pull path. Expected a key."),
     };
+
+    // It's important to treat retractions first, otherwise we might
+    // dissoc the new value.
+    paths.sort_by_key(|(_path, diff)| *diff);
 
     let mut changes: Vec<Vec<String>> = Vec::new();
 
     for (mut path, diff) in paths {
-        // @TODO handle retractions
-
         let mut change_key: Vec<String> = Vec::new();
 
         let leaf_val: Value = path.pop().expect("leaf value missing");
@@ -202,7 +205,11 @@ fn merge_paths(
 
             // At the lowest level, we finally insert the leaf value.
             if let Object(map) = entry {
-                map.insert(leaf_key, serde_json::Value::from(leaf_val));
+                if diff > 0 {
+                    map.insert(leaf_key, serde_json::Value::from(leaf_val));
+                } else {
+                    map.remove(&leaf_key);
+                }
             }
         }
 
