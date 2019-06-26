@@ -42,9 +42,12 @@ impl GraphQl {
     }
 
     /// Creates a new GraphQl starting from the specified root plan.
-    pub fn with_plan(root_plan: Hector, query: String) -> Self {
+    pub fn with_plan(root_plan: Plan, query: String) -> Self {
         let ast = parse_query(&query).expect("graphQL ast parsing failed");
-        let paths = ast.into_paths(root_plan);
+        let paths = ast.into_paths(Hector {
+            variables: root_plan.variables(),
+            bindings: root_plan.into_bindings(),
+        });
 
         GraphQl { query, paths }
     }

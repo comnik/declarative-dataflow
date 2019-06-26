@@ -11,7 +11,7 @@ use declarative_dataflow::plan::{Implementable, Pull, PullLevel};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Hector, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Plan, Rule, TxData, Value};
 use Value::{Aid, Bool, Eid, Number, String};
 
 struct Case {
@@ -341,13 +341,10 @@ fn graph_ql() {
     ]];
 
     // We want to pull all entities carrying the `hero` attribute.
-    let root_plan = Hector {
-        variables: vec![0],
-        bindings: vec![
-            // <- arbitrary symbol here to fake a placeholder
-            Binding::attribute(0, "hero", 11111),
-        ],
-    };
+    let root_plan = declarative_dataflow::q(vec![0], vec![
+        // <- arbitrary symbol here to fake a placeholder
+        Binding::attribute(0, "hero", 11111),
+    ]);
 
     run_cases(vec![
         {
