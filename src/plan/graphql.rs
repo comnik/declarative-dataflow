@@ -26,20 +26,32 @@ pub struct GraphQl {
 }
 
 impl GraphQl {
-    /// Creates a new GraphQL instance by parsing the AST obtained
+    /// Creates a new GraphQl instance by parsing the AST obtained
     /// from the provided query.
     pub fn new(query: String) -> Self {
         let ast = parse_query(&query).expect("graphQL ast parsing failed");
+        let empty_plan = Hector {
+            variables: vec![0],
+            bindings: vec![],
+        };
 
         GraphQl {
             query,
-            paths: ast.into_paths(),
+            paths: ast.into_paths(empty_plan),
         }
+    }
+
+    /// Creates a new GraphQl starting from the specified root plan.
+    pub fn with_plan(root_plan: Hector, query: String) -> Self {
+        let ast = parse_query(&query).expect("graphQL ast parsing failed");
+        let paths = ast.into_paths(root_plan);
+
+        GraphQl { query, paths }
     }
 }
 
 trait IntoPaths {
-    fn into_paths(&self) -> Vec<PullLevel<Plan>>;
+    fn into_paths(&self, root_plan: Hector) -> Vec<PullLevel<Plan>>;
 }
 
 impl IntoPaths for Document {
@@ -61,35 +73,31 @@ impl IntoPaths for Document {
     ///   ]
     /// }
     /// ```
-    fn into_paths(&self) -> Vec<PullLevel<Plan>> {
+    fn into_paths(&self, root_plan: Hector) -> Vec<PullLevel<Plan>> {
         self.definitions
             .iter()
-            .flat_map(IntoPaths::into_paths)
+            .flat_map(|definition| definition.into_paths(root_plan.clone()))
             .collect()
     }
 }
 
 impl IntoPaths for Definition {
-    fn into_paths(&self) -> Vec<PullLevel<Plan>> {
+    fn into_paths(&self, root_plan: Hector) -> Vec<PullLevel<Plan>> {
         match self {
-            Definition::Operation(operation) => operation.into_paths(),
+            Definition::Operation(operation) => operation.into_paths(root_plan),
             Definition::Fragment(_) => unimplemented!(),
         }
     }
 }
 
 impl IntoPaths for OperationDefinition {
-    fn into_paths(&self) -> Vec<PullLevel<Plan>> {
+    fn into_paths(&self, root_plan: Hector) -> Vec<PullLevel<Plan>> {
         use OperationDefinition::{Query, SelectionSet};
 
         match self {
             Query(_) => unimplemented!(),
             SelectionSet(selection_set) => {
-                let empty_plan = Hector {
-                    variables: vec![0],
-                    bindings: vec![],
-                };
-                selection_set_to_paths(&selection_set, empty_plan, &[], &[])
+                selection_set_to_paths(&selection_set, root_plan, &[], &[])
             }
             _ => unimplemented!(),
         }
@@ -142,24 +150,14 @@ fn selection_set_to_paths(
     // linking the parent level to the current one.
     if !parent_path.is_empty() {
         let parent = *plan.variables.last().unwrap();
-
-        let this = if parent_path.len() == 1 {
-            0 as Var
-        } else {
-            plan.variables.len() as Var
-        };
-
+        let this = plan.variables.len() as Var;
         let aid = parent_path.last().unwrap();
 
         plan.variables.push(this);
         plan.bindings.push(Binding::attribute(parent, aid, this));
     }
 
-    let this = if parent_path.len() == 1 {
-        *plan.variables.first().unwrap()
-    } else {
-        *plan.variables.last().unwrap()
-    };
+    let this = *plan.variables.last().unwrap();
 
     // Then we must introduce additional bindings for any arguments.
     for (aid, v) in arguments.iter() {

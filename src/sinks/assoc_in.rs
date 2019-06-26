@@ -102,6 +102,10 @@ where
                             Some(ref mut states) => {
                                 let t = cap.time();
 
+                                // @TODO group and sort paths by their
+                                // Differential time, apply each group
+                                // and produce outputs
+
                                 let changes = merge_paths(states, paths_at_time, granularity);
 
                                 output.session(&cap).give_iterator(changes.iter().map(
@@ -169,7 +173,7 @@ where
 
     let mut changes: Vec<Vec<String>> = Vec::new();
 
-    for (mut path, t, diff) in paths {
+    for (mut path, _t, diff) in paths {
         let mut change_key: Vec<String> = Vec::new();
 
         let leaf_val: Value = path.pop().expect("leaf value missing");
@@ -215,11 +219,6 @@ where
                 } else {
                     map.remove(&leaf_key);
                 }
-
-                map.insert(
-                    "__last_modified".to_string(),
-                    JValue::String(format!("{:?}", t)),
-                );
             }
         }
 
