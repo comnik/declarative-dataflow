@@ -28,6 +28,8 @@ where
     S::Timestamp: Lattice + Ord,
 {
     fn cardinality_one(&self) -> Collection<S, (Value, Value), isize> {
+        use differential_dataflow::hashable::Hashable;
+
         let arranged: Arranged<S, TraceValHandle<Value, Value, S::Timestamp, isize>> =
             self.arrange();
 
@@ -96,15 +98,7 @@ where
                         }
                     }
                 },
-                |e| match e {
-                    Value::Eid(eid) => *eid as u64,
-                    #[cfg(feature = "uuid")]
-                    Value::Uuid(uuid) => {
-                        use differential_dataflow::hashable::Hashable;
-                        uuid.hashed()
-                    }
-                    _ => panic!("Not an eid or uuid: {:?}.", e),
-                },
+                |e| e.hashed(),
             )
             .as_collection()
     }
