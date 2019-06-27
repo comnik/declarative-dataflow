@@ -29,6 +29,8 @@ pub struct PullLevel<P: Implementable> {
     /// Attribute names to distinguish plans of the same
     /// length. Useful to feed into a nested hash-map directly.
     pub path_attributes: Vec<Aid>,
+    /// @TODO
+    pub cardinality_many: bool,
 }
 
 /// A plan stage for pull queries split into individual paths. So
@@ -167,18 +169,39 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                 let attribute = Value::Aid(a.clone());
                 let path_attributes: Vec<Aid> = self.path_attributes.clone();
 
-                e_path
-                    .join_core(&e_v, move |_e, path: &Vec<Value>, v: &Value| {
-                        // Each result tuple must hold the interleaved
-                        // path, the attribute, and the value,
-                        // i.e. [?p "parent/child" ?c ?a ?v]
-                        let mut result = interleave(path, &path_attributes);
-                        result.push(attribute.clone());
-                        result.push(v.clone());
+                if path_attributes.is_empty() || self.cardinality_many {
+                    e_path
+                        .join_core(&e_v, move |_e, path: &Vec<Value>, v: &Value| {
+                            // Each result tuple must hold the interleaved
+                            // path, the attribute, and the value,
+                            // i.e. [?p "parent/child" ?c ?a ?v]
+                            let mut result = interleave(path, &path_attributes);
+                            result.push(attribute.clone());
+                            result.push(v.clone());
 
-                        Some(result)
-                    })
-                    .inner
+                            Some(result)
+                        })
+                        .inner
+                } else {
+                    e_path
+                        .join_core(&e_v, move |_e, path: &Vec<Value>, v: &Value| {
+                            // Each result tuple must hold the interleaved
+                            // path, the attribute, and the value,
+                            // i.e. [?p "parent/child" ?c ?a ?v]
+                            let mut result = interleave(path, &path_attributes);
+
+                            // Cardinality single means we don't need
+                            // to distinguish child ids (there can
+                            // only be one).
+                            result.pop();
+
+                            result.push(attribute.clone());
+                            result.push(v.clone());
+
+                            Some(result)
+                        })
+                        .inner
+                }
             });
 
             let tuples = nested.concatenate(streams).as_collection();

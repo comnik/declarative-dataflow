@@ -220,6 +220,7 @@ fn selection_set_to_paths(
                 pull_variable: this,
                 variables: vec![],
                 plan: Box::new(Plan::Hector(plan)),
+                cardinality_many: false,
             }));
         }
     }
