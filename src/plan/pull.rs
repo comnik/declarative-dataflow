@@ -1,6 +1,6 @@
 //! Pull expression plan, but without nesting.
 
-use timely::dataflow::operators::Concatenate;
+use timely::dataflow::operators::{Concat, Concatenate};
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
 use timely::order::Product;
@@ -193,7 +193,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                             // Cardinality single means we don't need
                             // to distinguish child ids (there can
                             // only be one).
-                            result.pop();
+                            result.pop().expect("malformed path");
 
                             result.push(attribute.clone());
                             result.push(v.clone());
@@ -204,11 +204,30 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                 }
             });
 
-            let tuples = nested.concatenate(streams).as_collection();
+            let tuples = if self.path_attributes.is_empty() || self.cardinality_many {
+                nested.concatenate(streams)
+            } else {
+                let db_ids = {
+                    let path_attributes = self.path_attributes.clone();
+                    paths
+                        .map(move |path| {
+                            let mut result = interleave(&path, &path_attributes);
+                            let eid = result.pop().expect("malformed path");
+
+                            result.push(Value::Aid("db__id".to_string()));
+                            result.push(eid);
+
+                            result
+                        })
+                        .inner
+                };
+
+                nested.concatenate(streams).concat(&db_ids)
+            };
 
             let relation = CollectionRelation {
                 variables: vec![], // @TODO
-                tuples,
+                tuples: tuples.as_collection(),
             };
 
             (Implemented::Collection(relation), shutdown_handle)
