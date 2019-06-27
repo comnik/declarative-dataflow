@@ -130,14 +130,14 @@ where
             // indices are only relevant to Hector.
             self.forward_propose.insert(
                 name.to_string(),
-                tuples.arrange_named(&format!("Proposals({})", &name)).trace,
+                tuples.arrange_named(&format!("->Propose({})", &name)).trace,
             );
 
             if config.index_direction == IndexDirection::Both {
                 self.reverse_propose.insert(
                     name.to_string(),
                     tuples_reverse
-                        .arrange_named(&format!("_Proposals({})", &name))
+                        .arrange_named(&format!("->_Propose({})", &name))
                         .trace,
                 );
             }
@@ -152,7 +152,7 @@ where
                         name.to_string(),
                         tuples
                             .map(|(k, _v)| (k, ()))
-                            .arrange_named(&format!("Counts({})", name))
+                            .arrange_named(&format!("->Count({})", name))
                             .trace,
                     );
 
@@ -161,7 +161,7 @@ where
                             name.to_string(),
                             tuples_reverse
                                 .map(|(k, _v)| (k, ()))
-                                .arrange_named(&format!("_Counts({})", name))
+                                .arrange_named(&format!("->_Count({})", name))
                                 .trace,
                         );
                     }
@@ -172,7 +172,7 @@ where
                         name.to_string(),
                         tuples
                             .map(|t| (t, ()))
-                            .arrange_named(&format!("Validations({})", &name))
+                            .arrange_named(&format!("->Validate({})", &name))
                             .trace,
                     );
 
@@ -181,7 +181,7 @@ where
                             name.to_string(),
                             tuples_reverse
                                 .map(|t| (t, ()))
-                                .arrange_named(&format!("_Validations({})", &name))
+                                .arrange_named(&format!("->_Validate({})", &name))
                                 .trace,
                         );
                     }

@@ -362,7 +362,7 @@ impl Hector {
                         let frontier: Vec<T> = forward_trace.advance_frontier().to_vec();
                         let (forward, shutdown_forward) = forward_trace.import_core(
                             &nested.parent,
-                            &format!("Validate({})", &binding.source_attribute),
+                            &format!("Propose({})", &binding.source_attribute),
                         );
 
                         let prefix = binding.variables();
