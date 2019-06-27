@@ -46,7 +46,7 @@ pub use self::graphql::GraphQl;
 pub use self::hector::Hector;
 pub use self::join::Join;
 pub use self::project::Project;
-pub use self::pull::{Pull, PullLevel};
+pub use self::pull::{Pull, PullAll, PullLevel};
 pub use self::transform::{Function, Transform};
 pub use self::union::Union;
 
@@ -229,6 +229,8 @@ pub enum Plan {
     Pull(Pull<Plan>),
     /// Single-level pull expression
     PullLevel(PullLevel<Plan>),
+    /// Single-level pull expression
+    PullAll(PullAll),
     /// GraphQl pull expression
     #[cfg(feature = "graphql")]
     GraphQl(GraphQl),
@@ -253,6 +255,7 @@ impl Plan {
             Plan::NameExpr(ref variables, ref _name) => variables.clone(),
             Plan::Pull(ref pull) => pull.variables.clone(),
             Plan::PullLevel(ref path) => path.variables.clone(),
+            Plan::PullAll(ref path) => path.variables.clone(),
             #[cfg(feature = "graphql")]
             Plan::GraphQl(_) => unimplemented!(),
         }
@@ -278,6 +281,7 @@ impl Implementable for Plan {
             Plan::NameExpr(_, ref name) => Dependencies::name(name),
             Plan::Pull(ref pull) => pull.dependencies(),
             Plan::PullLevel(ref path) => path.dependencies(),
+            Plan::PullAll(ref path) => path.dependencies(),
             #[cfg(feature = "graphql")]
             Plan::GraphQl(ref q) => q.dependencies(),
         }
@@ -313,6 +317,7 @@ impl Implementable for Plan {
             Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
             Plan::Pull(ref pull) => pull.into_bindings(),
             Plan::PullLevel(ref path) => path.into_bindings(),
+            Plan::PullAll(ref path) => path.into_bindings(),
             #[cfg(feature = "graphql")]
             Plan::GraphQl(ref q) => q.into_bindings(),
         }
@@ -354,6 +359,7 @@ impl Implementable for Plan {
             Plan::NameExpr(_, ref _name) => Vec::new(),
             Plan::Pull(ref pull) => pull.datafy(),
             Plan::PullLevel(ref path) => path.datafy(),
+            Plan::PullAll(ref path) => path.datafy(),
             #[cfg(feature = "graphql")]
             Plan::GraphQl(ref q) => q.datafy(),
         }
@@ -522,6 +528,7 @@ impl Implementable for Plan {
             }
             Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
             Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
+            Plan::PullAll(ref path) => path.implement(nested, local_arrangements, context),
             #[cfg(feature = "graphql")]
             Plan::GraphQl(ref query) => query.implement(nested, local_arrangements, context),
         }

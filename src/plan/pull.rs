@@ -42,7 +42,7 @@ pub struct Pull<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
     /// Individual paths to pull.
-    pub paths: Vec<PullLevel<P>>,
+    pub paths: Vec<P>,
 }
 
 fn interleave(values: &[Value], constants: &[Aid]) -> Vec<Value> {
@@ -237,6 +237,81 @@ impl<P: Implementable> Implementable for Pull<P> {
 
         let relation = CollectionRelation {
             variables: self.variables.to_vec(),
+            tuples,
+        };
+
+        (Implemented::Collection(relation), shutdown_handle)
+    }
+}
+
+/// A plan stage for extracting all tuples for a given set of
+/// attributes.
+#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+pub struct PullAll {
+    /// TODO
+    pub variables: Vec<Var>,
+    /// Attributes to pull for the input entities.
+    pub pull_attributes: Vec<Aid>,
+}
+
+impl Implementable for PullAll {
+    fn dependencies(&self) -> Dependencies {
+        let mut dependencies = Dependencies::none();
+
+        for attribute in &self.pull_attributes {
+            let attribute_dependencies = Dependencies::attribute(&attribute);
+            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
+        }
+
+        dependencies
+    }
+
+    fn implement<'b, T, I, S>(
+        &self,
+        nested: &mut Iterative<'b, S, u64>,
+        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        context: &mut I,
+    ) -> (Implemented<'b, S>, ShutdownHandle)
+    where
+        T: Timestamp + Lattice,
+        I: ImplContext<T>,
+        S: Scope<Timestamp = T>,
+    {
+        use differential_dataflow::trace::TraceReader;
+
+        assert!(!self.pull_attributes.is_empty());
+
+        let mut shutdown_handle = ShutdownHandle::empty();
+
+        let streams = self.pull_attributes.iter().map(|a| {
+            let e_v = match context.forward_propose(a) {
+                None => panic!("attribute {:?} does not exist", a),
+                Some(propose_trace) => {
+                    let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
+                    let (arranged, shutdown_propose) = propose_trace.import_core(&nested.parent, a);
+
+                    let e_v = arranged.enter_at(nested, move |_, _, time| {
+                        let mut forwarded = time.clone();
+                        forwarded.advance_by(&frontier);
+                        Product::new(forwarded, 0)
+                    });
+
+                    shutdown_handle.add_button(shutdown_propose);
+
+                    e_v
+                }
+            };
+
+            let attribute = Value::Aid(a.clone());
+
+            e_v.as_collection(move |e, v| vec![e.clone(), attribute.clone(), v.clone()])
+                .inner
+        });
+
+        let tuples = nested.concatenate(streams).as_collection();
+
+        let relation = CollectionRelation {
+            variables: vec![], // @TODO
             tuples,
         };
 

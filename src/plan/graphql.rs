@@ -12,7 +12,7 @@ use graphql_parser::query::{Name, Value};
 
 use crate::binding::Binding;
 use crate::plan::{gensym, Dependencies, ImplContext, Implementable};
-use crate::plan::{Hector, Plan, Pull, PullLevel};
+use crate::plan::{Hector, Plan, Pull, PullAll, PullLevel};
 use crate::{Aid, Var};
 use crate::{Implemented, ShutdownHandle, VariableMap};
 
@@ -22,7 +22,7 @@ pub struct GraphQl {
     /// String representation of GraphQL query
     pub query: String,
     /// Cached paths
-    paths: Vec<PullLevel<Plan>>,
+    paths: Vec<Plan>,
 }
 
 impl GraphQl {
@@ -54,7 +54,7 @@ impl GraphQl {
 }
 
 trait IntoPaths {
-    fn into_paths(&self, root_plan: Hector) -> Vec<PullLevel<Plan>>;
+    fn into_paths(&self, root_plan: Hector) -> Vec<Plan>;
 }
 
 impl IntoPaths for Document {
@@ -76,7 +76,7 @@ impl IntoPaths for Document {
     ///   ]
     /// }
     /// ```
-    fn into_paths(&self, root_plan: Hector) -> Vec<PullLevel<Plan>> {
+    fn into_paths(&self, root_plan: Hector) -> Vec<Plan> {
         self.definitions
             .iter()
             .flat_map(|definition| definition.into_paths(root_plan.clone()))
@@ -85,7 +85,7 @@ impl IntoPaths for Document {
 }
 
 impl IntoPaths for Definition {
-    fn into_paths(&self, root_plan: Hector) -> Vec<PullLevel<Plan>> {
+    fn into_paths(&self, root_plan: Hector) -> Vec<Plan> {
         match self {
             Definition::Operation(operation) => operation.into_paths(root_plan),
             Definition::Fragment(_) => unimplemented!(),
@@ -94,7 +94,7 @@ impl IntoPaths for Definition {
 }
 
 impl IntoPaths for OperationDefinition {
-    fn into_paths(&self, root_plan: Hector) -> Vec<PullLevel<Plan>> {
+    fn into_paths(&self, root_plan: Hector) -> Vec<Plan> {
         use OperationDefinition::{Query, SelectionSet};
 
         match self {
@@ -142,7 +142,7 @@ fn selection_set_to_paths(
     mut plan: Hector,
     arguments: &[(Name, Value)],
     parent_path: &[String],
-) -> Vec<PullLevel<Plan>> {
+) -> Vec<Plan> {
     // We must first construct the correct plan for this level,
     // starting from that for the parent level. We do this even if no
     // attributes are actually pulled at this level. In that case we
@@ -201,20 +201,27 @@ fn selection_set_to_paths(
             }
             _ => unimplemented!(),
         })
-        .collect::<Vec<PullLevel<Plan>>>();
+        .collect::<Vec<Plan>>();
 
     let mut levels = nested_levels;
 
     // Here we don't actually want to include the current plan, if
     // we're not interested in any attributes at this level.
     if !pull_attributes.is_empty() {
-        levels.push(PullLevel {
-            pull_attributes,
-            path_attributes: parent_path.to_vec(),
-            pull_variable: this,
-            variables: vec![],
-            plan: Box::new(Plan::Hector(plan)),
-        });
+        if plan.bindings.is_empty() {
+            levels.push(Plan::PullAll(PullAll {
+                variables: vec![],
+                pull_attributes,
+            }));
+        } else {
+            levels.push(Plan::PullLevel(PullLevel {
+                pull_attributes,
+                path_attributes: parent_path.to_vec(),
+                pull_variable: this,
+                variables: vec![],
+                plan: Box::new(Plan::Hector(plan)),
+            }));
+        }
     }
 
     levels
