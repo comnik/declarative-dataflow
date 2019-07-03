@@ -118,6 +118,7 @@ impl std::convert::From<f64> for Value {
 impl std::convert::From<Value> for serde_json::Value {
     fn from(v: Value) -> Self {
         match v {
+            Value::Eid(v) => serde_json::Value::String(v.to_string()),
             Value::Aid(v) => serde_json::Value::String(v),
             Value::String(v) => serde_json::Value::String(v),
             Value::Bool(v) => serde_json::Value::Bool(v),
