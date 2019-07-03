@@ -4,7 +4,7 @@
 //! differential dataflow computations from declaratively specified
 //! programs, without any additional compilation.
 
-#![forbid(missing_docs)]
+// #![forbid(missing_docs)]
 
 #[macro_use]
 extern crate log;
