@@ -35,6 +35,8 @@ pub struct GraphQl {
     pub query: String,
     /// Cached paths
     paths: Vec<Pull>,
+    /// Required attributes to filter entities by
+    required_aids: Vec<Aid>,
 }
 
 impl GraphQl {
@@ -50,6 +52,7 @@ impl GraphQl {
         GraphQl {
             query,
             paths: ast.into_paths(empty_plan),
+            required_aids: vec![],
         }
     }
 
@@ -61,7 +64,19 @@ impl GraphQl {
             bindings: root_plan.into_bindings(),
         });
 
-        GraphQl { query, paths }
+        GraphQl {
+            query,
+            paths,
+            required_aids: vec![],
+        }
+    }
+
+    /// Creates a new GraphQl that filters top-level entities down to
+    /// only those with all of the required Aids present.
+    pub fn with_required_aids(query: String, required_aids: Vec<Aid>) -> Self {
+        let mut query = GraphQl::new(query);
+        query.required_aids = required_aids;
+        query
     }
 }
 
@@ -320,7 +335,10 @@ impl GraphQl {
         });
 
         let mut change_keys = HashMap::new();
+        let mut excise_keys = Vec::new();
         let mut vector = Vec::new();
+
+        let required_aids = self.required_aids.clone();
 
         let snapshots = nested.parent.concatenate(streams).unary_notify(
             Pipeline,
@@ -337,20 +355,47 @@ impl GraphQl {
                     notificator.notify_at(cap.retain());
                 });
 
-                let states = states.borrow();
+                {
+                    let mut states = states.borrow_mut();
 
-                notificator.for_each(|cap, _, _| {
-                    if let Some(mut keys) = change_keys.remove(cap.time()) {
-                        let t = cap.time().clone();
-
-                        let snapshots = keys.drain().map(|key| {
-                            let snapshot = &states[key];
-                            Output::Json("test".to_string(), snapshot.clone(), t.clone().into(), 1)
-                        });
-
-                        output.session(&cap).give_iterator(snapshots);
+                    for (key, snapshot) in states.as_object().unwrap().iter() {
+                        for required_aid in required_aids.iter() {
+                            if !snapshot.as_object().unwrap().contains_key(required_aid) {
+                                excise_keys.push(key.clone());
+                            }
+                        }
                     }
-                });
+
+                    let states_map = states.as_object_mut().unwrap();
+                    for key in excise_keys.drain(..) {
+                        states_map.remove(&key);
+                    }
+                }
+
+                {
+                    let states = states.borrow();
+
+                    notificator.for_each(|cap, _, _| {
+                        if let Some(mut keys) = change_keys.remove(cap.time()) {
+                            let t = cap.time().clone();
+
+                            let snapshots = keys.drain().flat_map(|key| {
+                                if let Some(snapshot) = states.get(key) {
+                                    Some(Output::Json(
+                                        "test".to_string(),
+                                        snapshot.clone(),
+                                        t.clone().into(),
+                                        1,
+                                    ))
+                                } else {
+                                    None
+                                }
+                            });
+
+                            output.session(&cap).give_iterator(snapshots);
+                        }
+                    });
+                }
             },
         );
 
