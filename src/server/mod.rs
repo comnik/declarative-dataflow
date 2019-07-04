@@ -396,9 +396,9 @@ where
         source: Box<dyn Sourceable<S>>,
         scope: &mut S,
     ) -> Result<(), Error> {
-        let timely_logger = scope.log_register().remove("timely");
+        // let timely_logger = scope.log_register().remove("timely");
 
-        let differential_logger = scope.log_register().remove("differential/arrange");
+        // let differential_logger = scope.log_register().remove("differential/arrange");
 
         let context = SourcingContext {
             t0: self.t0,
@@ -419,21 +419,21 @@ where
                 .create_sourced_attribute(&aid, config, &datoms)?;
         }
 
-        if let Some(logger) = timely_logger {
-            if let Ok(logger) = logger.downcast::<Logger<TimelyEvent>>() {
-                scope
-                    .log_register()
-                    .insert_logger::<TimelyEvent>("timely", *logger);
-            }
-        }
+        // if let Some(logger) = timely_logger {
+        //     if let Ok(logger) = logger.downcast::<Logger<TimelyEvent>>() {
+        //         scope
+        //             .log_register()
+        //             .insert_logger::<TimelyEvent>("timely", *logger);
+        //     }
+        // }
 
-        if let Some(logger) = differential_logger {
-            if let Ok(logger) = logger.downcast::<Logger<DifferentialEvent>>() {
-                scope
-                    .log_register()
-                    .insert_logger::<DifferentialEvent>("differential/arrange", *logger);
-            }
-        }
+        // if let Some(logger) = differential_logger {
+        //     if let Ok(logger) = logger.downcast::<Logger<DifferentialEvent>>() {
+        //         scope
+        //             .log_register()
+        //             .insert_logger::<DifferentialEvent>("differential/arrange", *logger);
+        //     }
+        // }
 
         Ok(())
     }
