@@ -124,6 +124,7 @@ where
                 InputSemantics::CardinalityMany => pairs.as_collection().distinct(),
             };
 
+            // @TODO should only create this if used later
             let tuples_reverse = tuples.map(|(e, v)| (v, e));
 
             // Propose traces are used in general, whereas the other

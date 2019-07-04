@@ -279,17 +279,26 @@ impl GraphQl {
 
         let dummy = VariableMap::new();
 
-        let mut paths = self
-            .paths
-            .iter()
-            .flat_map(|path| {
-                let (streams, shutdown) = path.implement(nested, &dummy, context);
-                std::mem::forget(shutdown);
-                streams
-            })
-            .collect::<HashMap<PathId, _>>();
+        let mut paths = {
+            let mut paths_map = self
+                .paths
+                .iter()
+                .flat_map(|path| {
+                    let (streams, shutdown) = path.implement(nested, &dummy, context);
+                    std::mem::forget(shutdown);
+                    streams
+                })
+                .collect::<HashMap<PathId, _>>();
 
-        let streams = paths.drain().map(|(path_id, stream)| {
+            let mut paths = paths_map.drain().collect::<Vec<(PathId, _)>>();
+
+            // Important for cross-worker determinism.
+            paths.sort_by_key(|(path_id, _)| path_id.clone());
+
+            paths
+        };
+
+        let streams = paths.drain(..).map(|(path_id, stream)| {
             let states = states.clone();
             let mut buffer = HashMap::new();
             let mut vector = Vec::new();
@@ -464,7 +473,7 @@ fn pointer_mut<'a>(v: &'a mut JValue, tokens: &[String]) -> &'a mut JValue {
                 // JValue::Array(ref mut list) => {
                 //     parse_index(&token).and_then(move |x| list.get_mut(x))
                 // }
-                _ => panic!("!!!"),
+                _ => panic!("failed to acquire pointer to {:?}", tokens),
             };
         }
 
