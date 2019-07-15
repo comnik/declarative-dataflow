@@ -14,6 +14,8 @@ use crate::plan::{Dependencies, ImplContext, Implementable, Plan};
 use crate::{Aid, Value, Var};
 use crate::{Relation, ShutdownHandle, VariableMap};
 
+/// A sequence of attributes that uniquely identify a nesting level in
+/// a Pull query.
 pub type PathId = Vec<Aid>;
 
 /// A plan stage for extracting all matching [e a v] tuples for a
@@ -34,6 +36,8 @@ pub struct PullLevel<P: Implementable> {
 }
 
 impl<P: Implementable> PullLevel<P> {
+    /// See Implementable::dependencies, as PullLevel v2 can't
+    /// implement Implementable directly.
     fn dependencies(&self) -> Dependencies {
         let mut dependencies = self.plan.dependencies();
 
@@ -45,6 +49,8 @@ impl<P: Implementable> PullLevel<P> {
         dependencies
     }
 
+    /// See Implementable::implement, as PullLevel v2 can't implement
+    /// Implementable directly.
     fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
@@ -143,6 +149,8 @@ pub struct PullAll {
 }
 
 impl PullAll {
+    /// See Implementable::dependencies, as PullAll v2 can't implement
+    /// Implementable directly.
     fn dependencies(&self) -> Dependencies {
         let mut dependencies = Dependencies::none();
 
@@ -154,6 +162,8 @@ impl PullAll {
         dependencies
     }
 
+    /// See Implementable::implement, as PullAll v2 can't implement
+    /// Implementable directly.
     fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
@@ -220,6 +230,8 @@ pub enum Pull {
 }
 
 impl Pull {
+    /// See Implementable::dependencies, as Pull v2 can't implement
+    /// Implementable directly.
     pub fn dependencies(&self) -> Dependencies {
         match self {
             Pull::All(ref pull) => pull.dependencies(),
@@ -227,6 +239,8 @@ impl Pull {
         }
     }
 
+    /// See Implementable::implement, as Pull v2 can't implement
+    /// Implementable directly.
     pub fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,

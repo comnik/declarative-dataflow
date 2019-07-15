@@ -252,6 +252,8 @@ fn selection_set_to_paths(
 }
 
 impl GraphQl {
+    /// See Implementable::dependencies, as GraphQl v2 can't implement
+    /// Implementable directly.
     pub fn dependencies(&self) -> Dependencies {
         let mut dependencies = Dependencies::none();
 
@@ -262,6 +264,8 @@ impl GraphQl {
         dependencies
     }
 
+    /// See Implementable::implement, as GraphQl v2 can't implement
+    /// Implementable directly.
     pub fn implement<'b, T, I, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
@@ -481,9 +485,9 @@ fn pointer_mut<'a>(v: &'a mut JValue, tokens: &[String]) -> &'a mut JValue {
     }
 }
 
-fn parse_index(s: &str) -> Option<usize> {
-    if s.starts_with('+') || (s.starts_with('0') && s.len() != 1) {
-        return None;
-    }
-    s.parse().ok()
-}
+// fn parse_index(s: &str) -> Option<usize> {
+//     if s.starts_with('+') || (s.starts_with('0') && s.len() != 1) {
+//         return None;
+//     }
+//     s.parse().ok()
+// }

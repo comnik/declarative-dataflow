@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use timely::communication::Allocate;
 use timely::dataflow::operators::capture::event::link::EventLink;
 use timely::dataflow::{ProbeHandle, Scope};
-use timely::logging::{BatchLogger, Logger, TimelyEvent};
+use timely::logging::{BatchLogger, TimelyEvent};
 use timely::progress::Timestamp;
 use timely::worker::Worker;
 
@@ -396,6 +396,7 @@ where
         source: Box<dyn Sourceable<S>>,
         scope: &mut S,
     ) -> Result<(), Error> {
+        // use timely::logging::Logger;
         // let timely_logger = scope.log_register().remove("timely");
 
         // let differential_logger = scope.log_register().remove("differential/arrange");
