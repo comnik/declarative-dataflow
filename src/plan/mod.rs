@@ -28,10 +28,13 @@ pub mod antijoin;
 pub mod filter;
 #[cfg(feature = "graphql")]
 pub mod graphql;
+#[cfg(feature = "graphql")]
+pub mod graphql_v2;
 pub mod hector;
 pub mod join;
 pub mod project;
 pub mod pull;
+pub mod pull_v2;
 pub mod transform;
 pub mod union;
 

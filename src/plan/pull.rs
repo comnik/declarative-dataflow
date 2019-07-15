@@ -48,9 +48,7 @@ pub struct Pull<P: Implementable> {
 }
 
 fn interleave(values: &[Value], constants: &[Aid]) -> Vec<Value> {
-    if values.is_empty() {
-        values.to_owned()
-    } else if constants.is_empty() {
+    if values.is_empty() || constants.is_empty() {
         values.to_owned()
     } else {
         let size: usize = values.len() + constants.len();
