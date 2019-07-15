@@ -125,6 +125,7 @@ fn pull_level() {
             plan: Box::new(Plan::MatchAV(0, "admin?".to_string(), Bool(false))),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
             path_attributes: vec![],
+            cardinality_many: false,
         }),
         transactions: vec![vec![
             TxData::add(100, "admin?", Bool(true)),
@@ -172,6 +173,7 @@ fn pull_children() {
             plan: Box::new(Plan::MatchA(parent, "parent/child".to_string(), child)),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
             path_attributes: vec!["parent/child".to_string()],
+            cardinality_many: false,
         }),
         transactions: vec![vec![
             TxData::add(100, "name", String("Alice".to_string())),
@@ -242,7 +244,7 @@ fn pull() {
         plan: Plan::Pull(Pull {
             variables: vec![],
             paths: vec![
-                PullLevel {
+                Plan::PullLevel(PullLevel {
                     variables: vec![],
                     pull_variable: b,
                     plan: Box::new(Plan::MatchA(a, "join/binding".to_string(), b)),
@@ -252,14 +254,16 @@ fn pull() {
                         "pattern/v".to_string(),
                     ],
                     path_attributes: vec!["join/binding".to_string()],
-                },
-                PullLevel {
+                    cardinality_many: false,
+                }),
+                Plan::PullLevel(PullLevel {
                     variables: vec![],
                     pull_variable: c,
                     plan: Box::new(Plan::MatchA(a, "name".to_string(), c)),
                     pull_attributes: vec![],
                     path_attributes: vec!["name".to_string()],
-                },
+                    cardinality_many: false,
+                }),
             ],
         }),
         transactions: vec![vec![
