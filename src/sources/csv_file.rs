@@ -102,7 +102,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
             move |_frontiers| {
                 if iterator.reader().is_done() {
                     info!(
-                        "[WORKER {}] read {} out of {} datums",
+                        "[W{}] read {} out of {} datums",
                         worker_index, num_datums_read, datum_index
                     );
                     capabilities.drain(..);
@@ -175,7 +175,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
 
                     if iterator.reader().is_done() {
                         info!(
-                            "[WORKER {}] read {} out of {} datums",
+                            "[W{}] read {} out of {} datums",
                             worker_index, num_datums_read, datum_index
                         );
                         capabilities.drain(..);

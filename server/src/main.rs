@@ -7,9 +7,9 @@ extern crate serde_derive;
 extern crate log;
 
 use std::collections::{HashSet, VecDeque};
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read};
 use std::time::{Duration, Instant};
-
-use getopts::Options;
 
 use timely::dataflow::channels::pact::{Exchange, Pipeline};
 use timely::dataflow::operators::generic::OutputHandle;
@@ -20,7 +20,8 @@ use timely::synchronization::Sequencer;
 use differential_dataflow::logging::DifferentialEvent;
 use differential_dataflow::operators::Consolidate;
 
-use declarative_dataflow::server::{scheduler, Config, CreateAttribute, Request, Server, TxId};
+use declarative_dataflow::server;
+use declarative_dataflow::server::{scheduler, CreateAttribute, Request, Server, TxId};
 use declarative_dataflow::sinks::{Sinkable, SinkingContext};
 use declarative_dataflow::timestamp::{Coarsen, Time};
 use declarative_dataflow::{Output, ResultDiff};
@@ -42,6 +43,168 @@ use declarative_dataflow::timestamp::pair::Pair;
 #[cfg(feature = "bitemporal")]
 type T = Pair<Duration, u64>;
 
+#[derive(Debug, Clone)]
+struct Configuration {
+    /// Port at which client connections should be accepted.
+    pub port: u16,
+    /// File from which to read server configuration.
+    pub config: Option<String>,
+    /// Number of threads to use.
+    pub threads: usize,
+    /// Number of processes to expect over the entire cluster.
+    pub processes: usize,
+    /// Host addresses.
+    pub addresses: Vec<String>,
+    /// ID of this process within the cluster.
+    pub timely_pid: usize,
+    /// Whether to report connection progress.
+    pub report: bool,
+}
+
+impl Default for Configuration {
+    fn default() -> Self {
+        Configuration {
+            port: 6262,
+            config: None,
+            threads: 1,
+            processes: 1,
+            addresses: vec!["localhost:2101".to_string()],
+            timely_pid: 0,
+            report: false,
+        }
+    }
+}
+
+impl Configuration {
+    /// Returns a `getopts::Options` struct describing all available
+    /// configuration options.
+    pub fn options() -> getopts::Options {
+        let mut opts = getopts::Options::new();
+
+        opts.optopt("", "port", "server port", "PORT");
+        opts.optopt("", "config", "server configuration file", "FILE");
+
+        // Timely arguments.
+        opts.optopt(
+            "w",
+            "threads",
+            "number of per-process worker threads",
+            "NUM",
+        );
+        opts.optopt("p", "process", "identity of this process", "IDX");
+        opts.optopt("n", "processes", "number of processes", "NUM");
+        opts.optopt(
+            "h",
+            "hostfile",
+            "text file whose lines are process addresses",
+            "FILE",
+        );
+        opts.optflag("r", "report", "reports connection progress");
+
+        opts
+    }
+
+    /// Parses configuration options from the provided arguments.
+    pub fn from_args<I: Iterator<Item = String>>(args: I) -> Self {
+        let default: Self = Default::default();
+        let opts = Self::options();
+
+        let matches = opts.parse(args).expect("failed to parse arguments");
+
+        let port = matches
+            .opt_str("port")
+            .map(|x| x.parse().expect("failed to parse port"))
+            .unwrap_or(default.port);
+
+        let threads = matches
+            .opt_str("w")
+            .map(|x| x.parse().expect("failed to parse threads"))
+            .unwrap_or(default.threads);
+
+        let timely_pid = matches
+            .opt_str("p")
+            .map(|x| x.parse().expect("failed to parse process id"))
+            .unwrap_or(default.timely_pid);
+
+        let processes = matches
+            .opt_str("n")
+            .map(|x| x.parse().expect("failed to parse processes"))
+            .unwrap_or(default.processes);
+
+        let mut addresses = Vec::new();
+        if let Some(hosts) = matches.opt_str("h") {
+            let reader = BufReader::new(File::open(hosts.clone()).unwrap());
+            for x in reader.lines().take(processes) {
+                addresses.push(x.unwrap());
+            }
+            if addresses.len() < processes {
+                panic!(
+                    "could only read {} addresses from {}, but -n: {}",
+                    addresses.len(),
+                    hosts,
+                    processes
+                );
+            }
+        } else {
+            for index in 0..processes {
+                addresses.push(format!("localhost:{}", 2101 + index));
+            }
+        }
+
+        assert!(processes == addresses.len());
+        assert!(timely_pid < processes);
+
+        let report = matches.opt_present("report");
+
+        Self {
+            port,
+            config: matches.opt_str("config"),
+            threads,
+            processes,
+            addresses,
+            timely_pid,
+            report,
+        }
+    }
+}
+
+impl Into<server::Configuration> for Configuration {
+    fn into(self) -> server::Configuration {
+        match self.config {
+            None => server::Configuration::default(),
+            Some(ref path) => {
+                let mut config_file =
+                    File::open(path).expect("failed to open server configuration file");
+
+                let mut contents = String::new();
+                config_file
+                    .read_to_string(&mut contents)
+                    .expect("failed to read configuration file");
+
+                serde_json::from_str(&contents).expect("failed to parse configuration")
+            }
+        }
+    }
+}
+
+impl Into<timely::Configuration> for Configuration {
+    fn into(self) -> timely::Configuration {
+        if self.processes > 1 {
+            timely::Configuration::Cluster {
+                threads: self.threads,
+                process: self.timely_pid,
+                addresses: self.addresses,
+                report: self.report,
+                log_fn: Box::new(|_| None),
+            }
+        } else if self.threads > 1 {
+            timely::Configuration::Process(self.threads)
+        } else {
+            timely::Configuration::Thread
+        }
+    }
+}
+
 /// A mutation of server state.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize, Debug)]
 struct Command {
@@ -58,46 +221,15 @@ struct Command {
 fn main() {
     env_logger::init();
 
-    let args: Vec<String> = std::env::args().collect();
-    let timely_args = std::env::args().take_while(|ref arg| *arg != "--");
-    let timely_config = timely::Configuration::from_args(timely_args).unwrap();
+    let config = Configuration::from_args(std::env::args());
+    let timely_config: timely::Configuration = config.clone().into();
+    let server_config: server::Configuration = config.clone().into();
 
     timely::execute(timely_config, move |worker| {
-        // Read configuration.
-        let config = {
-            let server_args = args.iter().rev().take_while(|arg| *arg != "--");
-            let default_config: Config = Default::default();
-
-            let opts = options();
-
-            match opts.parse(server_args) {
-                Err(err) => panic!(err),
-                Ok(matches) => {
-                    let starting_port = matches
-                        .opt_str("port")
-                        .map(|x| x.parse().expect("failed to parse port"))
-                        .unwrap_or(default_config.port);
-
-                    let tick: Option<Duration> = matches
-                        .opt_str("tick")
-                        .map(|x| Duration::from_secs(x.parse().expect("failed to parse tick duration")));
-
-                    Config {
-                        port: starting_port + (worker.index() as u16),
-                        tick,
-                        manual_advance: matches.opt_present("manual-advance"),
-                        enable_logging: matches.opt_present("enable-logging"),
-                        enable_optimizer: matches.opt_present("enable-optimizer"),
-                        enable_meta: matches.opt_present("enable-meta"),
-                    }
-                }
-            }
-        };
-
         // Initialize server state (no networking).
-        let mut server = Server::<T, Token>::new_at(config.clone(), worker.timer());
+        let mut server = Server::<T, Token>::new_at(server_config.clone(), worker.timer());
 
-        if config.enable_logging {
+        if server_config.enable_logging {
             #[cfg(feature = "real-time")]
             server.enable_logging(worker).unwrap();
         }
@@ -119,7 +251,7 @@ fn main() {
 
         // Kickoff ticking, if configured. We only want to issue ticks
         // from a single worker, to avoid redundant ticking.
-        if worker.index() == 0 && config.tick.is_some() {
+        if worker.index() == 0 && server_config.tick.is_some() {
             sequencer.push(Command {
                 owner: 0,
                 client: SYSTEM.0,
@@ -138,10 +270,16 @@ fn main() {
         };
 
         info!(
-            "[WORKER {}] running with config {:?}, {} peers",
+            "[W{}] running with config {:?}, {} peers",
             worker.index(),
             config,
             worker.peers(),
+        );
+
+        info!(
+            "[W{}] running with server_config {:?}",
+            worker.index(),
+            server_config,
         );
 
         // Sequence counter for commands.
@@ -218,7 +356,7 @@ fn main() {
                 // Count-up sequence numbers.
                 next_tx += 1;
 
-                info!("[WORKER {}] {} requests by client {} at {}", worker.index(), command.requests.len(), command.client, next_tx);
+                trace!("[W{}] {} requests by client {} at {}", worker.index(), command.requests.len(), command.client, next_tx);
 
                 let owner = command.owner;
                 let client = command.client;
@@ -228,7 +366,7 @@ fn main() {
 
                     // @TODO only create a single dataflow, but only if req != Transact
 
-                    trace!("[WORKER {}] {:?}", worker.index(), req);
+                    trace!("[W{}] {:?}", worker.index(), req);
 
                     let result = match req {
                         Request::Transact(req) => server.transact(req, owner, worker.index()),
@@ -380,7 +518,7 @@ fn main() {
                             // We only want to issue ticks from a single worker, to avoid
                             // redundant ticking.
                             if worker.index() == 0 {
-                                if let Some(tick) = config.tick {
+                                if let Some(tick) = server_config.tick {
                                     let interval_end = Instant::now().duration_since(worker.timer()).coarsen(&tick);
                                     let at = worker.timer() + interval_end;
                                     server.scheduler.borrow_mut().event_at(at, scheduler::Event::Tick);
@@ -410,7 +548,7 @@ fn main() {
                     }
                 }
 
-                if !config.manual_advance {
+                if !server_config.manual_advance {
                     #[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
                     let next = next_tx as u64;
                     #[cfg(feature = "real-time")]
@@ -443,7 +581,7 @@ fn main() {
             worker.step_or_park(Some(delay));
         }
 
-        info!("[WORKER {}] shutting down", worker.index());
+        info!("[W{}] shutting down", worker.index());
 
         drop(sequencer);
 
@@ -452,26 +590,4 @@ fn main() {
         server.shutdown_logging(worker).unwrap();
 
     }).expect("Timely computation did not exit cleanly");
-}
-
-fn options() -> Options {
-    let mut opts = Options::new();
-    opts.optopt("", "port", "server port", "PORT");
-    opts.optopt(
-        "",
-        "tick",
-        "advance domain at a regular interval",
-        "SECONDS",
-    );
-    opts.optflag(
-        "",
-        "manual-advance",
-        "forces clients to call AdvanceDomain explicitely",
-    );
-    opts.optflag("", "enable-logging", "enable log event sources");
-    opts.optflag("", "enable-history", "enable historical queries");
-    opts.optflag("", "enable-optimizer", "enable WCO queries");
-    opts.optflag("", "enable-meta", "enable queries on the query graph");
-
-    opts
 }

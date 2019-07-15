@@ -31,10 +31,8 @@ pub mod scheduler;
 use self::scheduler::Scheduler;
 
 /// Server configuration.
-#[derive(Clone, Debug)]
-pub struct Config {
-    /// Port at which this server will listen at.
-    pub port: u16,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct Configuration {
     /// Automatic domain tick interval.
     pub tick: Option<Duration>,
     /// Do clients have to call AdvanceDomain explicitely?
@@ -47,15 +45,60 @@ pub struct Config {
     pub enable_meta: bool,
 }
 
-impl Default for Config {
-    fn default() -> Config {
-        Config {
-            port: 6262,
+impl Default for Configuration {
+    fn default() -> Self {
+        Configuration {
             tick: None,
             manual_advance: false,
             enable_logging: false,
             enable_optimizer: false,
             enable_meta: false,
+        }
+    }
+}
+
+#[cfg(feature = "getopts")]
+impl Configuration {
+    /// Returns a `getopts::Options` struct describing all available
+    /// configuration options.
+    pub fn options() -> getopts::Options {
+        let mut opts = getopts::Options::new();
+
+        opts.optopt(
+            "",
+            "tick",
+            "advance domain at a regular interval",
+            "SECONDS",
+        );
+        opts.optflag(
+            "",
+            "manual-advance",
+            "forces clients to call AdvanceDomain explicitely",
+        );
+        opts.optflag("", "enable-logging", "enable log event sources");
+        opts.optflag("", "enable-optimizer", "enable WCO queries");
+        opts.optflag("", "enable-meta", "enable queries on the query graph");
+
+        opts
+    }
+
+    /// Parses configuration options from the provided arguments.
+    pub fn from_args<I: Iterator<Item = String>>(args: I) -> Result<Self, String> {
+        let default: Self = Default::default();
+        let opts = Self::options();
+
+        let matches = opts.parse(args)?;
+
+        let tick: Option<Duration> = matches
+            .opt_str("tick")
+            .map(|x| Duration::from_secs(x.parse().expect("failed to parse tick duration")));
+
+        Self {
+            tick,
+            manual_advance: matches.opt_present("manual-advance"),
+            enable_logging: matches.opt_present("enable-logging"),
+            enable_optimizer: matches.opt_present("enable-optimizer"),
+            enable_meta: matches.opt_present("enable-meta"),
         }
     }
 }
@@ -152,7 +195,7 @@ where
     Token: Hash + Eq + Copy,
 {
     /// Server configuration.
-    pub config: Config,
+    pub config: Configuration,
     /// A timer started at the initation of the timely computation
     /// (copied from worker).
     pub t0: Instant,
@@ -249,14 +292,14 @@ where
     Token: Hash + Eq + Copy,
 {
     /// Creates a new server state from a configuration.
-    pub fn new(config: Config) -> Self {
+    pub fn new(config: Configuration) -> Self {
         Server::new_at(config, Instant::now())
     }
 
     /// Creates a new server state from a configuration with an
     /// additionally specified beginning of the computation: an
     /// instant in relation to which all durations will be measured.
-    pub fn new_at(config: Config, t0: Instant) -> Self {
+    pub fn new_at(config: Configuration, t0: Instant) -> Self {
         let timely_events = Some(Rc::new(EventLink::new()));
         let differential_events = Some(Rc::new(EventLink::new()));
 

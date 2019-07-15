@@ -136,7 +136,7 @@ impl Sourceable<Duration> for JsonFile {
                         object_index += 1;
                     }
 
-                    // println!("[WORKER {}] read {} out of {} objects", worker_index, num_objects_read, object_index);
+                    // println!("[W{}] read {} out of {} objects", worker_index, num_objects_read, object_index);
 
                     activator.activate();
                 } else {
