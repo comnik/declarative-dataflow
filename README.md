@@ -37,50 +37,28 @@ Clojure(Script)](https://github.com/comnik/clj-3df).
 
 Thanks to Differential Dataflow, all these capabilities are provided
 within the dataflow model and can thus be scaled out to multiple
-independent workers.
-
-In order to provide all this in an arguably tasteful package,
-Declarative is less efficient and much more opinionated than
-hand-written Differential Dataflow. In particular, it enforces a
-fully-normalized, RDF-like data model heavily inspired by systems like
+independent workers. Declarative is less efficient and much more
+opinionated than hand-written Differential Dataflow. In particular, it
+enforces a fully-normalized, RDF-like data model heavily inspired by
+systems like
 [Datomic](https://docs.datomic.com/cloud/whatis/data-model.html) or
-LogicBlox.
+LogicBlox. Other than that, Declarative is just Differential Dataflow
+under the hood and can happily co-exist and interact with static,
+handwritten dataflows.
 
-Other than that, Declarative is just Differential Dataflow under the
-hood and can happily co-exist and interact with static, handwritten
-dataflows.
+Included in this repository is the library itself, a
+[server](./server), and a [cli](./cli).
 
-Included in this repository is the library itself, as well as a server
-binary, which wraps a Differential worker to accept commands and query
-plans via WebSocket connections.
+## Build
 
-Declarative is in active development, with an alpha release scheduled
-for Q1 2019.
+The library is built using cargo. A sufficiently up-to-date Rust
+toolchain is enforced via the [rust-toolchain file](./rust-toolchain)
+included in this repository.
 
-## Build / Run
-
-Assuming an up-to-date Rust environment, the server can be built and
-run from within the [server/](server/) sub-directory:
-
-    cd server/
-    cargo run --release -- <timely args> -- <server args>
-
-The server executable accepts two sets of arguments separated by `--`,
-one for [configuring timely
-dataflow](https://github.com/frankmcsherry/timely-dataflow) and the
-other for configuring the server itself.
-
-## Configuration
-
-    OPTION           | DESCRIPTION                | DEFAULT
-    --port           | port to listen at          | 6262
-    --enable-cli     | accept commands via stdin? | false
-
-Logging at a specific level can be enabled by setting the `RUST_LOG`
-environment variable to `RUST_LOG=server=info`.
-
-Configuration options are still very much in flux and are found in
-[the server module](src/server/mod.rs).
+Declarative Dataflow makes use of the [log
+crate](https://docs.rs/log).  Logging at a specific level can be
+enabled by setting the `RUST_LOG` environment variable to
+`RUST_LOG=declarative_dataflow=<level>`.
 
 ## Documentation
 
@@ -98,10 +76,16 @@ examples.
 
 ## Clients
 
-Query plans are rather cumbersome to write manually and do not map to
-any interesting, higher-level semantics. Currently we provide a
-[Datalog front end](https://github.com/comnik/clj-3df) written in
-Clojure.
+Declarative Dataflow servers accept a lower-level relational query
+plan representation, that is meant to be somewhat frontend
+agnosti. However query plans are rather cumbersome to write manually
+and do not map to any interesting, higher-level semantics. Currently
+we therefore provide a [Datalog front
+end](https://github.com/comnik/clj-3df) written in Clojure.
+
+Please refer to [the
+documentation](https://docs.rs/declarative-dataflow/0.1.0/declarative_dataflow/plan/index.html)
+for an overview of the supported query plans.
 
 ## Further Reading / Watching
 
