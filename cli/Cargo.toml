@@ -1,12 +1,12 @@
 [package]
 
 name = "3dfctl"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Nikolas Göbel <me@nikolasgoebel.com>"]
 edition = "2018"
 
 [dependencies]
-declarative-dataflow = { path = "../", features = ["graphql"] }
+declarative-dataflow = { version = "0.2.0", features = ["graphql"] }
 serde = "1"
 serde_json = "1"
 log = "0.4"

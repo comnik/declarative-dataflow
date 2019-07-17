@@ -15,7 +15,7 @@ use ws::{connect, CloseCode};
 use declarative_dataflow::plan::{GraphQl, Plan};
 use declarative_dataflow::server::{Interest, Register, Request};
 use declarative_dataflow::sinks::{AssocIn, Sink};
-use declarative_dataflow::{Rule, TxData, Output};
+use declarative_dataflow::{Output, Rule, TxData};
 
 fn main() {
     env_logger::init();
