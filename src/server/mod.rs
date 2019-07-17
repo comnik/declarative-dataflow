@@ -19,7 +19,7 @@ use differential_dataflow::logging::DifferentialEvent;
 
 use crate::domain::Domain;
 use crate::logging::DeclarativeEvent;
-use crate::plan::{ImplContext, Implementable};
+use crate::plan::ImplContext;
 use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
@@ -41,8 +41,6 @@ pub struct Configuration {
     pub enable_logging: bool,
     /// Should queries use the optimizer during implementation?
     pub enable_optimizer: bool,
-    /// Should queries on the query graph be available?
-    pub enable_meta: bool,
 }
 
 impl Default for Configuration {
@@ -52,7 +50,6 @@ impl Default for Configuration {
             manual_advance: false,
             enable_logging: false,
             enable_optimizer: false,
-            enable_meta: false,
         }
     }
 }
@@ -98,7 +95,6 @@ impl Configuration {
             manual_advance: matches.opt_present("manual-advance"),
             enable_logging: matches.opt_present("enable-logging"),
             enable_optimizer: matches.opt_present("enable-optimizer"),
-            enable_meta: matches.opt_present("enable-meta"),
         }
     }
 }
@@ -416,15 +412,15 @@ where
                 // panic!("Attempted to re-register a named relation");
                 continue;
             } else {
-                if self.config.enable_meta {
-                    let mut data = rule.plan.datafy();
-                    let tx_data: Vec<TxData> = data
-                        .drain(..)
-                        .map(|(e, a, v)| TxData(1, Value::Eid(e), a, v, None))
-                        .collect();
+                // if self.config.enable_meta {
+                //     let mut data = rule.plan.datafy();
+                //     let tx_data: Vec<TxData> = data
+                //         .drain(..)
+                //         .map(|(e, a, v)| TxData(1, Value::Eid(e), a, v, None))
+                //         .collect();
 
-                    self.transact(tx_data, 0, 0)?;
-                }
+                //     self.transact(tx_data, 0, 0)?;
+                // }
 
                 self.context.rules.insert(rule.name.to_string(), rule);
             }
