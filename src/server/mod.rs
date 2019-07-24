@@ -429,6 +429,18 @@ where
         Ok(())
     }
 
+    /// Returns a fresh sourcing context, useful for installing 3DF
+    /// compatible sources manually.
+    pub fn make_sourcing_context(&self) -> SourcingContext<T> {
+        SourcingContext {
+            t0: self.t0,
+            scheduler: Rc::downgrade(&self.scheduler),
+            domain_probe: self.context.internal.domain_probe().clone(),
+            timely_events: self.timely_events.clone().unwrap(),
+            differential_events: self.differential_events.clone().unwrap(),
+        }
+    }
+
     /// Handle a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = T>>(
         &mut self,
@@ -440,13 +452,7 @@ where
 
         // let differential_logger = scope.log_register().remove("differential/arrange");
 
-        let context = SourcingContext {
-            t0: self.t0,
-            scheduler: Rc::downgrade(&self.scheduler),
-            domain_probe: self.context.internal.domain_probe().clone(),
-            timely_events: self.timely_events.clone().unwrap(),
-            differential_events: self.differential_events.clone().unwrap(),
-        };
+        let context = self.make_sourcing_context();
 
         // self.timely_events = None;
         // self.differential_events = None;
