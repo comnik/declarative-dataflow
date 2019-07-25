@@ -12,7 +12,7 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::logging::DifferentialEvent;
 
-use crate::server::scheduler::Scheduler;
+use crate::scheduling::Scheduler;
 use crate::AttributeConfig;
 use crate::{Aid, Value};
 
@@ -36,7 +36,7 @@ pub struct SourcingContext<T: Timestamp> {
     pub domain_probe: ProbeHandle<T>,
     /// A weak handle to a scheduler, used by sources to defer their
     /// next activation when polling.
-    pub scheduler: Weak<RefCell<Scheduler>>,
+    pub scheduler: Weak<RefCell<Scheduler<T>>>,
     /// A weak handle to a Timely event link.
     pub timely_events: Rc<EventLink<Duration, (Duration, usize, TimelyEvent)>>,
     /// A weak handle to Differential event link.

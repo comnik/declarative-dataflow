@@ -20,15 +20,13 @@ use differential_dataflow::logging::DifferentialEvent;
 use crate::domain::Domain;
 use crate::logging::DeclarativeEvent;
 use crate::plan::ImplContext;
+use crate::scheduling::Scheduler;
 use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
 use crate::{implement, implement_neu, AttributeConfig, RelationHandle, ShutdownHandle};
 use crate::{Aid, Error, Rewind, Time, TxData, Value};
 use crate::{TraceKeyHandle, TraceValHandle};
-
-pub mod scheduler;
-use self::scheduler::Scheduler;
 
 /// Server configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -204,7 +202,7 @@ where
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
     /// Scheduler managing deferred operator activations.
-    pub scheduler: Rc<RefCell<Scheduler>>,
+    pub scheduler: Rc<RefCell<Scheduler<T>>>,
     // Link to replayable Timely logging events.
     timely_events: Option<Rc<EventLink<Duration, (Duration, usize, TimelyEvent)>>>,
     // Link to replayable Differential logging events.
@@ -299,6 +297,8 @@ where
         let timely_events = Some(Rc::new(EventLink::new()));
         let differential_events = Some(Rc::new(EventLink::new()));
 
+        let probe = ProbeHandle::new();
+
         Server {
             config,
             t0,
@@ -309,8 +309,8 @@ where
             },
             interests: HashMap::new(),
             shutdown_handles: HashMap::new(),
-            probe: ProbeHandle::new(),
-            scheduler: Rc::new(RefCell::new(Scheduler::new())),
+            scheduler: Rc::new(RefCell::new(Scheduler::from(probe.clone()))),
+            probe,
             timely_events,
             differential_events,
         }

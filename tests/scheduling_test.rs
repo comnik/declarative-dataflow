@@ -1,9 +1,9 @@
-use declarative_dataflow::server::scheduler::{Event, Scheduler};
+use declarative_dataflow::scheduling::{AsScheduler, Event, RealtimeScheduler};
 use std::time::Duration;
 
 #[test]
 fn test_schedule_now() {
-    let mut scheduler = Scheduler::new();
+    let mut scheduler = RealtimeScheduler::new();
 
     assert!(!scheduler.has_pending());
     assert!(scheduler.until_next().is_none());
@@ -16,7 +16,7 @@ fn test_schedule_now() {
 
 #[test]
 fn test_schedule_after() {
-    let mut scheduler = Scheduler::new();
+    let mut scheduler = RealtimeScheduler::new();
 
     scheduler.event_after(Duration::from_secs(2), Event::Tick);
 

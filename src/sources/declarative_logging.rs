@@ -14,7 +14,7 @@ use timely::dataflow::{Scope, Stream};
 use timely::logging::BatchLogger;
 
 use crate::logging::DeclarativeEvent;
-use crate::server::scheduler::Scheduler;
+use crate::scheduling::Scheduler;
 use crate::sources::Sourceable;
 use crate::{Aid, Value};
 use crate::{AttributeConfig, InputSemantics};
@@ -32,7 +32,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for DeclarativeLogging {
         &self,
         scope: &mut S,
         _t0: Instant,
-        _scheduler: Weak<RefCell<Scheduler>>,
+        _scheduler: Weak<RefCell<Scheduler<Duration>>>,
     ) -> Vec<(
         Aid,
         AttributeConfig,

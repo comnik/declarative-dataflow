@@ -16,6 +16,7 @@ pub mod domain;
 pub mod logging;
 pub mod operators;
 pub mod plan;
+pub mod scheduling;
 pub mod server;
 pub mod sinks;
 pub mod sources;

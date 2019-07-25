@@ -13,7 +13,7 @@ use timely::dataflow::{Scope, Stream};
 
 // use sources::json_file::flate2::read::GzDecoder;
 
-use crate::server::scheduler::Scheduler;
+use crate::scheduling::Scheduler;
 use crate::sources::Sourceable;
 use crate::{AttributeConfig, InputSemantics};
 use crate::{Aid, Eid, Value};
@@ -33,7 +33,7 @@ impl Sourceable<Duration> for JsonFile {
         &self,
         scope: &mut S,
         t0: Instant,
-        _scheduler: Weak<RefCell<Scheduler>>,
+        _scheduler: Weak<RefCell<Scheduler<Duration>>>,
     ) -> Vec<(Aid, AttributeConfig, Stream<S, ((Value, Value), Duration, isize)>)> {
         let filename = self.path.clone();
 

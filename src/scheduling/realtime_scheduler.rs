@@ -7,6 +7,8 @@ use std::time::{Duration, Instant};
 
 use timely::scheduling::Activator;
 
+use crate::scheduling::AsScheduler;
+
 /// A scheduler allows polling sources to defer triggering their
 /// activators, in case they do not have work available. This reduces
 /// time spent polling infrequently updated sources and allows us to
@@ -14,25 +16,25 @@ use timely::scheduling::Activator;
 /// unnecessarily delaying sources that have run out of fuel during
 /// the current step.
 #[derive(Default)]
-pub struct Scheduler {
+pub struct RealtimeScheduler {
     activator_queue: BinaryHeap<TimedActivator>,
 }
 
-impl Scheduler {
-    /// Creates a new, empty scheduler.
-    pub fn new() -> Self {
-        Scheduler {
-            activator_queue: BinaryHeap::new(),
-        }
-    }
-
-    /// Returns true whenever an activator is queued and ready to be
-    /// scheduled.
-    pub fn has_pending(&self) -> bool {
+impl AsScheduler for RealtimeScheduler {
+    fn has_pending(&self) -> bool {
         if let Some(ref timed_activator) = self.activator_queue.peek() {
             timed_activator.is_ready()
         } else {
             false
+        }
+    }
+}
+
+impl RealtimeScheduler {
+    /// Creates a new, empty scheduler.
+    pub fn new() -> Self {
+        RealtimeScheduler {
+            activator_queue: BinaryHeap::new(),
         }
     }
 
@@ -86,7 +88,7 @@ impl Scheduler {
     }
 }
 
-impl Iterator for Scheduler {
+impl Iterator for RealtimeScheduler {
     type Item = TimedActivator;
     fn next(&mut self) -> Option<TimedActivator> {
         if self.has_pending() {
