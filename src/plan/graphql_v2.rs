@@ -25,8 +25,9 @@ use crate::binding::Binding;
 use crate::plan::pull_v2::{PathId, Pull, PullAll, PullLevel};
 use crate::plan::{gensym, Dependencies, ImplContext, Implementable};
 use crate::plan::{Hector, Plan};
+use crate::timestamp;
+use crate::ShutdownHandle;
 use crate::{Aid, Output, Value, Var};
-use crate::{ShutdownHandle, VariableMap};
 
 /// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -179,7 +180,8 @@ fn selection_set_to_paths(
     // For any level after the first, we must introduce a binding
     // linking the parent level to the current one.
     if !parent_path.is_empty() {
-        let parent = *plan.variables.last().unwrap();
+        let parent = *plan.variables.last().expect("plan has no variables");
+
         let this = plan.variables.len() as Var;
         let aid = parent_path.last().unwrap();
 
@@ -187,7 +189,7 @@ fn selection_set_to_paths(
         plan.bindings.push(Binding::attribute(parent, aid, this));
     }
 
-    let this = *plan.variables.last().unwrap();
+    let this = *plan.variables.last().expect("plan has no variables");
 
     // Then we must introduce additional bindings for any arguments.
     for (aid, v) in arguments.iter() {
@@ -251,6 +253,13 @@ fn selection_set_to_paths(
     levels
 }
 
+// @TODO read this from schema
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+enum Cardinality {
+    One,
+    Many,
+}
+
 impl GraphQl {
     /// See Implementable::dependencies, as GraphQl v2 can't implement
     /// Implementable directly.
@@ -275,13 +284,13 @@ impl GraphQl {
         T: Timestamp + Lattice,
         I: ImplContext<T>,
         S: Scope<Timestamp = T>,
-        S::Timestamp: std::convert::Into<crate::timestamp::Time>,
+        S::Timestamp: std::convert::Into<timestamp::Time>,
     {
         use timely::dataflow::operators::Concatenate;
 
-        let states = Rc::new(RefCell::new(JValue::Object(Map::new())));
+        let states = Rc::new(RefCell::new(HashMap::new()));
 
-        let dummy = VariableMap::new();
+        let dummy = HashMap::new();
 
         let mut paths = {
             let mut paths_map = self
@@ -310,41 +319,85 @@ impl GraphQl {
             stream
                 .exchange(|(path, _t, _diff)| path[0].clone().hashed())
                 .delay(|(_path, t, _diff), _cap| t.clone())
-                .unary_notify(
+                .unary_frontier(
                     Pipeline,
                     "Changes",
-                    vec![],
-                    move |input, output, notificator| {
-                        input.for_each(|cap, data| {
-                            data.swap(&mut vector);
-                            buffer
-                                .entry(cap.time().clone())
-                                .or_insert_with(Vec::new)
-                                .extend(vector.drain(..));
+                    move |_cap, _info| {
+                        move |input, output| {
+                            input.for_each(|cap, data| {
+                                data.swap(&mut vector);
+                                buffer
+                                    .entry(cap.retain())
+                                    .or_insert_with(Vec::new)
+                                    .extend(vector.drain(..));
+                            });
 
-                            notificator.notify_at(cap.retain());
-                        });
+                            let mut states = states.borrow_mut();
 
-                        let mut states = states.borrow_mut();
+                            let mut sorted_times: Vec<_> = buffer
+                                .keys()
+                                .filter(|cap| !input.frontier().less_equal(cap.time()))
+                                .cloned()
+                                .collect();
 
-                        notificator.for_each(|cap, _, _| {
-                            if let Some(mut paths_at_time) = buffer.remove(cap.time()) {
-                                let mut changes = Vec::<String>::new();
+                            sorted_times.sort_by_key(|cap| cap.time().clone());
 
-                                for (mut path, t, diff) in paths_at_time.drain(..) {
-                                    let value = JValue::from(path.pop().unwrap());
-                                    let pointer = interleave(path, &path_id[..]);
+                            for cap in sorted_times.drain(..) {
+                                if let Some(mut paths_at_time) = buffer.remove(&cap) {
+                                    let mut changes = Vec::<String>::new();
 
-                                    *pointer_mut(&mut states, &pointer) = value;
+                                    for (mut path, t, diff) in paths_at_time.drain(..) {
+                                        let aid = path_id.last()
+                                            .expect("malformed path_id; no aid found")
+                                            .clone();
 
-                                    changes.push(pointer[0].clone());
+                                        // @TODO read from schema
+                                        //
+                                        // For cardinality many fields, we need to wrap values in
+                                        // an array, rather than overwriting.
+                                        let cardinality = &Cardinality::One;
+
+                                        let mut value = JValue::from(path.pop().expect("malformed path; no value found"));
+
+                                        // We construct the pointer somewhat awkwardly here,
+                                        // ignoring all but the last attribute. This has the effect
+                                        // of flattening the resulting json maps.
+                                        let pointer = if path_id.len() == 1 {
+                                            interleave(path, &path_id[..])
+                                        } else {
+                                            let root_eid = path.first()
+                                                .expect("malformed path; no root eid found")
+                                                .clone();
+
+                                            if &aid == "db__ident" {
+                                                let aid = path_id[path_id.len() - 2].clone();
+                                                interleave(vec![root_eid], &[aid])
+                                            } else {
+                                                interleave(vec![root_eid], &[aid])
+                                            }
+                                        };
+
+                                        let mut map = states
+                                            .entry(cap.time().clone())
+                                            .or_insert_with(|| JValue::Object(Map::new()));
+
+                                        match cardinality {
+                                            &Cardinality::One => {
+                                                *pointer_mut(&mut map, &pointer, Cardinality::One) = value;
+                                            }
+                                            &Cardinality::Many => {
+                                                pointer_mut(&mut map, &pointer, Cardinality::Many).as_array_mut().expect("not an array").push(value);
+                                            }
+                                        }
+
+                                        changes.push(pointer[0].clone());
+                                    }
+
+                                    output.session(&cap).give_iterator(changes.drain(..));
                                 }
-
-                                output.session(&cap).give_iterator(changes.drain(..));
                             }
-                        });
-                    },
-                )
+                        }
+                    })
         });
 
         let mut change_keys = HashMap::new();
@@ -352,6 +405,8 @@ impl GraphQl {
         let mut vector = Vec::new();
 
         let required_aids = self.required_aids.clone();
+
+        let mut merged = Map::new();
 
         let snapshots = nested.parent.concatenate(streams).unary_notify(
             Pipeline,
@@ -368,32 +423,63 @@ impl GraphQl {
                     notificator.notify_at(cap.retain());
                 });
 
-                {
-                    let mut states = states.borrow_mut();
+                let mut states = states.borrow_mut();
 
-                    for (key, snapshot) in states.as_object().unwrap().iter() {
-                        for required_aid in required_aids.iter() {
-                            if !snapshot.as_object().unwrap().contains_key(required_aid) {
-                                excise_keys.push(key.clone());
+                notificator.for_each(|cap, _, _| {
+                    let mut sorted_times: Vec<_> = states
+                        .keys()
+                        .filter(|t| *t <= cap.time())
+                        .cloned()
+                        .collect();
+
+                    sorted_times.sort();
+
+                    if !sorted_times.is_empty() {
+                        for cap in sorted_times {
+                            let available_states = states.remove(&cap).expect("key not found");
+
+                            match available_states {
+                                JValue::Object(map) => {
+                                    for (eid, diffs) in map {
+                                        let entry = merged.entry(eid).or_insert_with(|| {
+                                            JValue::Object(Map::<String, JValue>::new())
+                                        });
+
+                                        match diffs {
+                                            JValue::Object(diff_map) => {
+                                                entry
+                                                    .as_object_mut()
+                                                    .expect("couldn't unwrap entry")
+                                                    .extend(diff_map.into_iter());
+                                            }
+                                            _ => panic!("wrong diff type"),
+                                        }
+                                    }
+                                }
+                                _ => panic!("not an object"),
                             }
                         }
-                    }
 
-                    let states_map = states.as_object_mut().unwrap();
-                    for key in excise_keys.drain(..) {
-                        states_map.remove(&key);
-                    }
-                }
-
-                {
-                    let states = states.borrow();
-
-                    notificator.for_each(|cap, _, _| {
                         if let Some(mut keys) = change_keys.remove(cap.time()) {
+
+                            for key in keys.iter() {
+                                if let Some(ref snapshot) = merged.get(key) {
+                                    for required_aid in required_aids.iter() {
+                                        if !snapshot.as_object().unwrap().contains_key(required_aid) {
+                                            excise_keys.push(key.clone());
+                                        }
+                                    }
+                                }
+                            }
+
+                            for key in excise_keys.drain(..) {
+                                merged.remove(&key);
+                            }
+
                             let t = cap.time().clone();
 
                             let snapshots = keys.drain().flat_map(|key| {
-                                if let Some(snapshot) = states.get(key) {
+                                if let Some(snapshot) = merged.get(&key) {
                                     Some(Output::Json(
                                         "test".to_string(),
                                         snapshot.clone(),
@@ -407,8 +493,8 @@ impl GraphQl {
 
                             output.session(&cap).give_iterator(snapshots);
                         }
-                    });
-                }
+                    }
+                });
             },
         );
 
@@ -453,13 +539,17 @@ fn interleave(mut values: Vec<Value>, constants: &[Aid]) -> Vec<String> {
     }
 }
 
-fn pointer_mut<'a>(v: &'a mut JValue, tokens: &[String]) -> &'a mut JValue {
+fn pointer_mut<'a>(
+    v: &'a mut JValue,
+    tokens: &[String],
+    cardinality: Cardinality,
+) -> &'a mut JValue {
     if tokens.is_empty() {
         v
     } else {
         let mut target = v;
 
-        for token in tokens {
+        for (idx, token) in tokens.iter().enumerate() {
             // borrow checker gets confused about `target` being
             // mutably borrowed too many times because of the loop
             // this once-per-loop binding makes the scope clearer and
@@ -469,15 +559,23 @@ fn pointer_mut<'a>(v: &'a mut JValue, tokens: &[String]) -> &'a mut JValue {
             target = match *target_once {
                 JValue::Object(ref mut map) => {
                     if !map.contains_key(token) {
-                        map.insert(token.to_string(), JValue::Object(Map::new()));
+                        if cardinality == Cardinality::One || idx < tokens.len() - 1 {
+                            map.insert(token.to_string(), JValue::Object(Map::new()));
+                        } else {
+                            map.insert(token.to_string(), JValue::Array(Vec::new()));
+                        }
                     }
 
                     map.get_mut(token).unwrap()
                 }
                 // JValue::Array(ref mut list) => {
-                //     parse_index(&token).and_then(move |x| list.get_mut(x))
+                //     dbg!(&token);
+                //     dbg!(&tokens);
+                //     parse_index(&token)
+                //         .and_then(move |x| list.get_mut(x))
+                //         .unwrap()
                 // }
-                _ => panic!("failed to acquire pointer to {:?}", tokens),
+                _ => panic!("failed to acquire pointer to {:?} at {:?}", tokens, token),
             };
         }
 
