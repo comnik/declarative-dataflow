@@ -6,11 +6,9 @@ use std::sync::atomic::{self, AtomicUsize};
 
 use timely::dataflow::scopes::child::Iterative;
 use timely::dataflow::Scope;
-use timely::order::Product;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
-use differential_dataflow::trace::TraceReader;
 
 use crate::binding::{AsBinding, AttributeBinding, Binding};
 use crate::Rule;
@@ -423,16 +421,11 @@ impl Implementable for Plan {
                 let (tuples, shutdown_propose) = match context.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
-                        let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
                         let (propose, shutdown_propose) =
-                            propose_trace.import_core(&nested.parent, a);
+                            propose_trace.import_frontier(&nested.parent, a);
 
                         let tuples = propose
-                            .enter_at(nested, move |_, _, time| {
-                                let mut forwarded = time.clone();
-                                forwarded.advance_by(&frontier);
-                                Product::new(forwarded, 0)
-                            })
+                            .enter(nested)
                             .filter(move |e, _v| *e == Value::Eid(match_e))
                             .as_collection(|_e, v| vec![v.clone()]);
 
@@ -455,16 +448,11 @@ impl Implementable for Plan {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let match_v = match_v.clone();
-                        let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
                         let (propose, shutdown_propose) =
                             propose_trace.import_core(&nested.parent, a);
 
                         let tuples = propose
-                            .enter_at(nested, move |_, _, time| {
-                                let mut forwarded = time.clone();
-                                forwarded.advance_by(&frontier);
-                                Product::new(forwarded, 0)
-                            })
+                            .enter(nested)
                             .filter(move |_e, v| *v == match_v)
                             .as_collection(|e, _v| vec![e.clone()]);
 
@@ -505,18 +493,13 @@ impl Implementable for Plan {
                     match context.global_arrangement(name) {
                         None => panic!("{:?} not in query map", name),
                         Some(named) => {
-                            let frontier: Vec<T> = named.advance_frontier().to_vec();
                             let (arranged, shutdown_button) =
-                                named.import_core(&nested.parent, name);
+                                named.import_frontier(&nested.parent, name);
 
                             let relation = CollectionRelation {
                                 variables: syms.clone(),
                                 tuples: arranged
-                                    .enter_at(nested, move |_, _, time| {
-                                        let mut forwarded = time.clone();
-                                        forwarded.advance_by(&frontier);
-                                        Product::new(forwarded, 0)
-                                    })
+                                    .enter(nested)
                                     // @TODO this destroys all the arrangement re-use
                                     .as_collection(|tuple, _| tuple.clone()),
                             };

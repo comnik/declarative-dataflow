@@ -14,8 +14,8 @@ keywords = ["differential", "dataflow",  "datalog", "graphql", "query"]
 license = "MIT"
 
 [dependencies]
-timely = { version = "0.10.0", features = ["bincode"] }
-differential-dataflow = { version = "0.10.0" }
+timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
+differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow", branch = "enter_frontier" }
 serde = "1"
 serde_derive = "1"
 log = "0.4"

@@ -359,29 +359,21 @@ impl Hector {
                 match context.forward_propose(&binding.source_attribute) {
                     None => panic!("Unknown attribute {}", &binding.source_attribute),
                     Some(forward_trace) => {
-                        let frontier: Vec<T> = forward_trace.advance_frontier().to_vec();
-                        let (forward, shutdown_forward) = forward_trace.import_core(
-                            &nested.parent,
-                            &format!("Propose({})", &binding.source_attribute),
-                        );
+                        let name = format!("Propose({})", &binding.source_attribute);
+                        let (forward, shutdown_forward) =
+                            forward_trace.import_frontier(&nested.parent, &name);
 
                         let prefix = binding.variables();
                         let target_variables = self.variables.clone();
-                        let tuples = forward
-                            .enter_at(nested, move |_, _, time| {
-                                let mut forwarded = time.clone();
-                                forwarded.advance_by(&frontier);
-                                Product::new(forwarded, 0)
-                            })
-                            .as_collection(move |e, v| {
-                                let tuple = (e, v);
-                                target_variables
-                                    .iter()
-                                    .flat_map(|x| {
-                                        Some(tuple.index(AsBinding::binds(&prefix, *x).unwrap()))
-                                    })
-                                    .collect()
-                            });
+                        let tuples = forward.enter(nested).as_collection(move |e, v| {
+                            let tuple = (e, v);
+                            target_variables
+                                .iter()
+                                .flat_map(|x| {
+                                    Some(tuple.index(AsBinding::binds(&prefix, *x).unwrap()))
+                                })
+                                .collect()
+                        });
 
                         let relation = CollectionRelation {
                             variables: self.variables.clone(),
@@ -573,13 +565,12 @@ impl Implementable for Hector {
                                     let (arranged, shutdown) = context
                                         .forward_propose(&delta_binding.source_attribute)
                                         .expect("forward propose trace doesn't exist")
-                                        .import_core(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
+                                        .import_frontier(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
 
                                     shutdown_handle.add_button(shutdown);
 
                                     arranged
                                 });
-                            let frontier: Vec<T> = propose.trace.advance_frontier().to_vec();
 
                             let mut source_conflicts = source_conflicts(idx, &self.bindings);
 
@@ -603,10 +594,7 @@ impl Implementable for Hector {
 
                                                     propose
                                                         .filter(move |e, _v| *e == match_v)
-                                                        .enter_at(&scope.parent, move |_, _, time| {
-                                                            let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
-                                                            Product::new(forwarded, Default::default())
-                                                        })
+                                                        .enter(&scope.parent)
                                                         .enter(&scope)
                                                         .as_collection(|e,v| vec![e.clone(), v.clone()])
                                                 }
@@ -615,10 +603,7 @@ impl Implementable for Hector {
 
                                                     propose
                                                         .filter(move |_e, v| *v == match_v)
-                                                        .enter_at(&scope.parent, move |_, _, time| {
-                                                            let mut forwarded = time.clone(); forwarded.advance_by(&frontier);
-                                                            Product::new(forwarded, Default::default())
-                                                        })
+                                                        .enter(&scope.parent)
                                                         .enter(&scope)
                                                         .as_collection(|v,e| vec![e.clone(), v.clone()])
                                                 }
@@ -632,11 +617,7 @@ impl Implementable for Hector {
                                 prefix.push(delta_binding.variables.1);
 
                                 propose
-                                    .enter_at(&scope.parent, move |_, _, time| {
-                                        let mut forwarded = time.clone();
-                                        forwarded.advance_by(&frontier);
-                                        Product::new(forwarded, Default::default())
-                                    })
+                                    .enter(&scope.parent)
                                     .enter(&scope)
                                     .as_collection(|e,v| vec![e.clone(), v.clone()])
                             };
@@ -718,28 +699,24 @@ impl Implementable for Hector {
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
                                                                 let count = {
+                                                                    let name = format!("Counts({})", &delta_binding.source_attribute);
                                                                     let count = forward_counts
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
                                                                             let (arranged, shutdown) =
                                                                                 context.forward_count(&other.source_attribute)
                                                                                 .expect("forward count doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
+                                                                                .import_frontier(&scope.parent.parent, &name);
 
                                                                             shutdown_handle.add_button(shutdown);
 
                                                                             arranged
                                                                         });
 
-                                                                    let frontier: Vec<T> = count.trace.advance_frontier().to_vec();
                                                                     let neu = is_neu;
 
                                                                     count
-                                                                        .enter_at(&scope.parent, move |_, _, t| {
-                                                                            let mut forwarded = t.clone();
-                                                                            forwarded.advance_by(&frontier);
-                                                                            Product::new(forwarded, 0)
-                                                                        })
+                                                                        .enter(&scope.parent)
                                                                         .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
                                                                 };
 ;
@@ -747,25 +724,21 @@ impl Implementable for Hector {
                                                                     let propose = forward_proposes
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let (arranged, shutdown) =
-                                                                                context.forward_propose(&other.source_attribute)
+                                                                            let name = format!("Propose({})", &delta_binding.source_attribute);
+                                                                            let (arranged, shutdown) = context
+                                                                                .forward_propose(&other.source_attribute)
                                                                                 .expect("forward propose doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("Propose({})", &delta_binding.source_attribute));
+                                                                                .import_frontier(&scope.parent.parent, &name);
 
                                                                             shutdown_handle.add_button(shutdown);
 
                                                                             arranged
                                                                         });
 
-                                                                    let frontier: Vec<T> = propose.trace.advance_frontier().to_vec();
                                                                     let neu = is_neu;
 
                                                                     propose
-                                                                        .enter_at(&scope.parent, move |_, _, t| {
-                                                                            let mut forwarded = t.clone();
-                                                                            forwarded.advance_by(&frontier);
-                                                                            Product::new(forwarded, 0)
-                                                                        })
+                                                                        .enter(&scope.parent)
                                                                         .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
                                                                 };
 
@@ -773,25 +746,21 @@ impl Implementable for Hector {
                                                                     let validate = forward_validates
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let (arranged, shutdown) =
-                                                                                context.forward_validate(&other.source_attribute)
+                                                                            let name = format!("Validate({})", &delta_binding.source_attribute);
+                                                                            let (arranged, shutdown) = context
+                                                                                .forward_validate(&other.source_attribute)
                                                                                 .expect("forward validate doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("Validate({})", &delta_binding.source_attribute));
+                                                                                .import_frontier(&scope.parent.parent, &name);
 
                                                                             shutdown_handle.add_button(shutdown);
 
                                                                             arranged
                                                                         });
 
-                                                                    let frontier: Vec<T> = validate.trace.advance_frontier().to_vec();
                                                                     let neu = is_neu;
 
                                                                     validate
-                                                                        .enter_at(&scope.parent, move |_, _, t| {
-                                                                            let mut forwarded = t.clone();
-                                                                            forwarded.advance_by(&frontier);
-                                                                            Product::new(forwarded, 0)
-                                                                        })
+                                                                        .enter(&scope.parent)
                                                                         .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
                                                                 };
 
@@ -810,25 +779,21 @@ impl Implementable for Hector {
                                                                     let count = reverse_counts
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let (arranged, shutdown) =
-                                                                                context.reverse_count(&other.source_attribute)
+                                                                            let name = format!("_Counts({})", &delta_binding.source_attribute);
+                                                                            let (arranged, shutdown) = context
+                                                                                .reverse_count(&other.source_attribute)
                                                                                 .expect("reverse count doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("_Counts({})", &delta_binding.source_attribute));
+                                                                                .import_frontier(&scope.parent.parent, &name);
 
                                                                             shutdown_handle.add_button(shutdown);
 
                                                                             arranged
                                                                         });
 
-                                                                    let frontier: Vec<T> = count.trace.advance_frontier().to_vec();
                                                                     let neu = is_neu;
 
                                                                     count
-                                                                        .enter_at(&scope.parent, move |_, _, t| {
-                                                                            let mut forwarded = t.clone();
-                                                                            forwarded.advance_by(&frontier);
-                                                                            Product::new(forwarded, 0)
-                                                                        })
+                                                                        .enter(&scope.parent)
                                                                         .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
                                                                 };
 ;
@@ -836,25 +801,21 @@ impl Implementable for Hector {
                                                                     let propose = reverse_proposes
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let (arranged, shutdown) =
-                                                                                context.reverse_propose(&other.source_attribute)
+                                                                            let name = format!("_Propose({})", &delta_binding.source_attribute);
+                                                                            let (arranged, shutdown) = context
+                                                                                .reverse_propose(&other.source_attribute)
                                                                                 .expect("reverse propose doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("_Propose({})", &delta_binding.source_attribute));
+                                                                                .import_frontier(&scope.parent.parent, &name);
 
                                                                             shutdown_handle.add_button(shutdown);
 
                                                                             arranged
                                                                         });
 
-                                                                    let frontier: Vec<T> = propose.trace.advance_frontier().to_vec();
                                                                     let neu = is_neu;
 
                                                                     propose
-                                                                        .enter_at(&scope.parent, move |_, _, t| {
-                                                                            let mut forwarded = t.clone();
-                                                                            forwarded.advance_by(&frontier);
-                                                                            Product::new(forwarded, 0)
-                                                                        })
+                                                                        .enter(&scope.parent)
                                                                         .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
                                                                 };
 
@@ -862,25 +823,21 @@ impl Implementable for Hector {
                                                                     let validate = reverse_validates
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let (arranged, shutdown) =
-                                                                                context.reverse_validate(&other.source_attribute)
+                                                                            let name = format!("_Validate({})", &delta_binding.source_attribute);
+                                                                            let (arranged, shutdown) = context
+                                                                                .reverse_validate(&other.source_attribute)
                                                                                 .expect("reverse validate doesn't exist")
-                                                                                .import_core(&scope.parent.parent, &format!("_Validate({})", &delta_binding.source_attribute));
+                                                                                .import_frontier(&scope.parent.parent, &name);
 
                                                                             shutdown_handle.add_button(shutdown);
 
                                                                             arranged
                                                                         });
 
-                                                                    let frontier: Vec<T> = validate.trace.advance_frontier().to_vec();
                                                                     let neu = is_neu;
 
                                                                     validate
-                                                                        .enter_at(&scope.parent, move |_, _, t| {
-                                                                            let mut forwarded = t.clone();
-                                                                            forwarded.advance_by(&frontier);
-                                                                            Product::new(forwarded, 0)
-                                                                        })
+                                                                        .enter(&scope.parent)
                                                                         .enter_at(&scope, move |_,_,t| AltNeu { time: t.clone(), neu })
                                                                 };
 
