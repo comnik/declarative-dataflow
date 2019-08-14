@@ -15,7 +15,7 @@ license = "MIT"
 
 [dependencies]
 timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
-differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow", branch = "enter_frontier" }
+differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
 serde = "1"
 serde_derive = "1"
 log = "0.4"
