@@ -8,7 +8,6 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::{Arrange, Arranged};
 use differential_dataflow::operators::JoinCore;
-use differential_dataflow::trace::TraceReader;
 
 use crate::binding::{AsBinding, Binding};
 use crate::plan::{next_id, Dependencies, ImplContext, Implementable};
@@ -47,57 +46,43 @@ where
     variables.push(target);
 
     let (left_arranged, shutdown_left) = {
-        let (mut index, shutdown_button) = if target == left.variables.0 {
+        let (index, shutdown_button) = if target == left.variables.0 {
             variables.push(left.variables.1);
             context
                 .forward_propose(&left.source_attribute)
                 .expect("forward propose trace does not exist")
-                .import_core(&nested.parent, &left.source_attribute)
+                .import_frontier(&nested.parent, &left.source_attribute)
         } else if target == left.variables.1 {
             variables.push(left.variables.0);
             context
                 .reverse_propose(&left.source_attribute)
                 .expect("reverse propose trace does not exist")
-                .import_core(&nested.parent, &left.source_attribute)
+                .import_frontier(&nested.parent, &left.source_attribute)
         } else {
             panic!("Unbound target variable in Attribute<->Attribute join.");
         };
 
-        let frontier = index.trace.advance_frontier().to_vec();
-        let forwarded = index.enter_at(nested, move |_, _, time| {
-            let mut forwarded = time.clone();
-            forwarded.advance_by(&frontier);
-            Product::new(forwarded, 0)
-        });
-
-        (forwarded, shutdown_button)
+        (index.enter(nested), shutdown_button)
     };
 
     let (right_arranged, shutdown_right) = {
-        let (mut index, shutdown_button) = if target == right.variables.0 {
+        let (index, shutdown_button) = if target == right.variables.0 {
             variables.push(right.variables.1);
             context
                 .forward_propose(&right.source_attribute)
                 .expect("forward propose trace does not exist")
-                .import_core(&nested.parent, &right.source_attribute)
+                .import_frontier(&nested.parent, &right.source_attribute)
         } else if target == right.variables.1 {
             variables.push(right.variables.0);
             context
                 .reverse_propose(&right.source_attribute)
                 .expect("reverse propose trace does not exist")
-                .import_core(&nested.parent, &right.source_attribute)
+                .import_frontier(&nested.parent, &right.source_attribute)
         } else {
             panic!("Unbound target variable in Attribute<->Attribute join.");
         };
 
-        let frontier = index.trace.advance_frontier().to_vec();
-        let forwarded = index.enter_at(nested, move |_, _, time| {
-            let mut forwarded = time.clone();
-            forwarded.advance_by(&frontier);
-            Product::new(forwarded, 0)
-        });
-
-        (forwarded, shutdown_button)
+        (index.enter(nested), shutdown_button)
     };
 
     let tuples = left_arranged.join_core(&right_arranged, move |key: &Value, v1, v2| {
@@ -197,16 +182,11 @@ where
     let (tuples, shutdown_propose) = match context.forward_propose(&right.source_attribute) {
         None => panic!("attribute {:?} does not exist", &right.source_attribute),
         Some(propose_trace) => {
-            let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
             let (propose, shutdown_propose) =
-                propose_trace.import_core(&nested.parent, &right.source_attribute);
+                propose_trace.import_frontier(&nested.parent, &right.source_attribute);
 
             let tuples = propose
-                .enter_at(nested, move |_, _, time| {
-                    let mut forwarded = time.clone();
-                    forwarded.advance_by(&frontier);
-                    Product::new(forwarded, 0)
-                })
+                .enter(nested)
                 .as_collection(|e, v| vec![e.clone(), v.clone()]);
 
             (tuples, shutdown_propose)

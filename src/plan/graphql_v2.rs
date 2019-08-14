@@ -319,85 +319,90 @@ impl GraphQl {
             stream
                 .exchange(|(path, _t, _diff)| path[0].clone().hashed())
                 .delay(|(_path, t, _diff), _cap| t.clone())
-                .unary_frontier(
-                    Pipeline,
-                    "Changes",
-                    move |_cap, _info| {
-                        move |input, output| {
-                            input.for_each(|cap, data| {
-                                data.swap(&mut vector);
-                                buffer
-                                    .entry(cap.retain())
-                                    .or_insert_with(Vec::new)
-                                    .extend(vector.drain(..));
-                            });
+                .unary_frontier(Pipeline, "Changes", move |_cap, _info| {
+                    move |input, output| {
+                        input.for_each(|cap, data| {
+                            data.swap(&mut vector);
+                            buffer
+                                .entry(cap.retain())
+                                .or_insert_with(Vec::new)
+                                .extend(vector.drain(..));
+                        });
 
-                            let mut states = states.borrow_mut();
+                        let mut states = states.borrow_mut();
 
-                            let mut sorted_times: Vec<_> = buffer
-                                .keys()
-                                .filter(|cap| !input.frontier().less_equal(cap.time()))
-                                .cloned()
-                                .collect();
+                        let mut sorted_times: Vec<_> = buffer
+                            .keys()
+                            .filter(|cap| !input.frontier().less_equal(cap.time()))
+                            .cloned()
+                            .collect();
 
-                            sorted_times.sort_by_key(|cap| cap.time().clone());
+                        sorted_times.sort_by_key(|cap| cap.time().clone());
 
-                            for cap in sorted_times.drain(..) {
-                                if let Some(mut paths_at_time) = buffer.remove(&cap) {
-                                    let mut changes = Vec::<String>::new();
+                        for cap in sorted_times.drain(..) {
+                            if let Some(mut paths_at_time) = buffer.remove(&cap) {
+                                let mut changes = Vec::<String>::new();
 
-                                    for (mut path, t, diff) in paths_at_time.drain(..) {
-                                        let aid = path_id.last()
-                                            .expect("malformed path_id; no aid found")
+                                for (mut path, t, diff) in paths_at_time.drain(..) {
+                                    let aid = path_id
+                                        .last()
+                                        .expect("malformed path_id; no aid found")
+                                        .clone();
+
+                                    // @TODO read from schema
+                                    //
+                                    // For cardinality many fields, we need to wrap values in
+                                    // an array, rather than overwriting.
+                                    let cardinality = &Cardinality::One;
+
+                                    let mut value = JValue::from(
+                                        path.pop().expect("malformed path; no value found"),
+                                    );
+
+                                    // We construct the pointer somewhat awkwardly here,
+                                    // ignoring all but the last attribute. This has the effect
+                                    // of flattening the resulting json maps.
+                                    let pointer = if path_id.len() == 1 {
+                                        interleave(path, &path_id[..])
+                                    } else {
+                                        let root_eid = path
+                                            .first()
+                                            .expect("malformed path; no root eid found")
                                             .clone();
 
-                                        // @TODO read from schema
-                                        //
-                                        // For cardinality many fields, we need to wrap values in
-                                        // an array, rather than overwriting.
-                                        let cardinality = &Cardinality::One;
-
-                                        let mut value = JValue::from(path.pop().expect("malformed path; no value found"));
-
-                                        // We construct the pointer somewhat awkwardly here,
-                                        // ignoring all but the last attribute. This has the effect
-                                        // of flattening the resulting json maps.
-                                        let pointer = if path_id.len() == 1 {
-                                            interleave(path, &path_id[..])
+                                        if &aid == "db__ident" {
+                                            let aid = path_id[path_id.len() - 2].clone();
+                                            interleave(vec![root_eid], &[aid])
                                         } else {
-                                            let root_eid = path.first()
-                                                .expect("malformed path; no root eid found")
-                                                .clone();
-
-                                            if &aid == "db__ident" {
-                                                let aid = path_id[path_id.len() - 2].clone();
-                                                interleave(vec![root_eid], &[aid])
-                                            } else {
-                                                interleave(vec![root_eid], &[aid])
-                                            }
-                                        };
-
-                                        let mut map = states
-                                            .entry(cap.time().clone())
-                                            .or_insert_with(|| JValue::Object(Map::new()));
-
-                                        match cardinality {
-                                            &Cardinality::One => {
-                                                *pointer_mut(&mut map, &pointer, Cardinality::One) = value;
-                                            }
-                                            &Cardinality::Many => {
-                                                pointer_mut(&mut map, &pointer, Cardinality::Many).as_array_mut().expect("not an array").push(value);
-                                            }
+                                            interleave(vec![root_eid], &[aid])
                                         }
+                                    };
 
-                                        changes.push(pointer[0].clone());
+                                    let mut map = states
+                                        .entry(cap.time().clone())
+                                        .or_insert_with(|| JValue::Object(Map::new()));
+
+                                    match cardinality {
+                                        &Cardinality::One => {
+                                            *pointer_mut(&mut map, &pointer, Cardinality::One) =
+                                                value;
+                                        }
+                                        &Cardinality::Many => {
+                                            pointer_mut(&mut map, &pointer, Cardinality::Many)
+                                                .as_array_mut()
+                                                .expect("not an array")
+                                                .push(value);
+                                        }
                                     }
 
-                                    output.session(&cap).give_iterator(changes.drain(..));
+                                    changes.push(pointer[0].clone());
                                 }
+
+                                output.session(&cap).give_iterator(changes.drain(..));
                             }
                         }
-                    })
+                    }
+                })
         });
 
         let mut change_keys = HashMap::new();
@@ -461,11 +466,11 @@ impl GraphQl {
                         }
 
                         if let Some(mut keys) = change_keys.remove(cap.time()) {
-
                             for key in keys.iter() {
                                 if let Some(ref snapshot) = merged.get(key) {
                                     for required_aid in required_aids.iter() {
-                                        if !snapshot.as_object().unwrap().contains_key(required_aid) {
+                                        if !snapshot.as_object().unwrap().contains_key(required_aid)
+                                        {
                                             excise_keys.push(key.clone());
                                         }
                                     }

@@ -39,7 +39,6 @@ use differential_dataflow::operators::Consolidate;
 #[cfg(feature = "set-semantics")]
 use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
-use differential_dataflow::trace::TraceReader;
 use differential_dataflow::{Collection, ExchangeData};
 
 #[cfg(feature = "uuid")]
@@ -663,15 +662,10 @@ where
         match context.forward_propose(&self.source_attribute) {
             None => panic!("attribute {:?} does not exist", self.source_attribute),
             Some(propose_trace) => {
-                let frontier = propose_trace.advance_frontier().to_vec();
                 let (propose, shutdown_propose) =
-                    propose_trace.import_core(&nested.parent, &self.source_attribute);
+                    propose_trace.import_frontier(&nested.parent, &self.source_attribute);
 
-                let tuples = propose.enter_at(nested, move |_, _, time| {
-                    let mut forwarded = time.clone();
-                    forwarded.advance_by(&frontier);
-                    Product::new(forwarded, 0)
-                });
+                let tuples = propose.enter(nested);
 
                 let (e, v) = self.variables;
                 let projected = if target_variables == [e, v] {
@@ -703,15 +697,10 @@ where
         match context.forward_propose(&self.source_attribute) {
             None => panic!("attribute {:?} does not exist", self.source_attribute),
             Some(propose_trace) => {
-                let frontier = propose_trace.advance_frontier().to_vec();
                 let (propose, shutdown_propose) =
-                    propose_trace.import_core(&nested.parent, &self.source_attribute);
+                    propose_trace.import_frontier(&nested.parent, &self.source_attribute);
 
-                let tuples = propose.enter_at(nested, move |_, _, time| {
-                    let mut forwarded = time.clone();
-                    forwarded.advance_by(&frontier);
-                    Product::new(forwarded, 0)
-                });
+                let tuples = propose.enter(nested);
 
                 let (e, v) = self.variables;
                 let arranged = if variables == [e, v] {
