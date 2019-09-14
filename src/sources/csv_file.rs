@@ -205,7 +205,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
             let aid = self.schema[idx].0.clone();
             out.push((
                 aid.to_string(),
-                AttributeConfig::real_time(InputSemantics::CardinalityMany),
+                AttributeConfig::real_time(InputSemantics::Distinct),
                 stream,
             ));
         }

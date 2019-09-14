@@ -121,7 +121,7 @@ where
                 InputSemantics::LastWriteWins => pairs.as_collection().last_write_wins(),
                 // Ensure that redundant (e,v) pairs don't cause
                 // misleading proposals during joining.
-                InputSemantics::CardinalityMany => pairs.as_collection().distinct(),
+                InputSemantics::Distinct => pairs.as_collection().distinct(),
             };
 
             // @TODO should only create this if used later

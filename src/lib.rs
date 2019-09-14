@@ -334,7 +334,7 @@ pub enum InputSemantics {
     // FirstWriteWins,
     /// Multiple different values for any given eid are allowed, but
     /// (e,v) pairs are enforced to be distinct.
-    CardinalityMany,
+    Distinct,
     // /// @TODO
     // CAS,
 }

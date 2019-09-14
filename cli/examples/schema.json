@@ -9,7 +9,7 @@
             "nanos": 0
           }
         },
-        "input_semantics": "CardinalityMany",
+        "input_semantics": "Distinct",
         "query_support": "Basic",
         "index_direction": "Forward",
         "timeless": false
@@ -26,7 +26,7 @@
             "nanos": 0
           }
         },
-        "input_semantics": "CardinalityMany",
+        "input_semantics": "Distinct",
         "query_support": "Basic",
         "index_direction": "Forward",
         "timeless": false
@@ -43,7 +43,7 @@
             "nanos": 0
           }
         },
-        "input_semantics": "CardinalityMany",
+        "input_semantics": "Distinct",
         "query_support": "Basic",
         "index_direction": "Forward",
         "timeless": false
@@ -60,7 +60,7 @@
             "nanos": 0
           }
         },
-        "input_semantics": "CardinalityMany",
+        "input_semantics": "Distinct",
         "query_support": "Basic",
         "index_direction": "Forward",
         "timeless": false

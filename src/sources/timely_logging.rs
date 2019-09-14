@@ -177,7 +177,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
             .map(|aid| {
                 (
                     aid.to_string(),
-                    AttributeConfig::real_time(InputSemantics::CardinalityMany),
+                    AttributeConfig::real_time(InputSemantics::Distinct),
                     streams.remove(aid).unwrap(),
                 )
             })
