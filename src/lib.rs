@@ -326,8 +326,12 @@ pub enum InputSemantics {
     /// No special semantics enforced. Source is responsible for
     /// everything.
     Raw,
-    /// Only a single value per eid is allowed at any given timestamp.
-    CardinalityOne,
+    /// Only the last input for each eid is kept.
+    LastWriteWins,
+    // @TODO
+    // /// Only the first input for each eid is kept, all subsequent ones
+    // /// ignored.
+    // FirstWriteWins,
     /// Multiple different values for any given eid are allowed, but
     /// (e,v) pairs are enforced to be distinct.
     CardinalityMany,

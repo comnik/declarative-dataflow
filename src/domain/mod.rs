@@ -14,7 +14,7 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::AsCollection;
 
-use crate::operators::CardinalityOne;
+use crate::operators::LastWriteWins;
 use crate::{Aid, Error, Rewind, TxData, Value};
 use crate::{AttributeConfig, IndexDirection, InputSemantics, QuerySupport};
 use crate::{RelationConfig, RelationHandle};
@@ -118,7 +118,7 @@ where
         } else {
             let tuples = match config.input_semantics {
                 InputSemantics::Raw => pairs.as_collection(),
-                InputSemantics::CardinalityOne => pairs.as_collection().cardinality_one(),
+                InputSemantics::LastWriteWins => pairs.as_collection().last_write_wins(),
                 // Ensure that redundant (e,v) pairs don't cause
                 // misleading proposals during joining.
                 InputSemantics::CardinalityMany => pairs.as_collection().distinct(),
@@ -143,9 +143,9 @@ where
                 );
             }
 
-            // CardinalityOne is a special case, because count,
+            // LastWriteWins is a special case, because count,
             // propose, and validate are all essentially the same.
-            if config.input_semantics != InputSemantics::CardinalityOne {
+            if config.input_semantics != InputSemantics::LastWriteWins {
                 // Count traces are only required for use in
                 // worst-case optimal joins.
                 if config.query_support == QuerySupport::AdaptiveWCO {

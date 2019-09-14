@@ -38,7 +38,7 @@ impl Run for Vec<Case<u64>> {
                 for tx in case.transactions.iter() {
                     for datum in tx {
                         deps.entry(datum.2.clone()).or_insert_with(|| {
-                            AttributeConfig::tx_time(InputSemantics::CardinalityOne)
+                            AttributeConfig::tx_time(InputSemantics::LastWriteWins)
                         });
                     }
                 }
@@ -124,7 +124,7 @@ impl Run for Vec<Case<Pair<Duration, u64>>> {
                     for datum in tx {
                         deps.entry(datum.2.clone())
                             .or_insert_with(|| AttributeConfig {
-                                input_semantics: InputSemantics::CardinalityOne,
+                                input_semantics: InputSemantics::LastWriteWins,
                                 trace_slack: Some(Time::Bi(Duration::from_secs(0), 1)),
                                 ..Default::default()
                             });
