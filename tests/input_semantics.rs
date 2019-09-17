@@ -202,7 +202,7 @@ impl Run for Vec<Case<Pair<Duration, u64>>> {
 }
 
 #[test]
-fn cardinality_one() {
+fn last_write_wins() {
     vec![
         Case {
             description: "happy case",
@@ -289,7 +289,7 @@ fn cardinality_one() {
 }
 
 #[test]
-fn cardinality_one_unordered() {
+fn last_write_wins_unordered() {
     vec![Case {
         description: "late arrival",
         plan: Plan::MatchA(0, ":amount".to_string(), 1),

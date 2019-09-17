@@ -341,7 +341,7 @@ where
         self.shutdown_handles.remove(name);
     }
 
-    /// Handle a Transact request.
+    /// Handles a Transact request.
     pub fn transact(
         &mut self,
         tx_data: Vec<TxData>,
@@ -402,7 +402,7 @@ where
         }
     }
 
-    /// Handle a Register request.
+    /// Handles a Register request.
     pub fn register(&mut self, req: Register) -> Result<(), Error> {
         let Register { rules, .. } = req;
 
@@ -429,6 +429,14 @@ where
         Ok(())
     }
 
+    /// Handles a CreateAttribute request.
+    pub fn create_attribute<S>(&mut self, scope: &mut S, name: &str, config: AttributeConfig) -> Result<(), Error>
+    where
+        S: Scope<Timestamp = T>
+    {
+        self.context.internal.create_transactable_attribute(name, config, scope)
+    }
+
     /// Returns a fresh sourcing context, useful for installing 3DF
     /// compatible sources manually.
     pub fn make_sourcing_context(&self) -> SourcingContext<T> {
@@ -441,7 +449,7 @@ where
         }
     }
 
-    /// Handle a RegisterSource request.
+    /// Handles a RegisterSource request.
     pub fn register_source<S: Scope<Timestamp = T>>(
         &mut self,
         source: Box<dyn Sourceable<S>>,
@@ -484,7 +492,7 @@ where
         Ok(())
     }
 
-    /// Handle an AdvanceDomain request.
+    /// Handles an AdvanceDomain request.
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
             None => self.context.internal.advance_epoch(next),

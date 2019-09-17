@@ -503,7 +503,7 @@ fn main() {
                         }
                         Request::CreateAttribute(CreateAttribute { name, config }) => {
                             worker.dataflow::<T, _, _>(|scope| {
-                                server.context.internal.create_transactable_attribute(&name, config, scope)
+                                server.create_attribute(scope, &name, config)
                             })
                         }
                         Request::AdvanceDomain(name, next) => server.advance_domain(name, next.into()),
