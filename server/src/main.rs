@@ -20,8 +20,9 @@ use timely::synchronization::Sequencer;
 use differential_dataflow::logging::DifferentialEvent;
 use differential_dataflow::operators::Consolidate;
 
+use declarative_dataflow::scheduling::{AsScheduler, SchedulingEvent};
 use declarative_dataflow::server;
-use declarative_dataflow::server::{scheduler, CreateAttribute, Request, Server, TxId};
+use declarative_dataflow::server::{CreateAttribute, Request, Server, TxId};
 use declarative_dataflow::sinks::{Sinkable, SinkingContext};
 use declarative_dataflow::timestamp::{Coarsen, Time};
 use declarative_dataflow::{Output, ResultDiff};
@@ -306,10 +307,10 @@ fn main() {
 
             if server.scheduler.borrow().has_pending() {
                 let mut scheduler = server.scheduler.borrow_mut();
-                while let Some(activator) = scheduler.next() {
+                while let Some(activator) = scheduler.realtime.next() {
                     if let Some(event) = activator.schedule() {
                         match event {
-                            scheduler::Event::Tick => {
+                            SchedulingEvent::Tick => {
                                 sequencer.push(Command {
                                     owner: worker.index(),
                                     client: SYSTEM.0,
@@ -521,7 +522,7 @@ fn main() {
                                 if let Some(tick) = server_config.tick {
                                     let interval_end = Instant::now().duration_since(worker.timer()).coarsen(&tick);
                                     let at = worker.timer() + interval_end;
-                                    server.scheduler.borrow_mut().event_at(at, scheduler::Event::Tick);
+                                    server.scheduler.borrow_mut().realtime.event_at(at, SchedulingEvent::Tick);
                                 }
                             }
 
@@ -577,7 +578,7 @@ fn main() {
 
             // Finally, we give the CPU a chance to chill, if no work
             // remains.
-            let delay = server.scheduler.borrow().until_next().unwrap_or(Duration::from_millis(100));
+            let delay = server.scheduler.borrow().realtime.until_next().unwrap_or(Duration::from_millis(100));
             worker.step_or_park(Some(delay));
         }
 

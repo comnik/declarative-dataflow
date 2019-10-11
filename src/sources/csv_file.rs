@@ -193,6 +193,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
                                 .upgrade()
                                 .unwrap()
                                 .borrow_mut()
+                                .realtime
                                 .schedule_after(interval, Rc::downgrade(&activator))
                         }
                     }

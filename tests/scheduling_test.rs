@@ -1,4 +1,4 @@
-use declarative_dataflow::scheduling::{AsScheduler, Event, RealtimeScheduler};
+use declarative_dataflow::scheduling::{AsScheduler, RealtimeScheduler, SchedulingEvent};
 use std::time::Duration;
 
 #[test]
@@ -8,17 +8,20 @@ fn test_schedule_now() {
     assert!(!scheduler.has_pending());
     assert!(scheduler.until_next().is_none());
 
-    scheduler.event_after(Duration::from_secs(0), Event::Tick);
+    scheduler.event_after(Duration::from_secs(0), SchedulingEvent::Tick);
 
     assert!(scheduler.has_pending());
-    assert_eq!(scheduler.next().unwrap().schedule(), Some(Event::Tick));
+    assert_eq!(
+        scheduler.next().unwrap().schedule(),
+        Some(SchedulingEvent::Tick)
+    );
 }
 
 #[test]
 fn test_schedule_after() {
     let mut scheduler = RealtimeScheduler::new();
 
-    scheduler.event_after(Duration::from_secs(2), Event::Tick);
+    scheduler.event_after(Duration::from_secs(2), SchedulingEvent::Tick);
 
     assert!(!scheduler.has_pending());
     assert!(scheduler.next().is_none());
@@ -27,6 +30,9 @@ fn test_schedule_after() {
     std::thread::sleep(scheduler.until_next().unwrap());
 
     assert!(scheduler.has_pending());
-    assert_eq!(scheduler.next().unwrap().schedule(), Some(Event::Tick));
+    assert_eq!(
+        scheduler.next().unwrap().schedule(),
+        Some(SchedulingEvent::Tick)
+    );
     assert!(scheduler.until_next().is_none());
 }

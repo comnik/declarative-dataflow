@@ -8,7 +8,8 @@ pub mod frontier_scheduler;
 pub use frontier_scheduler::FrontierScheduler;
 
 pub mod realtime_scheduler;
-pub use realtime_scheduler::{Event, RealtimeScheduler};
+pub use realtime_scheduler::Event as SchedulingEvent;
+pub use realtime_scheduler::RealtimeScheduler;
 
 /// Common scheduler behaviour.
 pub trait AsScheduler {
