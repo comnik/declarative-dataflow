@@ -2,6 +2,7 @@
 //! semantics.
 
 use std::collections::HashMap;
+use std::ops::AddAssign;
 
 use timely::dataflow::operators::{Probe, UnorderedInput};
 use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
@@ -12,7 +13,7 @@ use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::Arrange;
 use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
-use differential_dataflow::AsCollection;
+use differential_dataflow::{AsCollection, Collection};
 
 use crate::operators::LastWriteWins;
 use crate::{Aid, Error, Rewind, TxData, Value};
@@ -45,6 +46,9 @@ use unordered_session::UnorderedSession;
 /// high-watermark of all timeful domain inputs. This ensures that
 /// they will never block overall progress.
 pub struct Domain<T: Timestamp + Lattice> {
+    /// A namespace under which all attributes in this domain are
+    /// contained.
+    namespace: String,
     /// The current input epoch.
     now_at: T,
     /// Last trace advance.
@@ -77,6 +81,62 @@ pub struct Domain<T: Timestamp + Lattice> {
     pub arrangements: HashMap<Aid, RelationHandle<T>>,
 }
 
+// We're defining domain composition here.
+impl<T> AddAssign for Domain<T>
+where
+    T: Timestamp + Lattice,
+{
+    fn add_assign(&mut self, other: Self) {
+        assert_eq!(
+            self.namespace, other.namespace,
+            "Only domains within a namespace can be composed."
+        );
+        assert_eq!(
+            other.probed_source_count, 0,
+            "Domain composition only supported for domains w/o external sources."
+        );
+        assert!(
+            !self
+                .attributes
+                .keys()
+                .any(|k| other.attributes.contains_key(k)),
+            "Domain attributes clash."
+        );
+        assert!(
+            !self
+                .relations
+                .keys()
+                .any(|k| other.relations.contains_key(k)),
+            "Domain relations clash."
+        );
+
+        self.now_at = self.now_at.meet(&other.now_at);
+        // @TODO
+        // self.last_advance = ???
+        self.input_sessions.extend(other.input_sessions.into_iter());
+        // @TODO
+        // self.domain_probe = ???
+        self.probed_source_count += other.probed_source_count;
+
+        self.attributes.extend(other.attributes.into_iter());
+
+        self.forward_count.extend(other.forward_count.into_iter());
+        self.forward_propose
+            .extend(other.forward_propose.into_iter());
+        self.forward_validate
+            .extend(other.forward_validate.into_iter());
+
+        self.reverse_count.extend(other.reverse_count.into_iter());
+        self.reverse_propose
+            .extend(other.reverse_propose.into_iter());
+        self.reverse_validate
+            .extend(other.reverse_validate.into_iter());
+
+        self.relations.extend(other.relations.into_iter());
+        self.arrangements.extend(other.arrangements.into_iter());
+    }
+}
+
 impl<T> Domain<T>
 where
     T: Timestamp + Lattice + Rewind,
@@ -84,6 +144,7 @@ where
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
         Domain {
+            namespace: Default::default(),
             now_at: start_at,
             last_advance: vec![<T as Lattice>::minimum()],
             input_sessions: HashMap::new(),
@@ -263,7 +324,6 @@ where
 
     /// Transact data into one or more inputs.
     pub fn transact(&mut self, tx_data: Vec<TxData>) -> Result<(), Error> {
-        // @TODO do this smarter, e.g. grouped by handle
         for TxData(op, e, a, v, t) in tx_data {
             match self.input_sessions.get_mut(&a) {
                 None => {
@@ -449,5 +509,174 @@ where
                 domain_frontier.iter().all(|t| frontier.less_than(t))
             })
         }
+    }
+}
+
+/// A domain that is still under construction in a specific scope.
+pub struct ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    raw: HashMap<Aid, Collection<S, (Value, Value), isize>>,
+    domain: Domain<S::Timestamp>,
+}
+
+impl<S> ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    /// Installs indices required for the specified level of query
+    /// support.
+    pub fn with_query_support(mut self, query_support: QuerySupport) -> Self {
+        for aid in self.domain.forward_propose.keys() {
+            // Count traces are only required for use in worst-case
+            // optimal joins.
+            if query_support == QuerySupport::AdaptiveWCO {
+                self.domain.forward_count.insert(
+                    aid.clone(),
+                    self.raw[aid]
+                        .map(|(k, _v)| (k, ()))
+                        .arrange_named(&format!("->Count({})", aid))
+                        .trace,
+                );
+            }
+
+            if query_support >= QuerySupport::Delta {
+                self.domain.forward_validate.insert(
+                    aid.clone(),
+                    self.raw[aid]
+                        .map(|t| (t, ()))
+                        .arrange_named(&format!("->Validate({})", aid))
+                        .trace,
+                );
+            }
+        }
+
+        self
+    }
+
+    /// Installs reverse indices for all attributes in the domain.
+    pub fn with_reverse_indices(mut self) -> Self {
+        for aid in self.domain.forward_count.keys() {
+            self.domain.reverse_count.insert(
+                aid.clone(),
+                self.raw[aid]
+                    .map(|(_e, v)| (v, ()))
+                    .arrange_named(&format!("->_Count({})", aid))
+                    .trace,
+            );
+        }
+
+        for aid in self.domain.forward_propose.keys() {
+            self.domain.reverse_propose.insert(
+                aid.clone(),
+                self.raw[aid]
+                    .map(|(e, v)| (v, e))
+                    .arrange_named(&format!("->_Propose({})", aid))
+                    .trace,
+            );
+        }
+
+        for aid in self.domain.forward_validate.keys() {
+            self.domain.reverse_validate.insert(
+                aid.clone(),
+                self.raw[aid]
+                    .map(|pair| (pair, ()))
+                    .arrange_named(&format!("->_Validate({})", aid))
+                    .trace,
+            );
+        }
+
+        self
+    }
+}
+
+impl<S> Into<Domain<S::Timestamp>> for ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn into(self) -> Domain<S::Timestamp> {
+        self.domain
+    }
+}
+
+/// Things that can create new domains.
+pub trait DomainInput<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    /// Creates a new domain containing only a single attribute of the
+    /// specified name, with a single forward index installed.
+    fn new_singleton_domain(&mut self, name: &str) -> ScopedDomain<S>;
+}
+
+impl<S> DomainInput<S> for S
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn new_singleton_domain(&mut self, name: &str) -> ScopedDomain<S> {
+        let ((handle, cap), pairs) =
+            self.new_unordered_input::<((Value, Value), S::Timestamp, isize)>();
+
+        let session = UnorderedSession::from(handle, cap);
+
+        let mut scoped_domain = pairs.as_collection().as_singleton_domain(name);
+
+        // We do not want to probe transactable attributes, because
+        // the domain epoch is authoritative for them.
+        scoped_domain
+            .domain
+            .input_sessions
+            .insert(name.to_string(), session);
+
+        scoped_domain
+    }
+}
+
+/// Things that can be converted into a domain with a single
+/// attribute.
+pub trait AsSingletonDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    /// Returns a domain containing only a single attribute of the
+    /// specified name, with a single forward index installed.
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S>;
+}
+
+impl<S> AsSingletonDomain<S> for Collection<S, (Value, Value), isize>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        let mut raw = HashMap::new();
+        raw.insert(name.to_string(), self);
+
+        let mut domain = Domain::new(Default::default());
+
+        // Propose traces are used in general, whereas the other
+        // indices are only relevant to Hector.
+        domain.forward_propose.insert(
+            name.to_string(),
+            raw[name]
+                .arrange_named(&format!("->Propose({})", &name))
+                .trace,
+        );
+
+        // This is crucial. If we forget to install the attribute
+        // configuration, its traces will be ignored when advancing
+        // the domain.
+        domain
+            .attributes
+            .insert(name.to_string(), Default::default());
+
+        ScopedDomain { raw, domain }
     }
 }
