@@ -11,12 +11,10 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 
 use crate::binding::{AsBinding, AttributeBinding, Binding};
-use crate::Rule;
+use crate::domain::Domain;
+use crate::timestamp::Rewind;
 use crate::{Aid, Eid, Value, Var};
-use crate::{
-    CollectionRelation, Implemented, Relation, RelationHandle, ShutdownHandle, VariableMap,
-};
-use crate::{TraceKeyHandle, TraceValHandle};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, VariableMap};
 
 #[cfg(feature = "set-semantics")]
 pub mod aggregate;
@@ -62,59 +60,6 @@ pub fn next_id() -> Eid {
 /// @FIXME
 pub fn gensym() -> Var {
     SYM.fetch_sub(1, atomic::Ordering::SeqCst) as Var
-}
-
-/// A thing that can provide global state required during the
-/// implementation of plans.
-pub trait ImplContext<T>
-where
-    T: Timestamp + Lattice,
-{
-    /// Returns the definition for the rule of the given name.
-    fn rule(&self, name: &str) -> Option<&Rule>;
-
-    /// Returns a mutable reference to a (non-base) relation, if one
-    /// is registered under the given name.
-    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle<T>>;
-
-    /// Checks whether an attribute of that name exists.
-    fn has_attribute(&self, name: &str) -> bool;
-
-    /// Retrieves the forward count trace for the specified aid.
-    fn forward_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>>;
-
-    /// Retrieves the forward propose trace for the specified aid.
-    fn forward_propose(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>>;
-
-    /// Retrieves the forward validate trace for the specified aid.
-    fn forward_validate(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>>;
-
-    /// Retrieves the reverse count trace for the specified aid.
-    fn reverse_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>>;
-
-    /// Retrieves the reverse propose trace for the specified aid.
-    fn reverse_propose(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>>;
-
-    /// Retrieves the reverse validate trace for the specified aid.
-    fn reverse_validate(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>>;
-
-    /// Returns the current opinion as to whether this rule is
-    /// underconstrained. Underconstrained rules cannot be safely
-    /// materialized and re-used on their own (i.e. without more
-    /// specific constraints).
-    fn is_underconstrained(&self, name: &str) -> bool;
 }
 
 /// Description of everything a plan needs prior to synthesis.
@@ -185,16 +130,15 @@ pub trait Implementable {
     }
 
     /// Implements the type as a simple relation.
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>;
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind;
 }
 
 /// Possible query plan types.
@@ -366,35 +310,34 @@ impl Implementable for Plan {
         }
     }
 
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         match *self {
             Plan::Project(ref projection) => {
-                projection.implement(nested, local_arrangements, context)
+                projection.implement(nested, domain, local_arrangements)
             }
             Plan::Aggregate(ref aggregate) => {
-                aggregate.implement(nested, local_arrangements, context)
+                aggregate.implement(nested, domain, local_arrangements)
             }
-            Plan::Union(ref union) => union.implement(nested, local_arrangements, context),
-            Plan::Join(ref join) => join.implement(nested, local_arrangements, context),
-            Plan::Hector(ref hector) => hector.implement(nested, local_arrangements, context),
-            Plan::Antijoin(ref antijoin) => antijoin.implement(nested, local_arrangements, context),
+            Plan::Union(ref union) => union.implement(nested, domain, local_arrangements),
+            Plan::Join(ref join) => join.implement(nested, domain, local_arrangements),
+            Plan::Hector(ref hector) => hector.implement(nested, domain, local_arrangements),
+            Plan::Antijoin(ref antijoin) => antijoin.implement(nested, domain, local_arrangements),
             Plan::Negate(ref plan) => {
                 let (relation, mut shutdown_handle) =
-                    plan.implement(nested, local_arrangements, context);
+                    plan.implement(nested, domain, local_arrangements);
                 let variables = relation.variables();
 
                 let tuples = {
-                    let (projected, shutdown) = relation.projected(nested, context, &variables);
+                    let (projected, shutdown) = relation.projected(nested, domain, &variables);
                     shutdown_handle.merge_with(shutdown);
 
                     projected.negate()
@@ -405,9 +348,9 @@ impl Implementable for Plan {
                     shutdown_handle,
                 )
             }
-            Plan::Filter(ref filter) => filter.implement(nested, local_arrangements, context),
+            Plan::Filter(ref filter) => filter.implement(nested, domain, local_arrangements),
             Plan::Transform(ref transform) => {
-                transform.implement(nested, local_arrangements, context)
+                transform.implement(nested, domain, local_arrangements)
             }
             Plan::MatchA(e, ref a, v) => {
                 let binding = AttributeBinding {
@@ -418,7 +361,7 @@ impl Implementable for Plan {
                 (Implemented::Attribute(binding), ShutdownHandle::empty())
             }
             Plan::MatchEA(match_e, ref a, sym1) => {
-                let (tuples, shutdown_propose) = match context.forward_propose(a) {
+                let (tuples, shutdown_propose) = match domain.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let (propose, shutdown_propose) =
@@ -444,7 +387,7 @@ impl Implementable for Plan {
                 )
             }
             Plan::MatchAV(sym1, ref a, ref match_v) => {
-                let (tuples, shutdown_propose) = match context.forward_propose(a) {
+                let (tuples, shutdown_propose) = match domain.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let match_v = match_v.clone();
@@ -471,7 +414,7 @@ impl Implementable for Plan {
                 )
             }
             Plan::NameExpr(ref syms, ref name) => {
-                if context.is_underconstrained(name) {
+                if domain.is_underconstrained(name) {
                     match local_arrangements.get(name) {
                         None => panic!("{:?} not in relation map", name),
                         Some(named) => {
@@ -490,7 +433,7 @@ impl Implementable for Plan {
                     // available as a global arrangement, but we'll do
                     // so for now.
 
-                    match context.global_arrangement(name) {
+                    match domain.global_arrangement(name) {
                         None => panic!("{:?} not in query map", name),
                         Some(named) => {
                             let (arranged, shutdown_button) =
@@ -512,11 +455,11 @@ impl Implementable for Plan {
                     }
                 }
             }
-            Plan::Pull(ref pull) => pull.implement(nested, local_arrangements, context),
-            Plan::PullLevel(ref path) => path.implement(nested, local_arrangements, context),
-            Plan::PullAll(ref path) => path.implement(nested, local_arrangements, context),
+            Plan::Pull(ref pull) => pull.implement(nested, domain, local_arrangements),
+            Plan::PullLevel(ref path) => path.implement(nested, domain, local_arrangements),
+            Plan::PullAll(ref path) => path.implement(nested, domain, local_arrangements),
             #[cfg(feature = "graphql")]
-            Plan::GraphQl(ref query) => query.implement(nested, local_arrangements, context),
+            Plan::GraphQl(ref query) => query.implement(nested, domain, local_arrangements),
         }
     }
 }

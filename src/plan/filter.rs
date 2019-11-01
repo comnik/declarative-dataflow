@@ -9,7 +9,9 @@ use differential_dataflow::lattice::Lattice;
 pub use crate::binding::{
     AsBinding, BinaryPredicate as Predicate, BinaryPredicateBinding, Binding,
 };
-use crate::plan::{Dependencies, ImplContext, Implementable};
+use crate::domain::Domain;
+use crate::plan::{Dependencies, Implementable};
+use crate::timestamp::Rewind;
 use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 #[inline(always)]
@@ -70,19 +72,18 @@ impl<P: Implementable> Implementable for Filter<P> {
         // bindings
     }
 
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         let (relation, mut shutdown_handle) =
-            self.plan.implement(nested, local_arrangements, context);
+            self.plan.implement(nested, domain, local_arrangements);
 
         let key_offsets: Vec<usize> = self
             .variables
@@ -101,7 +102,7 @@ impl<P: Implementable> Implementable for Filter<P> {
 
         let variables = relation.variables();
         let projected = {
-            let (projected, shutdown) = relation.projected(nested, context, &variables);
+            let (projected, shutdown) = relation.projected(nested, domain, &variables);
             shutdown_handle.merge_with(shutdown);
             projected
         };

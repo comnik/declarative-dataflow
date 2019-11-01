@@ -19,14 +19,12 @@ use differential_dataflow::logging::DifferentialEvent;
 
 use crate::domain::Domain;
 use crate::logging::DeclarativeEvent;
-use crate::plan::ImplContext;
 use crate::scheduling::Scheduler;
 use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
-use crate::{implement, implement_neu, AttributeConfig, RelationHandle, ShutdownHandle};
-use crate::{Aid, Error, Rewind, Time, TxData, Value};
-use crate::{TraceKeyHandle, TraceValHandle};
+use crate::{implement, implement_neu, AttributeConfig, ShutdownHandle};
+use crate::{Error, Rewind, Time, TxData, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -193,8 +191,8 @@ where
     /// A timer started at the initation of the timely computation
     /// (copied from worker).
     pub t0: Instant,
-    /// Implementation context.
-    pub context: Context<T>,
+    /// Internal domain in server time.
+    pub internal: Domain<T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, HashSet<Token>>,
     // Mapping from query names to their shutdown handles.
@@ -207,77 +205,6 @@ where
     timely_events: Option<Rc<EventLink<Duration, (Duration, usize, TimelyEvent)>>>,
     // Link to replayable Differential logging events.
     differential_events: Option<Rc<EventLink<Duration, (Duration, usize, DifferentialEvent)>>>,
-}
-
-/// Implementation context.
-pub struct Context<T>
-where
-    T: Timestamp + Lattice,
-{
-    /// Representation of named rules.
-    pub rules: HashMap<Aid, Rule>,
-    /// Set of rules known to be underconstrained.
-    pub underconstrained: HashSet<Aid>,
-    /// Internal domain of command sequence numbers.
-    pub internal: Domain<T>,
-}
-
-impl<T> ImplContext<T> for Context<T>
-where
-    T: Timestamp + Lattice,
-{
-    fn rule(&self, name: &str) -> Option<&Rule> {
-        self.rules.get(name)
-    }
-
-    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle<T>> {
-        self.internal.arrangements.get_mut(name)
-    }
-
-    fn has_attribute(&self, name: &str) -> bool {
-        self.internal.attributes.contains_key(name)
-    }
-
-    fn forward_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
-        self.internal.forward_count.get_mut(name)
-    }
-
-    fn forward_propose(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
-        self.internal.forward_propose.get_mut(name)
-    }
-
-    fn forward_validate(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
-        self.internal.forward_validate.get_mut(name)
-    }
-
-    fn reverse_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
-        self.internal.reverse_count.get_mut(name)
-    }
-
-    fn reverse_propose(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
-        self.internal.reverse_propose.get_mut(name)
-    }
-
-    fn reverse_validate(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
-        self.internal.reverse_validate.get_mut(name)
-    }
-
-    fn is_underconstrained(&self, _name: &str) -> bool {
-        // self.underconstrained.contains(name)
-        true
-    }
 }
 
 impl<T, Token> Server<T, Token>
@@ -302,11 +229,7 @@ where
         Server {
             config,
             t0,
-            context: Context {
-                rules: HashMap::new(),
-                internal: Domain::new(Default::default()),
-                underconstrained: HashSet::new(),
-            },
+            internal: Domain::new(Default::default()),
             interests: HashMap::new(),
             shutdown_handles: HashMap::new(),
             scheduler: Rc::new(RefCell::new(Scheduler::from(probe.clone()))),
@@ -350,7 +273,7 @@ where
     ) -> Result<(), Error> {
         // only the owner should actually introduce new inputs
         if owner == worker_index {
-            self.context.internal.transact(tx_data)
+            self.internal.transact(tx_data)
         } else {
             Ok(())
         }
@@ -362,12 +285,12 @@ where
         name: &str,
         scope: &mut S,
     ) -> Result<Collection<S, Vec<Value>, isize>, Error> {
-        // We need to do a `contains_key` here to avoid taking
-        // a mut ref on context.
-        if self.context.internal.arrangements.contains_key(name) {
+        // We need to do a `contains_key` here to avoid taking a mut
+        // ref on the domain.
+        if self.internal.arrangements.contains_key(name) {
             // Rule is already implemented.
             let relation = self
-                .context
+                .internal
                 .global_arrangement(name)
                 .unwrap()
                 .import_named(scope, name)
@@ -376,15 +299,15 @@ where
             Ok(relation)
         } else {
             let (mut rel_map, shutdown_handle) = if self.config.enable_optimizer {
-                implement_neu(name, scope, &mut self.context)?
+                implement_neu(scope, &mut self.internal, name)?
             } else {
-                implement(name, scope, &mut self.context)?
+                implement(scope, &mut self.internal, name)?
             };
 
             // @TODO when do we actually want to register result traces for re-use?
             // for (name, relation) in rel_map.into_iter() {
             // let trace = relation.map(|t| (t, ())).arrange_named(name).trace;
-            //     self.context.register_arrangement(name, config, trace);
+            //     self.internal.register_arrangement(name, config, trace);
             // }
 
             match rel_map.remove(name) {
@@ -407,7 +330,7 @@ where
         let Register { rules, .. } = req;
 
         for rule in rules.into_iter() {
-            if self.context.rules.contains_key(&rule.name) {
+            if self.internal.rules.contains_key(&rule.name) {
                 // @TODO panic if hashes don't match
                 // panic!("Attempted to re-register a named relation");
                 continue;
@@ -422,7 +345,7 @@ where
                 //     self.transact(tx_data, 0, 0)?;
                 // }
 
-                self.context.rules.insert(rule.name.to_string(), rule);
+                self.internal.rules.insert(rule.name.to_string(), rule);
             }
         }
 
@@ -430,11 +353,17 @@ where
     }
 
     /// Handles a CreateAttribute request.
-    pub fn create_attribute<S>(&mut self, scope: &mut S, name: &str, config: AttributeConfig) -> Result<(), Error>
+    pub fn create_attribute<S>(
+        &mut self,
+        scope: &mut S,
+        name: &str,
+        config: AttributeConfig,
+    ) -> Result<(), Error>
     where
-        S: Scope<Timestamp = T>
+        S: Scope<Timestamp = T>,
     {
-        self.context.internal.create_transactable_attribute(name, config, scope)
+        self.internal
+            .create_transactable_attribute(name, config, scope)
     }
 
     /// Returns a fresh sourcing context, useful for installing 3DF
@@ -443,7 +372,7 @@ where
         SourcingContext {
             t0: self.t0,
             scheduler: Rc::downgrade(&self.scheduler),
-            domain_probe: self.context.internal.domain_probe().clone(),
+            domain_probe: self.internal.domain_probe().clone(),
             timely_events: self.timely_events.clone().unwrap(),
             differential_events: self.differential_events.clone().unwrap(),
         }
@@ -468,8 +397,7 @@ where
         let mut attribute_streams = source.source(scope, context);
 
         for (aid, config, datoms) in attribute_streams.drain(..) {
-            self.context
-                .internal
+            self.internal
                 .create_sourced_attribute(&aid, config, &datoms)?;
         }
 
@@ -495,7 +423,7 @@ where
     /// Handles an AdvanceDomain request.
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
-            None => self.context.internal.advance_epoch(next),
+            None => self.internal.advance_epoch(next),
             Some(_) => Err(Error::unsupported("Named domains are not yet supported.")),
         }
     }
@@ -533,7 +461,7 @@ where
     /// `step_while` is not safe in general and might lead to stalls.
     pub fn is_any_outdated(&self) -> bool {
         self.probe
-            .with_frontier(|out_frontier| self.context.internal.dominates(out_frontier))
+            .with_frontier(|out_frontier| self.internal.dominates(out_frontier))
     }
 
     /// Helper for registering, publishing, and indicating interest in

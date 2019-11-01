@@ -2,8 +2,9 @@ use timely::dataflow::operators::UnorderedInput;
 use timely::progress::frontier::AntichainRef;
 
 use differential_dataflow::trace::TraceReader;
+use differential_dataflow::AsCollection;
 
-use declarative_dataflow::domain::Domain;
+use declarative_dataflow::domain::{AsSingletonDomain, Domain};
 use declarative_dataflow::Value;
 use declarative_dataflow::{AttributeConfig, InputSemantics};
 
@@ -25,11 +26,12 @@ fn test_advance_epoch() {
 #[test]
 fn test_advance_only_epoch() {
     timely::execute_directly(move |worker| {
-        let mut domain = Domain::<u64>::new(0);
-
-        let (_handle, _cap) = worker.dataflow::<u64, _, _>(|scope| {
+        let (domain, _handle, _cap) = worker.dataflow::<u64, _, _>(|scope| {
             let ((handle, cap), pairs) =
                 scope.new_unordered_input::<((Value, Value), u64, isize)>();
+
+            let mut domain: Domain<u64> =
+                pairs.as_collection().as_singleton_domain("tx_test").into();
 
             domain
                 .create_sourced_attribute(
@@ -39,15 +41,7 @@ fn test_advance_only_epoch() {
                 )
                 .unwrap();
 
-            domain
-                .create_transactable_attribute(
-                    "tx_test",
-                    AttributeConfig::tx_time(InputSemantics::Raw),
-                    scope,
-                )
-                .unwrap();
-
-            (handle, cap)
+            (domain, handle, cap)
         });
 
         assert_eq!(domain.probed_source_count(), 1);

@@ -11,8 +11,10 @@ use graphql_parser::query::{Definition, Document, OperationDefinition, Selection
 use graphql_parser::query::{Name, Value};
 
 use crate::binding::Binding;
-use crate::plan::{gensym, Dependencies, ImplContext, Implementable};
+use crate::domain::Domain;
+use crate::plan::{gensym, Dependencies, Implementable};
 use crate::plan::{Hector, Plan, Pull, PullAll, PullLevel};
+use crate::timestamp::Rewind;
 use crate::{Aid, Var};
 use crate::{Implemented, ShutdownHandle, VariableMap};
 
@@ -239,23 +241,22 @@ impl Implementable for GraphQl {
         dependencies
     }
 
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         let parsed = Pull {
             variables: vec![],
             paths: self.paths.clone(),
         };
 
-        parsed.implement(nested, local_arrangements, context)
+        parsed.implement(nested, domain, local_arrangements)
     }
 }
 

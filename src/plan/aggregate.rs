@@ -10,7 +10,7 @@ use differential_dataflow::operators::Join as JoinMap;
 use differential_dataflow::operators::{Count, Reduce, Threshold};
 
 use crate::binding::{AsBinding, Binding};
-use crate::plan::{Dependencies, ImplContext, Implementable};
+use crate::plan::{Dependencies, Implementable};
 use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};

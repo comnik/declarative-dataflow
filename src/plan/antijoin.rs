@@ -8,7 +8,9 @@ use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::{Join, Threshold};
 
 use crate::binding::{AsBinding, Binding};
-use crate::plan::{Dependencies, ImplContext, Implementable};
+use crate::domain::Domain;
+use crate::plan::{Dependencies, Implementable};
+use crate::timestamp::Rewind;
 use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
@@ -44,29 +46,26 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
         // bindings
     }
 
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         let mut shutdown_handle = ShutdownHandle::empty();
         let left = {
-            let (left, shutdown) = self
-                .left_plan
-                .implement(nested, local_arrangements, context);
+            let (left, shutdown) = self.left_plan.implement(nested, domain, local_arrangements);
             shutdown_handle.merge_with(shutdown);
             left
         };
         let right = {
             let (right, shutdown) = self
                 .right_plan
-                .implement(nested, local_arrangements, context);
+                .implement(nested, domain, local_arrangements);
             shutdown_handle.merge_with(shutdown);
             right
         };
@@ -83,13 +82,13 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
             .collect();
 
         let right_projected = {
-            let (projected, shutdown) = right.projected(nested, context, &self.variables);
+            let (projected, shutdown) = right.projected(nested, domain, &self.variables);
             shutdown_handle.merge_with(shutdown);
             projected
         };
 
         let left_arranged = {
-            let (arranged, shutdown) = left.tuples_by_variables(nested, context, &self.variables);
+            let (arranged, shutdown) = left.tuples_by_variables(nested, domain, &self.variables);
             shutdown_handle.merge_with(shutdown);
             arranged
         };

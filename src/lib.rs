@@ -47,7 +47,8 @@ pub use uuid::Uuid;
 pub use num_rational::Rational32;
 
 pub use binding::{AsBinding, AttributeBinding, Binding};
-pub use plan::{Hector, ImplContext, Implementable, Plan};
+pub use domain::Domain;
+pub use plan::{Hector, Implementable, Plan};
 pub use timestamp::{Rewind, Time};
 
 /// A unique entity identifier.
@@ -252,7 +253,7 @@ pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, T, isize>;
 
 // A map for keeping track of collections that are being actively
 // synthesized (i.e. that are not fully defined yet).
-type VariableMap<G> = HashMap<String, Variable<G, Vec<Value>, isize>>;
+type VariableMap<S> = HashMap<String, Variable<S, Vec<Value>, isize>>;
 
 trait Shutdownable {
     fn press(&mut self);
@@ -462,19 +463,18 @@ pub struct Rule {
 /// Relations can be backed by a collection of records of type
 /// `Vec<Value>`, each of a common length (with offsets corresponding
 /// to the variable offsets), or by an existing arrangement.
-trait Relation<'a, G, I>: AsBinding
+trait Relation<'a, S>: AsBinding
 where
-    G: Scope,
-    G::Timestamp: Lattice + ExchangeData,
-    I: ImplContext<G::Timestamp>,
+    S: Scope,
+    S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     /// A collection containing all tuples.
     fn tuples(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
     ) -> (
-        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     );
 
@@ -482,11 +482,11 @@ where
     /// specified variables.
     fn projected(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         target_variables: &[Var],
     ) -> (
-        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     );
 
@@ -498,24 +498,25 @@ where
     /// order.
     fn tuples_by_variables(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         variables: &[Var],
     ) -> (
-        Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>,
+        Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
         ShutdownHandle,
     );
 }
 
 /// A collection and variable bindings.
-pub struct CollectionRelation<'a, G: Scope> {
+pub struct CollectionRelation<'a, S: Scope> {
     variables: Vec<Var>,
-    tuples: Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+    tuples: Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
 }
 
-impl<'a, G: Scope> AsBinding for CollectionRelation<'a, G>
+impl<'a, S> AsBinding for CollectionRelation<'a, S>
 where
-    G::Timestamp: Lattice + ExchangeData,
+    S: Scope,
+    S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     fn variables(&self) -> Vec<Var> {
         self.variables.clone()
@@ -534,18 +535,17 @@ where
     }
 }
 
-impl<'a, G, I> Relation<'a, G, I> for CollectionRelation<'a, G>
+impl<'a, S> Relation<'a, S> for CollectionRelation<'a, S>
 where
-    G: Scope,
-    G::Timestamp: Lattice + ExchangeData,
-    I: ImplContext<G::Timestamp>,
+    S: Scope,
+    S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     fn tuples(
         self,
-        _nested: &mut Iterative<'a, G, u64>,
-        _context: &mut I,
+        _nested: &mut Iterative<'a, S, u64>,
+        _domain: &mut Domain<S::Timestamp>,
     ) -> (
-        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     ) {
         (self.tuples, ShutdownHandle::empty())
@@ -553,11 +553,11 @@ where
 
     fn projected(
         self,
-        _nested: &mut Iterative<'a, G, u64>,
-        _context: &mut I,
+        _nested: &mut Iterative<'a, S, u64>,
+        _domain: &mut Domain<S::Timestamp>,
         target_variables: &[Var],
     ) -> (
-        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     ) {
         if self.variables() == target_variables {
@@ -582,11 +582,11 @@ where
 
     fn tuples_by_variables(
         self,
-        _nested: &mut Iterative<'a, G, u64>,
-        _context: &mut I,
+        _nested: &mut Iterative<'a, S, u64>,
+        _domain: &mut Domain<S::Timestamp>,
         variables: &[Var],
     ) -> (
-        Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>,
+        Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
         ShutdownHandle,
     ) {
         if variables == &self.variables()[..] {
@@ -636,40 +636,39 @@ where
     }
 }
 
-impl<'a, G, I> Relation<'a, G, I> for AttributeBinding
+impl<'a, S> Relation<'a, S> for AttributeBinding
 where
-    G: Scope,
-    G::Timestamp: Lattice + ExchangeData,
-    I: ImplContext<G::Timestamp>,
+    S: Scope,
+    S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     fn tuples(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
     ) -> (
-        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     ) {
         let variables = self.variables();
-        self.projected(nested, context, &variables)
+        self.projected(nested, domain, &variables)
     }
 
     fn projected(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         target_variables: &[Var],
     ) -> (
-        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     ) {
-        match context.forward_propose(&self.source_attribute) {
+        match domain.forward_propose(&self.source_attribute) {
             None => panic!("attribute {:?} does not exist", self.source_attribute),
             Some(propose_trace) => {
                 let (propose, shutdown_propose) =
                     propose_trace.import_frontier(&nested.parent, &self.source_attribute);
 
-                let tuples = propose.enter(nested);
+                let tuples = propose.enter(&nested);
 
                 let (e, v) = self.variables;
                 let projected = if target_variables == [e, v] {
@@ -691,20 +690,20 @@ where
 
     fn tuples_by_variables(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         variables: &[Var],
     ) -> (
-        Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>,
+        Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
         ShutdownHandle,
     ) {
-        match context.forward_propose(&self.source_attribute) {
+        match domain.forward_propose(&self.source_attribute) {
             None => panic!("attribute {:?} does not exist", self.source_attribute),
             Some(propose_trace) => {
                 let (propose, shutdown_propose) =
                     propose_trace.import_frontier(&nested.parent, &self.source_attribute);
 
-                let tuples = propose.enter(nested);
+                let tuples = propose.enter(&nested);
 
                 let (e, v) = self.variables;
                 let arranged = if variables == [e, v] {
@@ -726,21 +725,22 @@ where
 }
 
 /// @TODO
-pub enum Implemented<'a, G>
+pub enum Implemented<'a, S>
 where
-    G: Scope,
-    G::Timestamp: Lattice + ExchangeData,
+    S: Scope,
+    S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     /// A relation backed by an attribute.
     Attribute(AttributeBinding),
     /// A relation backed by a Differential collection.
-    Collection(CollectionRelation<'a, G>),
-    // Arranged(ArrangedRelation<'a, G>)
+    Collection(CollectionRelation<'a, S>),
+    // Arranged(ArrangedRelation<'a, S>)
 }
 
-impl<'a, G: Scope> AsBinding for Implemented<'a, G>
+impl<'a, S> AsBinding for Implemented<'a, S>
 where
-    G::Timestamp: Lattice + ExchangeData,
+    S: Scope,
+    S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     fn variables(&self) -> Vec<Var> {
         match self {
@@ -773,73 +773,73 @@ where
     }
 }
 
-impl<'a, G, I> Relation<'a, G, I> for Implemented<'a, G>
+impl<'a, S> Relation<'a, S> for Implemented<'a, S>
 where
-    G: Scope,
-    G::Timestamp: Lattice + ExchangeData,
-    I: ImplContext<G::Timestamp>,
+    S: Scope,
+    S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     fn tuples(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
     ) -> (
-        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     ) {
         match self {
-            Implemented::Attribute(attribute_binding) => attribute_binding.tuples(nested, context),
-            Implemented::Collection(relation) => relation.tuples(nested, context),
+            Implemented::Attribute(attribute_binding) => attribute_binding.tuples(nested, domain),
+            Implemented::Collection(relation) => relation.tuples(nested, domain),
         }
     }
 
     fn projected(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         target_variables: &[Var],
     ) -> (
-        Collection<Iterative<'a, G, u64>, Vec<Value>, isize>,
+        Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
     ) {
         match self {
             Implemented::Attribute(attribute_binding) => {
-                attribute_binding.projected(nested, context, target_variables)
+                attribute_binding.projected(nested, domain, target_variables)
             }
             Implemented::Collection(relation) => {
-                relation.projected(nested, context, target_variables)
+                relation.projected(nested, domain, target_variables)
             }
         }
     }
 
     fn tuples_by_variables(
         self,
-        nested: &mut Iterative<'a, G, u64>,
-        context: &mut I,
+        nested: &mut Iterative<'a, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         variables: &[Var],
     ) -> (
-        Collection<Iterative<'a, G, u64>, (Vec<Value>, Vec<Value>), isize>,
+        Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
         ShutdownHandle,
     ) {
         match self {
             Implemented::Attribute(attribute_binding) => {
-                attribute_binding.tuples_by_variables(nested, context, variables)
+                attribute_binding.tuples_by_variables(nested, domain, variables)
             }
             Implemented::Collection(relation) => {
-                relation.tuples_by_variables(nested, context, variables)
+                relation.tuples_by_variables(nested, domain, variables)
             }
         }
     }
 }
 
-// /// A arrangement and variable bindings.
-// struct ArrangedRelation<'a, G: Scope>
+/// A arrangement and variable bindings.
+// struct ArrangedRelation<'a, S>
 // where
-//     G::Timestamp: Lattice+ExchangeData
+//     S: Scope
+//     S::Timestamp: Lattice+ExchangeData
 // {
 //     variables: Vec<Var>,
-//     tuples: Arranged<Iterative<'a, G, u64>, Vec<Value>, Vec<Value>, isize,
-//                      TraceValHandle<Vec<Value>, Vec<Value>, Product<G::Timestamp,u64>, isize>>,
+//     tuples: Arranged<Iterative<'a, S, u64>, Vec<Value>, Vec<Value>, isize,
+//                      TraceValHandle<Vec<Value>, Vec<Value>, Product<S::Timestamp,u64>, isize>>,
 // }
 
 /// Helper function to create a query plan. The resulting query will
@@ -854,17 +854,16 @@ pub fn q(target_variables: Vec<Var>, bindings: Vec<Binding>) -> Plan {
 
 /// Returns a deduplicates list of all rules used in the definition of
 /// the specified names. Includes the specified names.
-pub fn collect_dependencies<T, I>(context: &I, names: &[&str]) -> Result<Vec<Rule>, Error>
+pub fn collect_dependencies<T>(domain: &Domain<T>, names: &[&str]) -> Result<Vec<Rule>, Error>
 where
-    T: Timestamp + Lattice,
-    I: ImplContext<T>,
+    T: Timestamp + Lattice + Rewind,
 {
     let mut seen = HashSet::new();
     let mut rules = Vec::new();
     let mut queue = VecDeque::new();
 
     for name in names {
-        match context.rule(name) {
+        match domain.rule(name) {
             None => {
                 return Err(Error::not_found(format!("Unknown rule {}.", name)));
             }
@@ -879,7 +878,7 @@ where
         let dependencies = next.plan.dependencies();
         for dep_name in dependencies.names.iter() {
             if !seen.contains(dep_name) {
-                match context.rule(dep_name) {
+                match domain.rule(dep_name) {
                     None => {
                         return Err(Error::not_found(format!("Unknown rule {}", dep_name)));
                     }
@@ -893,7 +892,7 @@ where
 
         // Ensure all required attributes exist.
         for aid in dependencies.attributes.iter() {
-            if !context.has_attribute(aid) {
+            if !domain.has_attribute(aid) {
                 return Err(Error::not_found(format!(
                     "Rule depends on unknown attribute {}",
                     aid
@@ -908,10 +907,10 @@ where
 }
 
 /// Takes a query plan and turns it into a differential dataflow.
-pub fn implement<T, I, S>(
-    name: &str,
+pub fn implement<S>(
     scope: &mut S,
-    context: &mut I,
+    domain: &mut Domain<S::Timestamp>,
+    name: &str,
 ) -> Result<
     (
         HashMap<String, Collection<S, Vec<Value>, isize>>,
@@ -920,13 +919,12 @@ pub fn implement<T, I, S>(
     Error,
 >
 where
-    T: Timestamp + Lattice + Default,
-    I: ImplContext<T>,
-    S: Scope<Timestamp = T>,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind + Default,
 {
     scope.iterative::<u64, _, _>(|nested| {
         let publish = vec![name];
-        let mut rules = collect_dependencies(&*context, &publish[..])?;
+        let mut rules = collect_dependencies(domain, &publish[..])?;
 
         let mut local_arrangements = VariableMap::new();
         let mut result_map = HashMap::new();
@@ -951,7 +949,7 @@ where
 
         // Step 1: Create new recursive variables for each rule.
         for rule in rules.iter() {
-            if context.is_underconstrained(&rule.name) {
+            if domain.is_underconstrained(&rule.name) {
                 local_arrangements.insert(
                     rule.name.clone(),
                     Variable::new(nested, Product::new(Default::default(), 1)),
@@ -976,7 +974,7 @@ where
         let mut shutdown_handle = ShutdownHandle::empty();
         for rule in rules.iter() {
             info!("planning {:?}", rule.name);
-            let (relation, shutdown) = rule.plan.implement(nested, &local_arrangements, context);
+            let (relation, shutdown) = rule.plan.implement(nested, domain, &local_arrangements);
 
             executions.push(relation);
             shutdown_handle.merge_with(shutdown);
@@ -992,7 +990,7 @@ where
                     )));
                 }
                 Some(variable) => {
-                    let (tuples, shutdown) = execution.tuples(nested, context);
+                    let (tuples, shutdown) = execution.tuples(nested, domain);
                     shutdown_handle.merge_with(shutdown);
 
                     #[cfg(feature = "set-semantics")]
@@ -1009,10 +1007,10 @@ where
 }
 
 /// @TODO
-pub fn implement_neu<T, I, S>(
-    name: &str,
+pub fn implement_neu<S>(
     scope: &mut S,
-    context: &mut I,
+    domain: &mut Domain<S::Timestamp>,
+    name: &str,
 ) -> Result<
     (
         HashMap<String, Collection<S, Vec<Value>, isize>>,
@@ -1021,13 +1019,12 @@ pub fn implement_neu<T, I, S>(
     Error,
 >
 where
-    T: Timestamp + Lattice + Default,
-    I: ImplContext<T>,
-    S: Scope<Timestamp = T>,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind + Default,
 {
     scope.iterative::<u64, _, _>(move |nested| {
         let publish = vec![name];
-        let mut rules = collect_dependencies(&*context, &publish[..])?;
+        let mut rules = collect_dependencies(domain, &publish[..])?;
 
         let mut local_arrangements = VariableMap::new();
         let mut result_map = HashMap::new();
@@ -1060,7 +1057,7 @@ where
 
         // Step 1: Create new recursive variables for each rule.
         for name in publish.iter() {
-            if context.is_underconstrained(name) {
+            if domain.is_underconstrained(name) {
                 local_arrangements.insert(
                     name.to_string(),
                     Variable::new(nested, Product::new(Default::default(), 1)),
@@ -1088,7 +1085,7 @@ where
 
             let plan = q(rule.plan.variables(), rule.plan.into_bindings());
 
-            let (relation, shutdown) = plan.implement(nested, &local_arrangements, context);
+            let (relation, shutdown) = plan.implement(nested, domain, &local_arrangements);
 
             executions.push(relation);
             shutdown_handle.merge_with(shutdown);
@@ -1104,7 +1101,7 @@ where
                     )));
                 }
                 Some(variable) => {
-                    let (tuples, shutdown) = execution.tuples(nested, context);
+                    let (tuples, shutdown) = execution.tuples(nested, domain);
                     shutdown_handle.merge_with(shutdown);
 
                     #[cfg(feature = "set-semantics")]

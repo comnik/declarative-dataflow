@@ -16,7 +16,7 @@ use differential_dataflow::trace::TraceReader;
 use differential_dataflow::{AsCollection, Collection};
 
 use crate::operators::LastWriteWins;
-use crate::{Aid, Error, Rewind, TxData, Value};
+use crate::{Aid, Error, Rewind, Rule, TxData, Value};
 use crate::{AttributeConfig, IndexDirection, InputSemantics, QuerySupport};
 use crate::{RelationConfig, RelationHandle};
 use crate::{TraceKeyHandle, TraceValHandle};
@@ -79,6 +79,8 @@ pub struct Domain<T: Timestamp + Lattice> {
     pub relations: HashMap<Aid, RelationConfig>,
     /// Relation traces.
     pub arrangements: HashMap<Aid, RelationHandle<T>>,
+    /// Representation of named rules.
+    pub rules: HashMap<Aid, Rule>,
 }
 
 // We're defining domain composition here.
@@ -134,6 +136,7 @@ where
 
         self.relations.extend(other.relations.into_iter());
         self.arrangements.extend(other.arrangements.into_iter());
+        self.rules.extend(other.rules.into_iter());
     }
 }
 
@@ -159,6 +162,7 @@ where
             reverse_validate: HashMap::new(),
             relations: HashMap::new(),
             arrangements: HashMap::new(),
+            rules: HashMap::new(),
         }
     }
 
@@ -509,6 +513,72 @@ where
                 domain_frontier.iter().all(|t| frontier.less_than(t))
             })
         }
+    }
+
+    /// Returns the definition for the rule of the given name.
+    pub fn rule(&self, name: &str) -> Option<&Rule> {
+        self.rules.get(name)
+    }
+
+    /// Returns a mutable reference to a (non-base) relation, if one
+    /// is registered under the given name.
+    pub fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle<T>> {
+        self.arrangements.get_mut(name)
+    }
+
+    /// Checks whether an attribute of that name exists.
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.attributes.contains_key(name)
+    }
+
+    /// Retrieves the forward count trace for the specified aid.
+    pub fn forward_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
+        self.forward_count.get_mut(name)
+    }
+
+    /// Retrieves the forward propose trace for the specified aid.
+    pub fn forward_propose(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
+        self.forward_propose.get_mut(name)
+    }
+
+    /// Retrieves the forward validate trace for the specified aid.
+    pub fn forward_validate(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
+        self.forward_validate.get_mut(name)
+    }
+
+    /// Retrieves the reverse count trace for the specified aid.
+    pub fn reverse_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
+        self.reverse_count.get_mut(name)
+    }
+
+    /// Retrieves the reverse propose trace for the specified aid.
+    pub fn reverse_propose(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
+        self.reverse_propose.get_mut(name)
+    }
+
+    /// Retrieves the reverse validate trace for the specified aid.
+    pub fn reverse_validate(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
+        self.reverse_validate.get_mut(name)
+    }
+
+    /// Returns the current opinion as to whether this rule is
+    /// underconstrained. Underconstrained rules cannot be safely
+    /// materialized and re-used on their own (i.e. without more
+    /// specific constraints).
+    pub fn is_underconstrained(&self, _name: &str) -> bool {
+        true
     }
 }
 

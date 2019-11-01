@@ -48,7 +48,6 @@ fn run_cases(mut cases: Vec<Case>) {
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
                     server
-                        .context
                         .internal
                         .create_transactable_attribute(
                             dep,

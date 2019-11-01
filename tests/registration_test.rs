@@ -25,7 +25,6 @@ fn match_ea_after_input() {
             };
 
             server
-                .context
                 .internal
                 .create_transactable_attribute(":name", config, scope)
                 .unwrap();
@@ -80,7 +79,6 @@ fn join_after_input() {
 
         worker.dataflow::<u64, _, _>(|scope| {
             server
-                .context
                 .internal
                 .create_transactable_attribute(
                     ":transfer/from",
@@ -94,7 +92,6 @@ fn join_after_input() {
                 )
                 .unwrap();
             server
-                .context
                 .internal
                 .create_transactable_attribute(
                     ":user/id",

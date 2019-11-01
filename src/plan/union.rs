@@ -8,7 +8,9 @@ use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::Threshold;
 
 use crate::binding::Binding;
-use crate::plan::{Dependencies, ImplContext, Implementable};
+use crate::domain::Domain;
+use crate::plan::{Dependencies, Implementable};
+use crate::timestamp::Rewind;
 use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
@@ -40,16 +42,15 @@ impl<P: Implementable> Implementable for Union<P> {
             .collect()
     }
 
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         use differential_dataflow::AsCollection;
         use timely::dataflow::operators::Concatenate;
@@ -59,14 +60,13 @@ impl<P: Implementable> Implementable for Union<P> {
 
         let streams = self.plans.iter().map(|plan| {
             let relation = {
-                let (relation, shutdown) = plan.implement(&mut scope, local_arrangements, context);
+                let (relation, shutdown) = plan.implement(&mut scope, domain, local_arrangements);
                 shutdown_handle.merge_with(shutdown);
                 relation
             };
 
             let projected = {
-                let (projected, shutdown) =
-                    relation.projected(&mut scope, context, &self.variables);
+                let (projected, shutdown) = relation.projected(&mut scope, domain, &self.variables);
                 shutdown_handle.merge_with(shutdown);
                 projected
             };

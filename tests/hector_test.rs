@@ -383,7 +383,6 @@ fn run_hector_cases() {
                     };
 
                     server
-                        .context
                         .internal
                         .create_transactable_attribute(dep, config, scope)
                         .unwrap();
