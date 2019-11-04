@@ -6,19 +6,17 @@ use std::ops::{Add, AddAssign};
 
 use timely::dataflow::operators::unordered_input::{ActivateCapability, UnorderedHandle};
 use timely::dataflow::operators::Map;
-use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
+use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::Arrange;
-use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::{AsCollection, Collection};
 
-use crate::operators::LastWriteWins;
 use crate::{Aid, Error, Rewind, Rule, TxData, Value};
-use crate::{AttributeConfig, IndexDirection, InputSemantics, QuerySupport};
+use crate::{AttributeConfig, QuerySupport};
 use crate::{RelationConfig, RelationHandle};
 use crate::{TraceKeyHandle, TraceValHandle};
 
@@ -202,105 +200,6 @@ where
             relations: HashMap::new(),
             arrangements: HashMap::new(),
             rules: HashMap::new(),
-        }
-    }
-
-    /// Creates an attribute from a stream of (key,value)
-    /// pairs. Applies operators to enforce input semantics, registers
-    /// the attribute configuration, and installs appropriate indices.
-    fn create_attribute<S: Scope + ScopeParent<Timestamp = T>>(
-        &mut self,
-        name: &str,
-        config: AttributeConfig,
-        pairs: &Stream<S, ((Value, Value), T, isize)>,
-    ) -> Result<(), Error> {
-        if self.attributes.contains_key(name) {
-            Err(Error::conflict(format!(
-                "An attribute of name {} already exists.",
-                name
-            )))
-        } else {
-            let tuples = match config.input_semantics {
-                InputSemantics::Raw => pairs.as_collection(),
-                InputSemantics::LastWriteWins => pairs.as_collection().last_write_wins(),
-                // Ensure that redundant (e,v) pairs don't cause
-                // misleading proposals during joining.
-                InputSemantics::Distinct => pairs.as_collection().distinct(),
-            };
-
-            // @TODO should only create this if used later
-            let tuples_reverse = tuples.map(|(e, v)| (v, e));
-
-            // Propose traces are used in general, whereas the other
-            // indices are only relevant to Hector.
-            self.forward_propose.insert(
-                name.to_string(),
-                tuples.arrange_named(&format!("->Propose({})", &name)).trace,
-            );
-
-            if config.index_direction == IndexDirection::Both {
-                self.reverse_propose.insert(
-                    name.to_string(),
-                    tuples_reverse
-                        .arrange_named(&format!("->_Propose({})", &name))
-                        .trace,
-                );
-            }
-
-            // LastWriteWins is a special case, because count,
-            // propose, and validate are all essentially the same.
-            if config.input_semantics != InputSemantics::LastWriteWins {
-                // Count traces are only required for use in
-                // worst-case optimal joins.
-                if config.query_support == QuerySupport::AdaptiveWCO {
-                    self.forward_count.insert(
-                        name.to_string(),
-                        tuples
-                            .map(|(k, _v)| (k, ()))
-                            .arrange_named(&format!("->Count({})", name))
-                            .trace,
-                    );
-
-                    if config.index_direction == IndexDirection::Both {
-                        self.reverse_count.insert(
-                            name.to_string(),
-                            tuples_reverse
-                                .map(|(k, _v)| (k, ()))
-                                .arrange_named(&format!("->_Count({})", name))
-                                .trace,
-                        );
-                    }
-                }
-
-                if config.query_support >= QuerySupport::Delta {
-                    self.forward_validate.insert(
-                        name.to_string(),
-                        tuples
-                            .map(|t| (t, ()))
-                            .arrange_named(&format!("->Validate({})", &name))
-                            .trace,
-                    );
-
-                    if config.index_direction == IndexDirection::Both {
-                        self.reverse_validate.insert(
-                            name.to_string(),
-                            tuples_reverse
-                                .map(|t| (t, ()))
-                                .arrange_named(&format!("->_Validate({})", &name))
-                                .trace,
-                        );
-                    }
-                }
-            }
-
-            // This is crucial. If we forget to install the attribute
-            // configuration, its traces will be ignored when
-            // advancing the domain.
-            self.attributes.insert(name.to_string(), config);
-
-            info!("Created attribute {}", name);
-
-            Ok(())
         }
     }
 

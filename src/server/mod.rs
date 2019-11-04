@@ -397,6 +397,8 @@ where
 
         self.internal += scoped_domain.into();
 
+        info!("Created attribute {}", name);
+
         Ok(())
     }
 
