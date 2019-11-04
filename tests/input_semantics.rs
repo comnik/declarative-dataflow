@@ -47,10 +47,7 @@ impl Run for Vec<Case<u64>> {
 
                 worker.dataflow::<u64, _, _>(|scope| {
                     for (dep, config) in deps.drain() {
-                        server
-                            .internal
-                            .create_transactable_attribute(&dep, config, scope)
-                            .unwrap();
+                        server.create_attribute(scope, &dep, config).unwrap();
                     }
 
                     server
@@ -134,10 +131,7 @@ impl Run for Vec<Case<Pair<Duration, u64>>> {
 
                 worker.dataflow::<Pair<Duration, u64>, _, _>(|scope| {
                     for (dep, config) in deps.drain() {
-                        server
-                            .internal
-                            .create_transactable_attribute(&dep, config, scope)
-                            .unwrap();
+                        server.create_attribute(scope, &dep, config).unwrap();
                     }
 
                     server

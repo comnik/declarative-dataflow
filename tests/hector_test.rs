@@ -382,10 +382,7 @@ fn run_hector_cases() {
                         ..Default::default()
                     };
 
-                    server
-                        .internal
-                        .create_transactable_attribute(dep, config, scope)
-                        .unwrap();
+                    server.create_attribute(scope, dep, config).unwrap();
                 }
 
                 server

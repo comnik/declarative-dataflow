@@ -2,8 +2,9 @@
 //! semantics.
 
 use std::collections::HashMap;
-use std::ops::AddAssign;
+use std::ops::{Add, AddAssign};
 
+use timely::dataflow::operators::unordered_input::{ActivateCapability, UnorderedHandle};
 use timely::dataflow::operators::{Probe, UnorderedInput};
 use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
 use timely::progress::frontier::AntichainRef;
@@ -93,10 +94,6 @@ where
             self.namespace, other.namespace,
             "Only domains within a namespace can be composed."
         );
-        assert_eq!(
-            other.probed_source_count, 0,
-            "Domain composition only supported for domains w/o external sources."
-        );
         assert!(
             !self
                 .attributes
@@ -116,9 +113,16 @@ where
         // @TODO
         // self.last_advance = ???
         self.input_sessions.extend(other.input_sessions.into_iter());
-        // @TODO
-        // self.domain_probe = ???
-        self.probed_source_count += other.probed_source_count;
+
+        assert!(
+            (other.probed_source_count == 0) || (self.probed_source_count == 0),
+            "Domain composition not supported for two domains with external sources."
+        );
+
+        if self.probed_source_count == 0 {
+            self.domain_probe = other.domain_probe;
+            self.probed_source_count = other.probed_source_count;
+        }
 
         self.attributes.extend(other.attributes.into_iter());
 
@@ -140,6 +144,19 @@ where
     }
 }
 
+impl<T> Add for Domain<T>
+where
+    T: Timestamp + Lattice,
+{
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut merged = self;
+        merged += other;
+        merged
+    }
+}
+
 impl<T> Domain<T>
 where
     T: Timestamp + Lattice + Rewind,
@@ -150,6 +167,28 @@ where
             namespace: Default::default(),
             now_at: start_at,
             last_advance: vec![<T as Lattice>::minimum()],
+            input_sessions: HashMap::new(),
+            domain_probe: ProbeHandle::new(),
+            probed_source_count: 0,
+            attributes: HashMap::new(),
+            forward_count: HashMap::new(),
+            forward_propose: HashMap::new(),
+            forward_validate: HashMap::new(),
+            reverse_count: HashMap::new(),
+            reverse_propose: HashMap::new(),
+            reverse_validate: HashMap::new(),
+            relations: HashMap::new(),
+            arrangements: HashMap::new(),
+            rules: HashMap::new(),
+        }
+    }
+
+    /// Creates a new domain.
+    pub fn new_from(namespace: &str, base: &Self) -> Self {
+        Domain {
+            namespace: namespace.to_string(),
+            now_at: base.now_at.clone(),
+            last_advance: base.last_advance.clone(),
             input_sessions: HashMap::new(),
             domain_probe: ProbeHandle::new(),
             probed_source_count: 0,
@@ -663,6 +702,22 @@ where
     }
 }
 
+impl<S> ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind + std::convert::Into<crate::timestamp::Time>,
+{
+    /// Configures the specified trace slack for all attributes in the
+    /// domain.
+    pub fn with_slack(mut self, slack: S::Timestamp) -> Self {
+        for config in self.domain.attributes.values_mut() {
+            config.trace_slack = Some(slack.clone().into());
+        }
+
+        self
+    }
+}
+
 impl<S> Into<Domain<S::Timestamp>> for ScopedDomain<S>
 where
     S: Scope,
@@ -670,41 +725,6 @@ where
 {
     fn into(self) -> Domain<S::Timestamp> {
         self.domain
-    }
-}
-
-/// Things that can create new domains.
-pub trait DomainInput<S>
-where
-    S: Scope,
-    S::Timestamp: Timestamp + Lattice + Rewind,
-{
-    /// Creates a new domain containing only a single attribute of the
-    /// specified name, with a single forward index installed.
-    fn new_singleton_domain(&mut self, name: &str) -> ScopedDomain<S>;
-}
-
-impl<S> DomainInput<S> for S
-where
-    S: Scope,
-    S::Timestamp: Timestamp + Lattice + Rewind,
-{
-    fn new_singleton_domain(&mut self, name: &str) -> ScopedDomain<S> {
-        let ((handle, cap), pairs) =
-            self.new_unordered_input::<((Value, Value), S::Timestamp, isize)>();
-
-        let session = UnorderedSession::from(handle, cap);
-
-        let mut scoped_domain = pairs.as_collection().as_singleton_domain(name);
-
-        // We do not want to probe transactable attributes, because
-        // the domain epoch is authoritative for them.
-        scoped_domain
-            .domain
-            .input_sessions
-            .insert(name.to_string(), session);
-
-        scoped_domain
     }
 }
 
@@ -726,10 +746,17 @@ where
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
     fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
-        let mut raw = HashMap::new();
-        raw.insert(name.to_string(), self);
-
         let mut domain = Domain::new(Default::default());
+
+        // When given only a collection we must assume that this
+        // attribute is externally sourced, meaning we have no control
+        // over its input handle. We therefore need to install a probe
+        // in order to determine its progress.
+        domain.probed_source_count += 1;
+        let pairs = self.probe_with(&mut domain.domain_probe);
+
+        let mut raw = HashMap::new();
+        raw.insert(name.to_string(), pairs);
 
         // Propose traces are used in general, whereas the other
         // indices are only relevant to Hector.
@@ -748,5 +775,81 @@ where
             .insert(name.to_string(), Default::default());
 
         ScopedDomain { raw, domain }
+    }
+}
+
+impl<S> AsSingletonDomain<S> for Stream<S, ((Value, Value), S::Timestamp, isize)>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        self.as_collection().as_singleton_domain(name)
+    }
+}
+
+impl<S> AsSingletonDomain<S>
+    for (
+        (
+            UnorderedHandle<S::Timestamp, ((Value, Value), S::Timestamp, isize)>,
+            ActivateCapability<S::Timestamp>,
+        ),
+        Collection<S, (Value, Value), isize>,
+    )
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        let mut domain = Domain::new(Default::default());
+
+        // When a handle and a capability are available, we can infer
+        // that this is an attribute that clients will issue
+        // transactions against. We must not install a probe, because
+        // the domain time will be authoritative for them.
+
+        let ((handle, cap), pairs) = self;
+        domain
+            .input_sessions
+            .insert(name.to_string(), UnorderedSession::from(handle, cap));
+
+        let mut raw = HashMap::new();
+        raw.insert(name.to_string(), pairs);
+
+        // Propose traces are used in general, whereas the other
+        // indices are only relevant to Hector.
+        domain.forward_propose.insert(
+            name.to_string(),
+            raw[name]
+                .arrange_named(&format!("->Propose({})", &name))
+                .trace,
+        );
+
+        // This is crucial. If we forget to install the attribute
+        // configuration, its traces will be ignored when advancing
+        // the domain.
+        domain
+            .attributes
+            .insert(name.to_string(), Default::default());
+
+        ScopedDomain { raw, domain }
+    }
+}
+
+impl<S> AsSingletonDomain<S>
+    for (
+        (
+            UnorderedHandle<S::Timestamp, ((Value, Value), S::Timestamp, isize)>,
+            ActivateCapability<S::Timestamp>,
+        ),
+        Stream<S, ((Value, Value), S::Timestamp, isize)>,
+    )
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        let ((handle, cap), pairs) = self;
+        ((handle, cap), pairs.as_collection()).as_singleton_domain(name)
     }
 }

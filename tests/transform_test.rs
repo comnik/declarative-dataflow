@@ -87,12 +87,7 @@ fn run_transform_cases() {
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
                     server
-                        .internal
-                        .create_transactable_attribute(
-                            dep,
-                            AttributeConfig::tx_time(InputSemantics::Raw),
-                            scope,
-                        )
+                        .create_attribute(scope, dep, AttributeConfig::tx_time(InputSemantics::Raw))
                         .unwrap();
                 }
 

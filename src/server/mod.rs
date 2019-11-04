@@ -8,22 +8,27 @@ use std::time::{Duration, Instant};
 
 use timely::communication::Allocate;
 use timely::dataflow::operators::capture::event::link::EventLink;
+use timely::dataflow::operators::UnorderedInput;
 use timely::dataflow::{ProbeHandle, Scope};
 use timely::logging::{BatchLogger, TimelyEvent};
 use timely::progress::Timestamp;
 use timely::worker::Worker;
 
-use differential_dataflow::collection::Collection;
+use differential_dataflow::collection::{AsCollection, Collection};
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::logging::DifferentialEvent;
+use differential_dataflow::operators::Threshold;
 
-use crate::domain::Domain;
+use crate::domain::{AsSingletonDomain, Domain};
 use crate::logging::DeclarativeEvent;
+use crate::operators::LastWriteWins;
 use crate::scheduling::Scheduler;
 use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
-use crate::{implement, implement_neu, AttributeConfig, ShutdownHandle};
+use crate::{
+    implement, implement_neu, AttributeConfig, IndexDirection, InputSemantics, ShutdownHandle,
+};
 use crate::{Error, Rewind, Time, TxData, Value};
 
 /// Server configuration.
@@ -361,9 +366,38 @@ where
     ) -> Result<(), Error>
     where
         S: Scope<Timestamp = T>,
+        S::Timestamp: std::convert::Into<crate::timestamp::Time>,
     {
-        self.internal
-            .create_transactable_attribute(name, config, scope)
+        let ((handle, cap), pairs) =
+            scope.new_unordered_input::<((Value, Value), S::Timestamp, isize)>();
+
+        let tuples = match config.input_semantics {
+            InputSemantics::Raw => pairs.as_collection(),
+            InputSemantics::LastWriteWins => pairs.as_collection().last_write_wins(),
+            // Ensure that redundant (e,v) pairs don't cause
+            // misleading proposals during joining.
+            InputSemantics::Distinct => pairs.as_collection().distinct(),
+        };
+
+        let mut scoped_domain = ((handle, cap), tuples).as_singleton_domain(name);
+
+        if let Some(slack) = config.trace_slack {
+            scoped_domain = scoped_domain.with_slack(slack.into());
+        }
+
+        // LastWriteWins is a special case, because count, propose,
+        // and validate are all essentially the same.
+        if config.input_semantics != InputSemantics::LastWriteWins {
+            scoped_domain = scoped_domain.with_query_support(config.query_support);
+        }
+
+        if config.index_direction == IndexDirection::Both {
+            scoped_domain = scoped_domain.with_reverse_indices();
+        }
+
+        self.internal += scoped_domain.into();
+
+        Ok(())
     }
 
     /// Returns a fresh sourcing context, useful for installing 3DF
