@@ -430,9 +430,32 @@ where
 
         let mut attribute_streams = source.source(scope, context);
 
-        for (aid, config, datoms) in attribute_streams.drain(..) {
-            self.internal
-                .create_sourced_attribute(&aid, config, &datoms)?;
+        for (aid, config, pairs) in attribute_streams.drain(..) {
+            let pairs = match config.input_semantics {
+                InputSemantics::Raw => pairs.as_collection(),
+                InputSemantics::LastWriteWins => pairs.as_collection().last_write_wins(),
+                // Ensure that redundant (e,v) pairs don't cause
+                // misleading proposals during joining.
+                InputSemantics::Distinct => pairs.as_collection().distinct(),
+            };
+
+            let mut scoped_domain = pairs.as_singleton_domain(name);
+
+            if let Some(slack) = config.trace_slack {
+                scoped_domain = scoped_domain.with_slack(slack.into());
+            }
+
+            // LastWriteWins is a special case, because count, propose,
+            // and validate are all essentially the same.
+            if config.input_semantics != InputSemantics::LastWriteWins {
+                scoped_domain = scoped_domain.with_query_support(config.query_support);
+            }
+
+            if config.index_direction == IndexDirection::Both {
+                scoped_domain = scoped_domain.with_reverse_indices();
+            }
+
+            self.internal += scoped_domain.into();
         }
 
         // if let Some(logger) = timely_logger {

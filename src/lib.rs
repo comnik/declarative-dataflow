@@ -382,10 +382,6 @@ pub struct AttributeConfig {
     pub index_direction: IndexDirection,
     /// Query capabilities supported by this attribute.
     pub query_support: QuerySupport,
-    /// Does this attribute care about its respective time
-    /// dimension? Timeless attributes do not have an
-    /// influence on the overall progress in the system.
-    pub timeless: bool,
 }
 
 impl Default for AttributeConfig {
@@ -395,7 +391,6 @@ impl Default for AttributeConfig {
             trace_slack: None,
             index_direction: IndexDirection::Forward,
             query_support: QuerySupport::Basic,
-            timeless: false,
         }
     }
 }

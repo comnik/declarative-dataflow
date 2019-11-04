@@ -304,33 +304,6 @@ where
         }
     }
 
-    /// Creates an attribute that is controlled by a source and thus
-    /// can not be transacted upon by clients.
-    pub fn create_sourced_attribute<S: Scope + ScopeParent<Timestamp = T>>(
-        &mut self,
-        name: &str,
-        config: AttributeConfig,
-        pairs: &Stream<S, ((Value, Value), T, isize)>,
-    ) -> Result<(), Error> {
-        // We need to install a probe on source-fed attributes in
-        // order to determine their progress.
-
-        // We do not want to probe timeless attributes.
-        // Sources of timeless attributes either are not able to or do not
-        // want to provide valid domain timestamps.
-        // Forcing to probe them would stall progress in the system.
-        let source_pairs = if config.timeless {
-            pairs.to_owned()
-        } else {
-            self.probed_source_count += 1;
-            pairs.probe_with(&mut self.domain_probe)
-        };
-
-        self.create_attribute(name, config, &source_pairs)?;
-
-        Ok(())
-    }
-
     /// Inserts a new named relation.
     pub fn register_arrangement(
         &mut self,
@@ -715,6 +688,44 @@ where
     /// Returns a domain containing only a single attribute of the
     /// specified name, with a single forward index installed.
     fn as_singleton_domain(self, name: &str) -> ScopedDomain<S>;
+}
+
+impl<S> AsSingletonDomain<S> for Stream<S, ((Value, Value), isize)>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        let mut domain = Domain::new(Default::default());
+
+        // When given only a stream without timestamps, we must assume
+        // that this attribute is externally sourced and timeless,
+        // meaning we have no control over its input handle and the
+        // source is not able or not willing to provide timestamps. We
+        // do not want to probe them, in order to not stall progress.
+        let pairs = self;
+
+        let mut raw = HashMap::new();
+        raw.insert(name.to_string(), pairs);
+
+        // Propose traces are used in general, whereas the other
+        // indices are only relevant to Hector.
+        domain.forward_propose.insert(
+            name.to_string(),
+            raw[name]
+                .arrange_named(&format!("->Propose({})", &name))
+                .trace,
+        );
+
+        // This is crucial. If we forget to install the attribute
+        // configuration, its traces will be ignored when advancing
+        // the domain.
+        domain
+            .attributes
+            .insert(name.to_string(), Default::default());
+
+        ScopedDomain { raw, domain }
+    }
 }
 
 impl<S> AsSingletonDomain<S> for Collection<S, (Value, Value), isize>
