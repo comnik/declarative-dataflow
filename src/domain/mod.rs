@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::ops::{Add, AddAssign};
 
 use timely::dataflow::operators::unordered_input::{ActivateCapability, UnorderedHandle};
-use timely::dataflow::operators::{Probe, UnorderedInput};
+use timely::dataflow::operators::Map;
 use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
 use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
@@ -703,7 +703,9 @@ where
         // meaning we have no control over its input handle and the
         // source is not able or not willing to provide timestamps. We
         // do not want to probe them, in order to not stall progress.
-        let pairs = self;
+        let pairs = self
+            .map(|(data, diff)| (data, Default::default(), diff))
+            .as_collection();
 
         let mut raw = HashMap::new();
         raw.insert(name.to_string(), pairs);

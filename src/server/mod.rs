@@ -413,11 +413,15 @@ where
     }
 
     /// Handles a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = T>>(
+    pub fn register_source<S>(
         &mut self,
         source: Box<dyn Sourceable<S>>,
         scope: &mut S,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        S: Scope<Timestamp = T>,
+        S::Timestamp: std::convert::Into<crate::timestamp::Time>,
+    {
         // use timely::logging::Logger;
         // let timely_logger = scope.log_register().remove("timely");
 
@@ -439,7 +443,7 @@ where
                 InputSemantics::Distinct => pairs.as_collection().distinct(),
             };
 
-            let mut scoped_domain = pairs.as_singleton_domain(name);
+            let mut scoped_domain = pairs.as_singleton_domain(&aid);
 
             if let Some(slack) = config.trace_slack {
                 scoped_domain = scoped_domain.with_slack(slack.into());
