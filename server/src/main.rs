@@ -508,7 +508,7 @@ fn main() {
                             })
                         }
                         Request::AdvanceDomain(name, next) => server.advance_domain(name, next.into()),
-                        Request::CloseInput(name) => server.context.internal.close_input(name),
+                        Request::CloseInput(name) => server.internal.close_input(name),
                         Request::Disconnect => server.disconnect_client(Token(command.client)),
                         Request::Setup => unimplemented!(),
                         Request::Tick => {
@@ -557,7 +557,7 @@ fn main() {
                     #[cfg(feature = "bitemporal")]
                     let next = Pair::new(Instant::now().duration_since(worker.timer()), next_tx as u64);
 
-                    server.context.internal.advance_epoch(next).expect("failed to advance epoch");
+                    server.internal.advance_epoch(next).expect("failed to advance epoch");
                 }
             }
 
@@ -574,7 +574,7 @@ fn main() {
             // might take a decent amount of time, in case traces get
             // compacted. If that happens, we can park less before
             // scheduling the next activator.
-            server.context.internal.advance().expect("failed to advance domain");
+            server.internal.advance().expect("failed to advance domain");
 
             // Finally, we give the CPU a chance to chill, if no work
             // remains.
