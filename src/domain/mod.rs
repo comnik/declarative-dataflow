@@ -304,29 +304,6 @@ where
         }
     }
 
-    /// Creates an attribute that can be transacted upon by clients.
-    pub fn create_transactable_attribute<S: Scope<Timestamp = T>>(
-        &mut self,
-        name: &str,
-        config: AttributeConfig,
-        scope: &mut S,
-    ) -> Result<(), Error> {
-        let pairs = {
-            let ((handle, cap), pairs) = scope.new_unordered_input::<((Value, Value), T, isize)>();
-            let session = UnorderedSession::from(handle, cap);
-
-            self.input_sessions.insert(name.to_string(), session);
-
-            pairs
-        };
-
-        // We do not want to probe transactable attributes, because
-        // the domain epoch is authoritative for them.
-        self.create_attribute(name, config, &pairs)?;
-
-        Ok(())
-    }
-
     /// Creates an attribute that is controlled by a source and thus
     /// can not be transacted upon by clients.
     pub fn create_sourced_attribute<S: Scope + ScopeParent<Timestamp = T>>(
