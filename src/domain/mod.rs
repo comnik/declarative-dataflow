@@ -480,6 +480,31 @@ where
     domain: Domain<S::Timestamp>,
 }
 
+impl<S> AddAssign for ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn add_assign(&mut self, other: Self) {
+        self.raw.extend(other.raw.into_iter());
+        self.domain += other.domain;
+    }
+}
+
+impl<S> Add for ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut merged = self;
+        merged += other;
+        merged
+    }
+}
+
 impl<S> ScopedDomain<S>
 where
     S: Scope,
