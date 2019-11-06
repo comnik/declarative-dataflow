@@ -152,6 +152,8 @@ pub struct CreateAttribute {
 pub enum Request {
     /// Sends inputs via one or more registered handles.
     Transact(Vec<TxData>),
+    /// Expresses interest in an entire attribute.
+    Subscribe(String),
     /// Expresses interest in a named relation.
     Interest(Interest),
     /// Expresses that the interest in a named relation has
@@ -193,14 +195,17 @@ where
 {
     /// Server configuration.
     pub config: Configuration,
-    /// A timer started at the initation of the timely computation
+    /// A timer started at the initiation of the timely computation
     /// (copied from worker).
     pub t0: Instant,
     /// Internal domain in server time.
     pub internal: Domain<T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, HashSet<Token>>,
-    // Mapping from query names to their shutdown handles.
+    // Mapping from query names to their shutdown handles. This is
+    // separate from internal shutdown handles on domains, because
+    // user queries might be one-off and not result in a new domain
+    // being created.
     shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,

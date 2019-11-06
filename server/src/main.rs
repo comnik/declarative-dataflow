@@ -371,6 +371,61 @@ fn main() {
 
                     let result = match req {
                         Request::Transact(req) => server.transact(req, owner, worker.index()),
+                        Request::Subscribe(aid) => {
+                            let interests = server.interests
+                                .entry(aid.clone())
+                                .or_insert_with(HashSet::new);
+
+                            // All workers keep track of every client's interests, s.t. they
+                            // know when to clean up unused dataflows.
+                            interests.insert(Token(client));
+
+                            if interests.len() > 1 {
+                                // We only want to setup the dataflow on
+                                // the first interest.
+                                Ok(())
+                            } else {
+                                let send_results = io.send.clone();
+
+                                let result = worker.dataflow::<T, _, _>(|scope| {
+                                    let (propose, shutdown) = server
+                                        .internal
+                                        .forward_propose(&aid)
+                                        .unwrap()
+                                        .import_frontier(scope, &aid);
+
+                                    // @TODO stash this somewhere
+                                    std::mem::forget(shutdown);
+
+                                    let pact = Exchange::new(move |_| owner as u64);
+
+                                    propose
+                                        .as_collection(|e, v| vec![e.clone(), v.clone()])
+                                        .inner
+                                        .unary(pact, "Subscription", move |_cap, _info| {
+                                            move |input, _output: &mut OutputHandle<_, ResultDiff<T>, _>| {
+                                                // Due to the exchange pact, this closure is only
+                                                // executed by the owning worker.
+
+                                                input.for_each(|_time, data| {
+                                                    let data = data.iter()
+                                                        .map(|(tuple, t, diff)| (tuple.clone(), t.clone().into(), *diff))
+                                                        .collect::<Vec<ResultDiff<Time>>>();
+
+                                                    send_results
+                                                        .send(Output::QueryDiff(aid.clone(), data))
+                                                        .expect("internal channel send failed");
+                                                });
+                                            }
+                                        })
+                                        .probe_with(&mut server.probe);
+
+                                    Ok(())
+                                });
+
+                                result
+                            }
+                        }
                         Request::Interest(req) => {
                             let interests = server.interests
                                 .entry(req.name.clone())
