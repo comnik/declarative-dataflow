@@ -17,8 +17,7 @@ use differential_dataflow::{AsCollection, Collection};
 
 use crate::{Aid, Error, Rewind, Rule, TxData, Value};
 use crate::{AttributeConfig, QuerySupport};
-use crate::{RelationConfig, RelationHandle};
-use crate::{TraceKeyHandle, TraceValHandle};
+use crate::{ShutdownHandle, TraceKeyHandle, TraceValHandle};
 
 mod unordered_session;
 use unordered_session::UnorderedSession;
@@ -74,12 +73,10 @@ pub struct Domain<T: Timestamp + Lattice> {
     pub reverse_propose: HashMap<Aid, TraceValHandle<Value, Value, T, isize>>,
     /// Reverse validate traces.
     pub reverse_validate: HashMap<Aid, TraceKeyHandle<(Value, Value), T, isize>>,
-    /// Configuration for relations in this domain.
-    pub relations: HashMap<Aid, RelationConfig>,
-    /// Relation traces.
-    pub arrangements: HashMap<Aid, RelationHandle<T>>,
     /// Representation of named rules.
     pub rules: HashMap<Aid, Rule>,
+    /// Mapping from query names to their shutdown handles.
+    pub shutdown_handles: HashMap<String, ShutdownHandle>,
 }
 
 // We're defining domain composition here.
@@ -98,13 +95,6 @@ where
                 .keys()
                 .any(|k| other.attributes.contains_key(k)),
             "Domain attributes clash."
-        );
-        assert!(
-            !self
-                .relations
-                .keys()
-                .any(|k| other.relations.contains_key(k)),
-            "Domain relations clash."
         );
 
         self.now_at = self.now_at.meet(&other.now_at);
@@ -136,9 +126,10 @@ where
         self.reverse_validate
             .extend(other.reverse_validate.into_iter());
 
-        self.relations.extend(other.relations.into_iter());
-        self.arrangements.extend(other.arrangements.into_iter());
         self.rules.extend(other.rules.into_iter());
+
+        self.shutdown_handles
+            .extend(other.shutdown_handles.into_iter());
     }
 }
 
@@ -175,9 +166,8 @@ where
             reverse_count: HashMap::new(),
             reverse_propose: HashMap::new(),
             reverse_validate: HashMap::new(),
-            relations: HashMap::new(),
-            arrangements: HashMap::new(),
             rules: HashMap::new(),
+            shutdown_handles: HashMap::new(),
         }
     }
 
@@ -197,21 +187,9 @@ where
             reverse_count: HashMap::new(),
             reverse_propose: HashMap::new(),
             reverse_validate: HashMap::new(),
-            relations: HashMap::new(),
-            arrangements: HashMap::new(),
             rules: HashMap::new(),
+            shutdown_handles: HashMap::new(),
         }
-    }
-
-    /// Inserts a new named relation.
-    pub fn register_arrangement(
-        &mut self,
-        name: String,
-        config: RelationConfig,
-        trace: RelationHandle<T>,
-    ) {
-        self.relations.insert(name.clone(), config);
-        self.arrangements.insert(name, trace);
     }
 
     /// Transact data into one or more inputs.
@@ -349,22 +327,6 @@ where
                     }
                 }
             }
-
-            for (name, config) in self.relations.iter() {
-                if let Some(ref trace_slack) = config.trace_slack {
-                    let slacking_frontier = frontier
-                        .iter()
-                        .map(|t| t.rewind(trace_slack.clone().into()))
-                        .collect::<Vec<T>>();
-
-                    let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {
-                        panic!("Configuration available for unknown relation {}", name)
-                    });
-
-                    trace.advance_by(&slacking_frontier);
-                    trace.distinguish_since(&slacking_frontier);
-                }
-            }
         }
 
         Ok(())
@@ -406,12 +368,6 @@ where
     /// Returns the definition for the rule of the given name.
     pub fn rule(&self, name: &str) -> Option<&Rule> {
         self.rules.get(name)
-    }
-
-    /// Returns a mutable reference to a (non-base) relation, if one
-    /// is registered under the given name.
-    pub fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle<T>> {
-        self.arrangements.get_mut(name)
     }
 
     /// Checks whether an attribute of that name exists.
@@ -459,14 +415,6 @@ where
         name: &str,
     ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
         self.reverse_validate.get_mut(name)
-    }
-
-    /// Returns the current opinion as to whether this rule is
-    /// underconstrained. Underconstrained rules cannot be safely
-    /// materialized and re-used on their own (i.e. without more
-    /// specific constraints).
-    pub fn is_underconstrained(&self, _name: &str) -> bool {
-        true
     }
 }
 

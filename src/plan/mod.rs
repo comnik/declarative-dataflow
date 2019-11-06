@@ -414,44 +414,15 @@ impl Implementable for Plan {
                 )
             }
             Plan::NameExpr(ref syms, ref name) => {
-                if domain.is_underconstrained(name) {
-                    match local_arrangements.get(name) {
-                        None => panic!("{:?} not in relation map", name),
-                        Some(named) => {
-                            let relation = CollectionRelation {
-                                variables: syms.clone(),
-                                tuples: named.deref().clone(), // @TODO re-use variable directly?
-                            };
+                match local_arrangements.get(name) {
+                    None => panic!("{:?} not in relation map", name),
+                    Some(named) => {
+                        let relation = CollectionRelation {
+                            variables: syms.clone(),
+                            tuples: named.deref().clone(), // @TODO re-use variable directly?
+                        };
 
-                            (Implemented::Collection(relation), ShutdownHandle::empty())
-                        }
-                    }
-                } else {
-                    // If a rule is not underconstrained, we can
-                    // safely re-use it. @TODO it's debatable whether
-                    // we should then immediately assume that it is
-                    // available as a global arrangement, but we'll do
-                    // so for now.
-
-                    match domain.global_arrangement(name) {
-                        None => panic!("{:?} not in query map", name),
-                        Some(named) => {
-                            let (arranged, shutdown_button) =
-                                named.import_frontier(&nested.parent, name);
-
-                            let relation = CollectionRelation {
-                                variables: syms.clone(),
-                                tuples: arranged
-                                    .enter(nested)
-                                    // @TODO this destroys all the arrangement re-use
-                                    .as_collection(|tuple, _| tuple.clone()),
-                            };
-
-                            (
-                                Implemented::Collection(relation),
-                                ShutdownHandle::from_button(shutdown_button),
-                            )
-                        }
+                        (Implemented::Collection(relation), ShutdownHandle::empty())
                     }
                 }
             }

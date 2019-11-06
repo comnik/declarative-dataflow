@@ -290,42 +290,22 @@ where
         name: &str,
         scope: &mut S,
     ) -> Result<Collection<S, Vec<Value>, isize>, Error> {
-        // We need to do a `contains_key` here to avoid taking a mut
-        // ref on the domain.
-        if self.internal.arrangements.contains_key(name) {
-            // Rule is already implemented.
-            let relation = self
-                .internal
-                .global_arrangement(name)
-                .unwrap()
-                .import_named(scope, name)
-                .as_collection(|tuple, _| tuple.clone());
-
-            Ok(relation)
+        let (mut rel_map, shutdown_handle) = if self.config.enable_optimizer {
+            implement_neu(scope, &mut self.internal, name)?
         } else {
-            let (mut rel_map, shutdown_handle) = if self.config.enable_optimizer {
-                implement_neu(scope, &mut self.internal, name)?
-            } else {
-                implement(scope, &mut self.internal, name)?
-            };
+            implement(scope, &mut self.internal, name)?
+        };
 
-            // @TODO when do we actually want to register result traces for re-use?
-            // for (name, relation) in rel_map.into_iter() {
-            // let trace = relation.map(|t| (t, ())).arrange_named(name).trace;
-            //     self.internal.register_arrangement(name, config, trace);
-            // }
+        match rel_map.remove(name) {
+            None => Err(Error::fault(format!(
+                "Relation of interest ({}) wasn't actually implemented.",
+                name
+            ))),
+            Some(relation) => {
+                self.shutdown_handles
+                    .insert(name.to_string(), shutdown_handle);
 
-            match rel_map.remove(name) {
-                None => Err(Error::fault(format!(
-                    "Relation of interest ({}) wasn't actually implemented.",
-                    name
-                ))),
-                Some(relation) => {
-                    self.shutdown_handles
-                        .insert(name.to_string(), shutdown_handle);
-
-                    Ok(relation)
-                }
+                Ok(relation)
             }
         }
     }

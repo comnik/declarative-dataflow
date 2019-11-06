@@ -248,9 +248,6 @@ pub type TraceKeyHandle<K, T, R> = TraceAgent<OrdKeySpine<K, T, R>>;
 /// A trace of (K, V) pairs indexed by key.
 pub type TraceValHandle<K, V, T, R> = TraceAgent<OrdValSpine<K, V, T, R>>;
 
-/// A handle to an arranged relation.
-pub type RelationHandle<T> = TraceKeyHandle<Vec<Value>, T, isize>;
-
 // A map for keeping track of collections that are being actively
 // synthesized (i.e. that are not fully defined yet).
 type VariableMap<S> = HashMap<String, Variable<S, Vec<Value>, isize>>;
@@ -431,14 +428,6 @@ impl AttributeConfig {
             ..Default::default()
         }
     }
-}
-
-/// Per-relation semantics.
-#[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug)]
-pub struct RelationConfig {
-    /// How close the arranged trace should follow the computation
-    /// frontier.
-    pub trace_slack: Option<Time>,
 }
 
 /// A variable used in a query.
@@ -944,12 +933,10 @@ where
 
         // Step 1: Create new recursive variables for each rule.
         for rule in rules.iter() {
-            if domain.is_underconstrained(&rule.name) {
-                local_arrangements.insert(
-                    rule.name.clone(),
-                    Variable::new(nested, Product::new(Default::default(), 1)),
-                );
-            }
+            local_arrangements.insert(
+                rule.name.clone(),
+                Variable::new(nested, Product::new(Default::default(), 1)),
+            );
         }
 
         // Step 2: Create public arrangements for published relations.
@@ -1052,12 +1039,10 @@ where
 
         // Step 1: Create new recursive variables for each rule.
         for name in publish.iter() {
-            if domain.is_underconstrained(name) {
-                local_arrangements.insert(
-                    name.to_string(),
-                    Variable::new(nested, Product::new(Default::default(), 1)),
-                );
-            }
+            local_arrangements.insert(
+                name.to_string(),
+                Variable::new(nested, Product::new(Default::default(), 1)),
+            );
         }
 
         // Step 2: Create public arrangements for published relations.
