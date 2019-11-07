@@ -12,6 +12,7 @@ extern crate log;
 extern crate serde_derive;
 
 pub mod binding;
+pub mod derive;
 pub mod domain;
 pub mod logging;
 pub mod operators;
