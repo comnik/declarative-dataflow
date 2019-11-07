@@ -2,23 +2,22 @@
 //! semantics.
 
 use std::collections::HashMap;
+use std::ops::{Add, AddAssign};
 
-use timely::dataflow::operators::{Probe, UnorderedInput};
-use timely::dataflow::{ProbeHandle, Scope, ScopeParent, Stream};
+use timely::dataflow::operators::unordered_input::{ActivateCapability, UnorderedHandle};
+use timely::dataflow::operators::Map;
+use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::progress::frontier::AntichainRef;
 use timely::progress::Timestamp;
 
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::Arrange;
-use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::TraceReader;
-use differential_dataflow::AsCollection;
+use differential_dataflow::{AsCollection, Collection};
 
-use crate::operators::LastWriteWins;
-use crate::{Aid, Error, Rewind, TxData, Value};
-use crate::{AttributeConfig, IndexDirection, InputSemantics, QuerySupport};
-use crate::{RelationConfig, RelationHandle};
-use crate::{TraceKeyHandle, TraceValHandle};
+use crate::{Aid, Error, Rewind, Rule, TxData, Value};
+use crate::{AttributeConfig, QuerySupport};
+use crate::{ShutdownHandle, TraceKeyHandle, TraceValHandle};
 
 mod unordered_session;
 use unordered_session::UnorderedSession;
@@ -45,6 +44,9 @@ use unordered_session::UnorderedSession;
 /// high-watermark of all timeful domain inputs. This ensures that
 /// they will never block overall progress.
 pub struct Domain<T: Timestamp + Lattice> {
+    /// A namespace under which all attributes in this domain are
+    /// contained.
+    namespace: String,
     /// The current input epoch.
     now_at: T,
     /// Last trace advance.
@@ -71,10 +73,77 @@ pub struct Domain<T: Timestamp + Lattice> {
     pub reverse_propose: HashMap<Aid, TraceValHandle<Value, Value, T, isize>>,
     /// Reverse validate traces.
     pub reverse_validate: HashMap<Aid, TraceKeyHandle<(Value, Value), T, isize>>,
-    /// Configuration for relations in this domain.
-    pub relations: HashMap<Aid, RelationConfig>,
-    /// Relation traces.
-    pub arrangements: HashMap<Aid, RelationHandle<T>>,
+    /// Representation of named rules.
+    pub rules: HashMap<Aid, Rule>,
+    /// Mapping from query names to their shutdown handles.
+    pub shutdown_handles: HashMap<String, ShutdownHandle>,
+}
+
+// We're defining domain composition here.
+impl<T> AddAssign for Domain<T>
+where
+    T: Timestamp + Lattice,
+{
+    fn add_assign(&mut self, other: Self) {
+        assert_eq!(
+            self.namespace, other.namespace,
+            "Only domains within a namespace can be composed."
+        );
+        assert!(
+            !self
+                .attributes
+                .keys()
+                .any(|k| other.attributes.contains_key(k)),
+            "Domain attributes clash."
+        );
+
+        self.now_at = self.now_at.meet(&other.now_at);
+        // @TODO
+        // self.last_advance = ???
+        self.input_sessions.extend(other.input_sessions.into_iter());
+
+        assert!(
+            (other.probed_source_count == 0) || (self.probed_source_count == 0),
+            "Domain composition not supported for two domains with external sources."
+        );
+
+        if self.probed_source_count == 0 {
+            self.domain_probe = other.domain_probe;
+            self.probed_source_count = other.probed_source_count;
+        }
+
+        self.attributes.extend(other.attributes.into_iter());
+
+        self.forward_count.extend(other.forward_count.into_iter());
+        self.forward_propose
+            .extend(other.forward_propose.into_iter());
+        self.forward_validate
+            .extend(other.forward_validate.into_iter());
+
+        self.reverse_count.extend(other.reverse_count.into_iter());
+        self.reverse_propose
+            .extend(other.reverse_propose.into_iter());
+        self.reverse_validate
+            .extend(other.reverse_validate.into_iter());
+
+        self.rules.extend(other.rules.into_iter());
+
+        self.shutdown_handles
+            .extend(other.shutdown_handles.into_iter());
+    }
+}
+
+impl<T> Add for Domain<T>
+where
+    T: Timestamp + Lattice,
+{
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut merged = self;
+        merged += other;
+        merged
+    }
 }
 
 impl<T> Domain<T>
@@ -84,6 +153,7 @@ where
     /// Creates a new domain.
     pub fn new(start_at: T) -> Self {
         Domain {
+            namespace: Default::default(),
             now_at: start_at,
             last_advance: vec![<T as Lattice>::minimum()],
             input_sessions: HashMap::new(),
@@ -96,174 +166,34 @@ where
             reverse_count: HashMap::new(),
             reverse_propose: HashMap::new(),
             reverse_validate: HashMap::new(),
-            relations: HashMap::new(),
-            arrangements: HashMap::new(),
+            rules: HashMap::new(),
+            shutdown_handles: HashMap::new(),
         }
     }
 
-    /// Creates an attribute from a stream of (key,value)
-    /// pairs. Applies operators to enforce input semantics, registers
-    /// the attribute configuration, and installs appropriate indices.
-    fn create_attribute<S: Scope + ScopeParent<Timestamp = T>>(
-        &mut self,
-        name: &str,
-        config: AttributeConfig,
-        pairs: &Stream<S, ((Value, Value), T, isize)>,
-    ) -> Result<(), Error> {
-        if self.attributes.contains_key(name) {
-            Err(Error::conflict(format!(
-                "An attribute of name {} already exists.",
-                name
-            )))
-        } else {
-            let tuples = match config.input_semantics {
-                InputSemantics::Raw => pairs.as_collection(),
-                InputSemantics::LastWriteWins => pairs.as_collection().last_write_wins(),
-                // Ensure that redundant (e,v) pairs don't cause
-                // misleading proposals during joining.
-                InputSemantics::Distinct => pairs.as_collection().distinct(),
-            };
-
-            // @TODO should only create this if used later
-            let tuples_reverse = tuples.map(|(e, v)| (v, e));
-
-            // Propose traces are used in general, whereas the other
-            // indices are only relevant to Hector.
-            self.forward_propose.insert(
-                name.to_string(),
-                tuples.arrange_named(&format!("->Propose({})", &name)).trace,
-            );
-
-            if config.index_direction == IndexDirection::Both {
-                self.reverse_propose.insert(
-                    name.to_string(),
-                    tuples_reverse
-                        .arrange_named(&format!("->_Propose({})", &name))
-                        .trace,
-                );
-            }
-
-            // LastWriteWins is a special case, because count,
-            // propose, and validate are all essentially the same.
-            if config.input_semantics != InputSemantics::LastWriteWins {
-                // Count traces are only required for use in
-                // worst-case optimal joins.
-                if config.query_support == QuerySupport::AdaptiveWCO {
-                    self.forward_count.insert(
-                        name.to_string(),
-                        tuples
-                            .map(|(k, _v)| (k, ()))
-                            .arrange_named(&format!("->Count({})", name))
-                            .trace,
-                    );
-
-                    if config.index_direction == IndexDirection::Both {
-                        self.reverse_count.insert(
-                            name.to_string(),
-                            tuples_reverse
-                                .map(|(k, _v)| (k, ()))
-                                .arrange_named(&format!("->_Count({})", name))
-                                .trace,
-                        );
-                    }
-                }
-
-                if config.query_support >= QuerySupport::Delta {
-                    self.forward_validate.insert(
-                        name.to_string(),
-                        tuples
-                            .map(|t| (t, ()))
-                            .arrange_named(&format!("->Validate({})", &name))
-                            .trace,
-                    );
-
-                    if config.index_direction == IndexDirection::Both {
-                        self.reverse_validate.insert(
-                            name.to_string(),
-                            tuples_reverse
-                                .map(|t| (t, ()))
-                                .arrange_named(&format!("->_Validate({})", &name))
-                                .trace,
-                        );
-                    }
-                }
-            }
-
-            // This is crucial. If we forget to install the attribute
-            // configuration, its traces will be ignored when
-            // advancing the domain.
-            self.attributes.insert(name.to_string(), config);
-
-            info!("Created attribute {}", name);
-
-            Ok(())
+    /// Creates a new domain.
+    pub fn new_from(namespace: &str, base: &Self) -> Self {
+        Domain {
+            namespace: namespace.to_string(),
+            now_at: base.now_at.clone(),
+            last_advance: base.last_advance.clone(),
+            input_sessions: HashMap::new(),
+            domain_probe: ProbeHandle::new(),
+            probed_source_count: 0,
+            attributes: HashMap::new(),
+            forward_count: HashMap::new(),
+            forward_propose: HashMap::new(),
+            forward_validate: HashMap::new(),
+            reverse_count: HashMap::new(),
+            reverse_propose: HashMap::new(),
+            reverse_validate: HashMap::new(),
+            rules: HashMap::new(),
+            shutdown_handles: HashMap::new(),
         }
-    }
-
-    /// Creates an attribute that can be transacted upon by clients.
-    pub fn create_transactable_attribute<S: Scope<Timestamp = T>>(
-        &mut self,
-        name: &str,
-        config: AttributeConfig,
-        scope: &mut S,
-    ) -> Result<(), Error> {
-        let pairs = {
-            let ((handle, cap), pairs) = scope.new_unordered_input::<((Value, Value), T, isize)>();
-            let session = UnorderedSession::from(handle, cap);
-
-            self.input_sessions.insert(name.to_string(), session);
-
-            pairs
-        };
-
-        // We do not want to probe transactable attributes, because
-        // the domain epoch is authoritative for them.
-        self.create_attribute(name, config, &pairs)?;
-
-        Ok(())
-    }
-
-    /// Creates an attribute that is controlled by a source and thus
-    /// can not be transacted upon by clients.
-    pub fn create_sourced_attribute<S: Scope + ScopeParent<Timestamp = T>>(
-        &mut self,
-        name: &str,
-        config: AttributeConfig,
-        pairs: &Stream<S, ((Value, Value), T, isize)>,
-    ) -> Result<(), Error> {
-        // We need to install a probe on source-fed attributes in
-        // order to determine their progress.
-
-        // We do not want to probe timeless attributes.
-        // Sources of timeless attributes either are not able to or do not
-        // want to provide valid domain timestamps.
-        // Forcing to probe them would stall progress in the system.
-        let source_pairs = if config.timeless {
-            pairs.to_owned()
-        } else {
-            self.probed_source_count += 1;
-            pairs.probe_with(&mut self.domain_probe)
-        };
-
-        self.create_attribute(name, config, &source_pairs)?;
-
-        Ok(())
-    }
-
-    /// Inserts a new named relation.
-    pub fn register_arrangement(
-        &mut self,
-        name: String,
-        config: RelationConfig,
-        trace: RelationHandle<T>,
-    ) {
-        self.relations.insert(name.clone(), config);
-        self.arrangements.insert(name, trace);
     }
 
     /// Transact data into one or more inputs.
     pub fn transact(&mut self, tx_data: Vec<TxData>) -> Result<(), Error> {
-        // @TODO do this smarter, e.g. grouped by handle
         for TxData(op, e, a, v, t) in tx_data {
             match self.input_sessions.get_mut(&a) {
                 None => {
@@ -397,22 +327,6 @@ where
                     }
                 }
             }
-
-            for (name, config) in self.relations.iter() {
-                if let Some(ref trace_slack) = config.trace_slack {
-                    let slacking_frontier = frontier
-                        .iter()
-                        .map(|t| t.rewind(trace_slack.clone().into()))
-                        .collect::<Vec<T>>();
-
-                    let trace = self.arrangements.get_mut(name).unwrap_or_else(|| {
-                        panic!("Configuration available for unknown relation {}", name)
-                    });
-
-                    trace.advance_by(&slacking_frontier);
-                    trace.distinguish_since(&slacking_frontier);
-                }
-            }
         }
 
         Ok(())
@@ -449,5 +363,355 @@ where
                 domain_frontier.iter().all(|t| frontier.less_than(t))
             })
         }
+    }
+
+    /// Returns the definition for the rule of the given name.
+    pub fn rule(&self, name: &str) -> Option<&Rule> {
+        self.rules.get(name)
+    }
+
+    /// Checks whether an attribute of that name exists.
+    pub fn has_attribute(&self, name: &str) -> bool {
+        self.attributes.contains_key(name)
+    }
+
+    /// Retrieves the forward count trace for the specified aid.
+    pub fn forward_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
+        self.forward_count.get_mut(name)
+    }
+
+    /// Retrieves the forward propose trace for the specified aid.
+    pub fn forward_propose(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
+        self.forward_propose.get_mut(name)
+    }
+
+    /// Retrieves the forward validate trace for the specified aid.
+    pub fn forward_validate(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
+        self.forward_validate.get_mut(name)
+    }
+
+    /// Retrieves the reverse count trace for the specified aid.
+    pub fn reverse_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
+        self.reverse_count.get_mut(name)
+    }
+
+    /// Retrieves the reverse propose trace for the specified aid.
+    pub fn reverse_propose(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
+        self.reverse_propose.get_mut(name)
+    }
+
+    /// Retrieves the reverse validate trace for the specified aid.
+    pub fn reverse_validate(
+        &mut self,
+        name: &str,
+    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
+        self.reverse_validate.get_mut(name)
+    }
+}
+
+/// A domain that is still under construction in a specific scope.
+pub struct ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    raw: HashMap<Aid, Collection<S, (Value, Value), isize>>,
+    domain: Domain<S::Timestamp>,
+}
+
+impl<S> AddAssign for ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn add_assign(&mut self, other: Self) {
+        self.raw.extend(other.raw.into_iter());
+        self.domain += other.domain;
+    }
+}
+
+impl<S> Add for ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut merged = self;
+        merged += other;
+        merged
+    }
+}
+
+impl<S> ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    /// Installs indices required for the specified level of query
+    /// support.
+    pub fn with_query_support(mut self, query_support: QuerySupport) -> Self {
+        for aid in self.domain.forward_propose.keys() {
+            // Count traces are only required for use in worst-case
+            // optimal joins.
+            if query_support == QuerySupport::AdaptiveWCO {
+                self.domain.forward_count.insert(
+                    aid.clone(),
+                    self.raw[aid]
+                        .map(|(k, _v)| (k, ()))
+                        .arrange_named(&format!("->Count({})", aid))
+                        .trace,
+                );
+            }
+
+            if query_support >= QuerySupport::Delta {
+                self.domain.forward_validate.insert(
+                    aid.clone(),
+                    self.raw[aid]
+                        .map(|t| (t, ()))
+                        .arrange_named(&format!("->Validate({})", aid))
+                        .trace,
+                );
+            }
+        }
+
+        self
+    }
+
+    /// Installs reverse indices for all attributes in the domain.
+    pub fn with_reverse_indices(mut self) -> Self {
+        for aid in self.domain.forward_count.keys() {
+            self.domain.reverse_count.insert(
+                aid.clone(),
+                self.raw[aid]
+                    .map(|(_e, v)| (v, ()))
+                    .arrange_named(&format!("->_Count({})", aid))
+                    .trace,
+            );
+        }
+
+        for aid in self.domain.forward_propose.keys() {
+            self.domain.reverse_propose.insert(
+                aid.clone(),
+                self.raw[aid]
+                    .map(|(e, v)| (v, e))
+                    .arrange_named(&format!("->_Propose({})", aid))
+                    .trace,
+            );
+        }
+
+        for aid in self.domain.forward_validate.keys() {
+            self.domain.reverse_validate.insert(
+                aid.clone(),
+                self.raw[aid]
+                    .map(|pair| (pair, ()))
+                    .arrange_named(&format!("->_Validate({})", aid))
+                    .trace,
+            );
+        }
+
+        self
+    }
+}
+
+impl<S> ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind + std::convert::Into<crate::timestamp::Time>,
+{
+    /// Configures the specified trace slack for all attributes in the
+    /// domain.
+    pub fn with_slack(mut self, slack: S::Timestamp) -> Self {
+        for config in self.domain.attributes.values_mut() {
+            config.trace_slack = Some(slack.clone().into());
+        }
+
+        self
+    }
+}
+
+impl<S> Into<Domain<S::Timestamp>> for ScopedDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn into(self) -> Domain<S::Timestamp> {
+        self.domain
+    }
+}
+
+/// Things that can be converted into a domain with a single
+/// attribute.
+pub trait AsSingletonDomain<S>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    /// Returns a domain containing only a single attribute of the
+    /// specified name, with a single forward index installed.
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S>;
+}
+
+impl<S> AsSingletonDomain<S> for Stream<S, ((Value, Value), isize)>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        let mut domain = Domain::new(Default::default());
+
+        // When given only a stream without timestamps, we must assume
+        // that this attribute is externally sourced and timeless,
+        // meaning we have no control over its input handle and the
+        // source is not able or not willing to provide timestamps. We
+        // do not want to probe them, in order to not stall progress.
+        let pairs = self
+            .map(|(data, diff)| (data, Default::default(), diff))
+            .as_collection();
+
+        let mut raw = HashMap::new();
+        raw.insert(name.to_string(), pairs);
+
+        // Propose traces are used in general, whereas the other
+        // indices are only relevant to Hector.
+        domain.forward_propose.insert(
+            name.to_string(),
+            raw[name]
+                .arrange_named(&format!("->Propose({})", &name))
+                .trace,
+        );
+
+        // This is crucial. If we forget to install the attribute
+        // configuration, its traces will be ignored when advancing
+        // the domain.
+        domain
+            .attributes
+            .insert(name.to_string(), Default::default());
+
+        ScopedDomain { raw, domain }
+    }
+}
+
+impl<S> AsSingletonDomain<S> for Collection<S, (Value, Value), isize>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        let mut domain = Domain::new(Default::default());
+
+        // When given only a collection we must assume that this
+        // attribute is externally sourced, meaning we have no control
+        // over its input handle. We therefore need to install a probe
+        // in order to determine its progress.
+        domain.probed_source_count += 1;
+        let pairs = self.probe_with(&mut domain.domain_probe);
+
+        let mut raw = HashMap::new();
+        raw.insert(name.to_string(), pairs);
+
+        // Propose traces are used in general, whereas the other
+        // indices are only relevant to Hector.
+        domain.forward_propose.insert(
+            name.to_string(),
+            raw[name]
+                .arrange_named(&format!("->Propose({})", &name))
+                .trace,
+        );
+
+        // This is crucial. If we forget to install the attribute
+        // configuration, its traces will be ignored when advancing
+        // the domain.
+        domain
+            .attributes
+            .insert(name.to_string(), Default::default());
+
+        ScopedDomain { raw, domain }
+    }
+}
+
+impl<S> AsSingletonDomain<S> for Stream<S, ((Value, Value), S::Timestamp, isize)>
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        self.as_collection().as_singleton_domain(name)
+    }
+}
+
+impl<S> AsSingletonDomain<S>
+    for (
+        (
+            UnorderedHandle<S::Timestamp, ((Value, Value), S::Timestamp, isize)>,
+            ActivateCapability<S::Timestamp>,
+        ),
+        Collection<S, (Value, Value), isize>,
+    )
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        let mut domain = Domain::new(Default::default());
+
+        // When a handle and a capability are available, we can infer
+        // that this is an attribute that clients will issue
+        // transactions against. We must not install a probe, because
+        // the domain time will be authoritative for them.
+
+        let ((handle, cap), pairs) = self;
+        domain
+            .input_sessions
+            .insert(name.to_string(), UnorderedSession::from(handle, cap));
+
+        let mut raw = HashMap::new();
+        raw.insert(name.to_string(), pairs);
+
+        // Propose traces are used in general, whereas the other
+        // indices are only relevant to Hector.
+        domain.forward_propose.insert(
+            name.to_string(),
+            raw[name]
+                .arrange_named(&format!("->Propose({})", &name))
+                .trace,
+        );
+
+        // This is crucial. If we forget to install the attribute
+        // configuration, its traces will be ignored when advancing
+        // the domain.
+        domain
+            .attributes
+            .insert(name.to_string(), Default::default());
+
+        ScopedDomain { raw, domain }
+    }
+}
+
+impl<S> AsSingletonDomain<S>
+    for (
+        (
+            UnorderedHandle<S::Timestamp, ((Value, Value), S::Timestamp, isize)>,
+            ActivateCapability<S::Timestamp>,
+        ),
+        Stream<S, ((Value, Value), S::Timestamp, isize)>,
+    )
+where
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
+{
+    fn as_singleton_domain(self, name: &str) -> ScopedDomain<S> {
+        let ((handle, cap), pairs) = self;
+        ((handle, cap), pairs.as_collection()).as_singleton_domain(name)
     }
 }

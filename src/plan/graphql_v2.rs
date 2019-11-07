@@ -22,12 +22,13 @@ use serde_json::Map;
 use serde_json::Value as JValue;
 
 use crate::binding::Binding;
+use crate::domain::Domain;
 use crate::plan::pull_v2::{PathId, Pull, PullAll, PullLevel};
-use crate::plan::{gensym, Dependencies, ImplContext, Implementable};
+use crate::plan::{gensym, Dependencies, Implementable};
 use crate::plan::{Hector, Plan};
-use crate::timestamp;
+use crate::timestamp::{Rewind, Time};
 use crate::ShutdownHandle;
-use crate::{Aid, Output, Value, Var};
+use crate::{Aid, Output, Value, Var, VariableMap};
 
 /// A plan for GraphQL queries, e.g. `{ Heroes { name age weight } }`.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -275,16 +276,15 @@ impl GraphQl {
 
     /// See Implementable::implement, as GraphQl v2 can't implement
     /// Implementable directly.
-    pub fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        context: &mut I,
+        domain: &mut Domain<S::Timestamp>,
+        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Stream<S, Output>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
-        S::Timestamp: std::convert::Into<timestamp::Time>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind + std::convert::Into<Time>,
     {
         use timely::dataflow::operators::Concatenate;
 
@@ -297,7 +297,7 @@ impl GraphQl {
                 .paths
                 .iter()
                 .flat_map(|path| {
-                    let (streams, shutdown) = path.implement(nested, &dummy, context);
+                    let (streams, shutdown) = path.implement(nested, domain, &dummy);
                     std::mem::forget(shutdown);
                     streams
                 })
@@ -355,7 +355,7 @@ impl GraphQl {
                                     // an array, rather than overwriting.
                                     let cardinality = &Cardinality::One;
 
-                                    let mut value = JValue::from(
+                                    let value = JValue::from(
                                         path.pop().expect("malformed path; no value found"),
                                     );
 

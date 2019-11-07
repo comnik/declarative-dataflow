@@ -8,25 +8,28 @@ use std::time::{Duration, Instant};
 
 use timely::communication::Allocate;
 use timely::dataflow::operators::capture::event::link::EventLink;
+use timely::dataflow::operators::UnorderedInput;
 use timely::dataflow::{ProbeHandle, Scope};
 use timely::logging::{BatchLogger, TimelyEvent};
 use timely::progress::Timestamp;
 use timely::worker::Worker;
 
-use differential_dataflow::collection::Collection;
+use differential_dataflow::collection::{AsCollection, Collection};
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::logging::DifferentialEvent;
+use differential_dataflow::operators::Threshold;
 
-use crate::domain::Domain;
+use crate::domain::{AsSingletonDomain, Domain};
 use crate::logging::DeclarativeEvent;
-use crate::plan::ImplContext;
+use crate::operators::LastWriteWins;
 use crate::scheduling::Scheduler;
 use crate::sinks::Sink;
 use crate::sources::{Source, Sourceable, SourcingContext};
 use crate::Rule;
-use crate::{implement, implement_neu, AttributeConfig, RelationHandle, ShutdownHandle};
-use crate::{Aid, Error, Rewind, Time, TxData, Value};
-use crate::{TraceKeyHandle, TraceValHandle};
+use crate::{
+    implement, implement_neu, AttributeConfig, IndexDirection, InputSemantics, ShutdownHandle,
+};
+use crate::{Error, Rewind, Time, TxData, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -149,6 +152,8 @@ pub struct CreateAttribute {
 pub enum Request {
     /// Sends inputs via one or more registered handles.
     Transact(Vec<TxData>),
+    /// Expresses interest in an entire attribute.
+    Subscribe(String),
     /// Expresses interest in a named relation.
     Interest(Interest),
     /// Expresses that the interest in a named relation has
@@ -190,14 +195,17 @@ where
 {
     /// Server configuration.
     pub config: Configuration,
-    /// A timer started at the initation of the timely computation
+    /// A timer started at the initiation of the timely computation
     /// (copied from worker).
     pub t0: Instant,
-    /// Implementation context.
-    pub context: Context<T>,
+    /// Internal domain in server time.
+    pub internal: Domain<T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, HashSet<Token>>,
-    // Mapping from query names to their shutdown handles.
+    // Mapping from query names to their shutdown handles. This is
+    // separate from internal shutdown handles on domains, because
+    // user queries might be one-off and not result in a new domain
+    // being created.
     shutdown_handles: HashMap<String, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
@@ -207,77 +215,6 @@ where
     timely_events: Option<Rc<EventLink<Duration, (Duration, usize, TimelyEvent)>>>,
     // Link to replayable Differential logging events.
     differential_events: Option<Rc<EventLink<Duration, (Duration, usize, DifferentialEvent)>>>,
-}
-
-/// Implementation context.
-pub struct Context<T>
-where
-    T: Timestamp + Lattice,
-{
-    /// Representation of named rules.
-    pub rules: HashMap<Aid, Rule>,
-    /// Set of rules known to be underconstrained.
-    pub underconstrained: HashSet<Aid>,
-    /// Internal domain of command sequence numbers.
-    pub internal: Domain<T>,
-}
-
-impl<T> ImplContext<T> for Context<T>
-where
-    T: Timestamp + Lattice,
-{
-    fn rule(&self, name: &str) -> Option<&Rule> {
-        self.rules.get(name)
-    }
-
-    fn global_arrangement(&mut self, name: &str) -> Option<&mut RelationHandle<T>> {
-        self.internal.arrangements.get_mut(name)
-    }
-
-    fn has_attribute(&self, name: &str) -> bool {
-        self.internal.attributes.contains_key(name)
-    }
-
-    fn forward_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
-        self.internal.forward_count.get_mut(name)
-    }
-
-    fn forward_propose(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
-        self.internal.forward_propose.get_mut(name)
-    }
-
-    fn forward_validate(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
-        self.internal.forward_validate.get_mut(name)
-    }
-
-    fn reverse_count(&mut self, name: &str) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
-        self.internal.reverse_count.get_mut(name)
-    }
-
-    fn reverse_propose(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
-        self.internal.reverse_propose.get_mut(name)
-    }
-
-    fn reverse_validate(
-        &mut self,
-        name: &str,
-    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
-        self.internal.reverse_validate.get_mut(name)
-    }
-
-    fn is_underconstrained(&self, _name: &str) -> bool {
-        // self.underconstrained.contains(name)
-        true
-    }
 }
 
 impl<T, Token> Server<T, Token>
@@ -302,11 +239,7 @@ where
         Server {
             config,
             t0,
-            context: Context {
-                rules: HashMap::new(),
-                internal: Domain::new(Default::default()),
-                underconstrained: HashSet::new(),
-            },
+            internal: Domain::new(Default::default()),
             interests: HashMap::new(),
             shutdown_handles: HashMap::new(),
             scheduler: Rc::new(RefCell::new(Scheduler::from(probe.clone()))),
@@ -350,7 +283,7 @@ where
     ) -> Result<(), Error> {
         // only the owner should actually introduce new inputs
         if owner == worker_index {
-            self.context.internal.transact(tx_data)
+            self.internal.transact(tx_data)
         } else {
             Ok(())
         }
@@ -362,42 +295,22 @@ where
         name: &str,
         scope: &mut S,
     ) -> Result<Collection<S, Vec<Value>, isize>, Error> {
-        // We need to do a `contains_key` here to avoid taking
-        // a mut ref on context.
-        if self.context.internal.arrangements.contains_key(name) {
-            // Rule is already implemented.
-            let relation = self
-                .context
-                .global_arrangement(name)
-                .unwrap()
-                .import_named(scope, name)
-                .as_collection(|tuple, _| tuple.clone());
-
-            Ok(relation)
+        let (mut rel_map, shutdown_handle) = if self.config.enable_optimizer {
+            implement_neu(scope, &mut self.internal, name)?
         } else {
-            let (mut rel_map, shutdown_handle) = if self.config.enable_optimizer {
-                implement_neu(name, scope, &mut self.context)?
-            } else {
-                implement(name, scope, &mut self.context)?
-            };
+            implement(scope, &mut self.internal, name)?
+        };
 
-            // @TODO when do we actually want to register result traces for re-use?
-            // for (name, relation) in rel_map.into_iter() {
-            // let trace = relation.map(|t| (t, ())).arrange_named(name).trace;
-            //     self.context.register_arrangement(name, config, trace);
-            // }
+        match rel_map.remove(name) {
+            None => Err(Error::fault(format!(
+                "Relation of interest ({}) wasn't actually implemented.",
+                name
+            ))),
+            Some(relation) => {
+                self.shutdown_handles
+                    .insert(name.to_string(), shutdown_handle);
 
-            match rel_map.remove(name) {
-                None => Err(Error::fault(format!(
-                    "Relation of interest ({}) wasn't actually implemented.",
-                    name
-                ))),
-                Some(relation) => {
-                    self.shutdown_handles
-                        .insert(name.to_string(), shutdown_handle);
-
-                    Ok(relation)
-                }
+                Ok(relation)
             }
         }
     }
@@ -407,7 +320,7 @@ where
         let Register { rules, .. } = req;
 
         for rule in rules.into_iter() {
-            if self.context.rules.contains_key(&rule.name) {
+            if self.internal.rules.contains_key(&rule.name) {
                 // @TODO panic if hashes don't match
                 // panic!("Attempted to re-register a named relation");
                 continue;
@@ -422,7 +335,7 @@ where
                 //     self.transact(tx_data, 0, 0)?;
                 // }
 
-                self.context.rules.insert(rule.name.to_string(), rule);
+                self.internal.rules.insert(rule.name.to_string(), rule);
             }
         }
 
@@ -430,11 +343,48 @@ where
     }
 
     /// Handles a CreateAttribute request.
-    pub fn create_attribute<S>(&mut self, scope: &mut S, name: &str, config: AttributeConfig) -> Result<(), Error>
+    pub fn create_attribute<S>(
+        &mut self,
+        scope: &mut S,
+        name: &str,
+        config: AttributeConfig,
+    ) -> Result<(), Error>
     where
-        S: Scope<Timestamp = T>
+        S: Scope<Timestamp = T>,
+        S::Timestamp: std::convert::Into<crate::timestamp::Time>,
     {
-        self.context.internal.create_transactable_attribute(name, config, scope)
+        let ((handle, cap), pairs) =
+            scope.new_unordered_input::<((Value, Value), S::Timestamp, isize)>();
+
+        let tuples = match config.input_semantics {
+            InputSemantics::Raw => pairs.as_collection(),
+            InputSemantics::LastWriteWins => pairs.as_collection().last_write_wins(),
+            // Ensure that redundant (e,v) pairs don't cause
+            // misleading proposals during joining.
+            InputSemantics::Distinct => pairs.as_collection().distinct(),
+        };
+
+        let mut scoped_domain = ((handle, cap), tuples).as_singleton_domain(name);
+
+        if let Some(slack) = config.trace_slack {
+            scoped_domain = scoped_domain.with_slack(slack.into());
+        }
+
+        // LastWriteWins is a special case, because count, propose,
+        // and validate are all essentially the same.
+        if config.input_semantics != InputSemantics::LastWriteWins {
+            scoped_domain = scoped_domain.with_query_support(config.query_support);
+        }
+
+        if config.index_direction == IndexDirection::Both {
+            scoped_domain = scoped_domain.with_reverse_indices();
+        }
+
+        self.internal += scoped_domain.into();
+
+        info!("Created attribute {}", name);
+
+        Ok(())
     }
 
     /// Returns a fresh sourcing context, useful for installing 3DF
@@ -443,18 +393,22 @@ where
         SourcingContext {
             t0: self.t0,
             scheduler: Rc::downgrade(&self.scheduler),
-            domain_probe: self.context.internal.domain_probe().clone(),
+            domain_probe: self.internal.domain_probe().clone(),
             timely_events: self.timely_events.clone().unwrap(),
             differential_events: self.differential_events.clone().unwrap(),
         }
     }
 
     /// Handles a RegisterSource request.
-    pub fn register_source<S: Scope<Timestamp = T>>(
+    pub fn register_source<S>(
         &mut self,
         source: Box<dyn Sourceable<S>>,
         scope: &mut S,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        S: Scope<Timestamp = T>,
+        S::Timestamp: std::convert::Into<crate::timestamp::Time>,
+    {
         // use timely::logging::Logger;
         // let timely_logger = scope.log_register().remove("timely");
 
@@ -467,10 +421,32 @@ where
 
         let mut attribute_streams = source.source(scope, context);
 
-        for (aid, config, datoms) in attribute_streams.drain(..) {
-            self.context
-                .internal
-                .create_sourced_attribute(&aid, config, &datoms)?;
+        for (aid, config, pairs) in attribute_streams.drain(..) {
+            let pairs = match config.input_semantics {
+                InputSemantics::Raw => pairs.as_collection(),
+                InputSemantics::LastWriteWins => pairs.as_collection().last_write_wins(),
+                // Ensure that redundant (e,v) pairs don't cause
+                // misleading proposals during joining.
+                InputSemantics::Distinct => pairs.as_collection().distinct(),
+            };
+
+            let mut scoped_domain = pairs.as_singleton_domain(&aid);
+
+            if let Some(slack) = config.trace_slack {
+                scoped_domain = scoped_domain.with_slack(slack.into());
+            }
+
+            // LastWriteWins is a special case, because count, propose,
+            // and validate are all essentially the same.
+            if config.input_semantics != InputSemantics::LastWriteWins {
+                scoped_domain = scoped_domain.with_query_support(config.query_support);
+            }
+
+            if config.index_direction == IndexDirection::Both {
+                scoped_domain = scoped_domain.with_reverse_indices();
+            }
+
+            self.internal += scoped_domain.into();
         }
 
         // if let Some(logger) = timely_logger {
@@ -495,7 +471,7 @@ where
     /// Handles an AdvanceDomain request.
     pub fn advance_domain(&mut self, name: Option<String>, next: T) -> Result<(), Error> {
         match name {
-            None => self.context.internal.advance_epoch(next),
+            None => self.internal.advance_epoch(next),
             Some(_) => Err(Error::unsupported("Named domains are not yet supported.")),
         }
     }
@@ -533,7 +509,7 @@ where
     /// `step_while` is not safe in general and might lead to stalls.
     pub fn is_any_outdated(&self) -> bool {
         self.probe
-            .with_frontier(|out_frontier| self.context.internal.dominates(out_frontier))
+            .with_frontier(|out_frontier| self.internal.dominates(out_frontier))
     }
 
     /// Helper for registering, publishing, and indicating interest in

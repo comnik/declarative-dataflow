@@ -51,11 +51,7 @@ fn run_cases(mut cases: Vec<Case>) {
                         ..Default::default()
                     };
 
-                    server
-                        .context
-                        .internal
-                        .create_transactable_attribute(dep, config, scope)
-                        .unwrap();
+                    server.create_attribute(scope, dep, config).unwrap();
                 }
 
                 server

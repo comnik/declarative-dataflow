@@ -67,43 +67,74 @@ impl std::convert::From<pair::Pair<Duration, u64>> for Time {
     }
 }
 
-/// Extension trait for timestamp types that can be safely re-wound to
-/// an earlier time. This is required for automatically advancing
-/// traces according to their configured slack.
-pub trait Rewind: std::convert::From<Time> {
-    /// Returns a new timestamp corresponding to self rewound by the
-    /// specified amount of slack. Calling rewind is always safe, in
-    /// that no invalid times will be returned.
-    ///
-    /// e.g. 0.rewind(10) -> 0
-    /// and Duration(0).rewind(Duration(1)) -> Duration(0)
-    fn rewind(&self, slack: Self) -> Self;
-}
+pub use self::rewind::Rewind;
+mod rewind {
+    use crate::timestamp::Time;
+    use std::time::Duration;
+    use timely::order::Product;
 
-impl Rewind for u64 {
-    fn rewind(&self, slack: Self) -> Self {
-        match self.checked_sub(slack) {
-            None => *self,
-            Some(rewound) => rewound,
+    /// Extension trait for timestamp types that can be safely
+    /// re-wound to an earlier time. This is required for
+    /// automatically advancing traces according to their configured
+    /// slack.
+    pub trait Rewind: std::convert::From<Time> {
+        /// Returns a new timestamp corresponding to self rewound by the
+        /// specified amount of slack. Calling rewind is always safe, in
+        /// that no invalid times will be returned.
+        ///
+        /// e.g. 0.rewind(10) -> 0
+        /// and Duration(0).rewind(Duration(1)) -> Duration(0)
+        fn rewind(&self, slack: Self) -> Self;
+    }
+
+    impl Rewind for u64 {
+        fn rewind(&self, slack: Self) -> Self {
+            match self.checked_sub(slack) {
+                None => *self,
+                Some(rewound) => rewound,
+            }
         }
     }
-}
 
-impl Rewind for Duration {
-    fn rewind(&self, slack: Self) -> Self {
-        match self.checked_sub(slack) {
-            None => *self,
-            Some(rewound) => rewound,
+    impl Rewind for Duration {
+        fn rewind(&self, slack: Self) -> Self {
+            match self.checked_sub(slack) {
+                None => *self,
+                Some(rewound) => rewound,
+            }
         }
     }
-}
 
-impl Rewind for pair::Pair<Duration, u64> {
-    fn rewind(&self, slack: Self) -> Self {
-        let first_rewound = self.first.rewind(slack.first);
-        let second_rewound = self.second.rewind(slack.second);
+    impl Rewind for crate::timestamp::pair::Pair<Duration, u64> {
+        fn rewind(&self, slack: Self) -> Self {
+            let first_rewound = self.first.rewind(slack.first);
+            let second_rewound = self.second.rewind(slack.second);
 
-        Self::new(first_rewound, second_rewound)
+            Self::new(first_rewound, second_rewound)
+        }
+    }
+
+    impl<TOuter> std::convert::Into<Product<TOuter, u64>> for Time
+    where
+        TOuter: std::convert::From<Time>,
+    {
+        fn into(self) -> Product<TOuter, u64> {
+            Product::new(self.into(), 0)
+        }
+    }
+
+    impl<TOuter, TInner> Rewind for Product<TOuter, TInner>
+    where
+        Product<TOuter, TInner>: std::convert::From<Time>,
+        TOuter: Rewind,
+        TInner: Rewind,
+    {
+        fn rewind(&self, slack: Self) -> Self {
+            let outer_rewound = self.outer.rewind(slack.outer);
+            let inner_rewound = self.inner.rewind(slack.inner);
+
+            Self::new(outer_rewound, inner_rewound)
+        }
     }
 }
 

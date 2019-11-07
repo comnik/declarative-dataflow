@@ -10,7 +10,9 @@ use differential_dataflow::operators::arrange::{Arrange, Arranged};
 use differential_dataflow::operators::JoinCore;
 
 use crate::binding::{AsBinding, Binding};
-use crate::plan::{next_id, Dependencies, ImplContext, Implementable};
+use crate::domain::Domain;
+use crate::plan::{next_id, Dependencies, Implementable};
+use crate::timestamp::Rewind;
 use crate::{Aid, Eid, Value, Var};
 use crate::{
     AttributeBinding, CollectionRelation, Implemented, Relation, ShutdownHandle, TraceValHandle,
@@ -30,17 +32,16 @@ pub struct Join<P1: Implementable, P2: Implementable> {
     pub right_plan: Box<P2>,
 }
 
-fn attribute_attribute<'b, T, I, S>(
+fn attribute_attribute<'b, S>(
     nested: &mut Iterative<'b, S, u64>,
-    context: &mut I,
+    domain: &mut Domain<S::Timestamp>,
     target: Var,
     left: AttributeBinding,
     right: AttributeBinding,
 ) -> (Implemented<'b, S>, ShutdownHandle)
 where
-    T: Timestamp + Lattice,
-    I: ImplContext<T>,
-    S: Scope<Timestamp = T>,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
 {
     let mut variables = Vec::with_capacity(3);
     variables.push(target);
@@ -48,13 +49,13 @@ where
     let (left_arranged, shutdown_left) = {
         let (index, shutdown_button) = if target == left.variables.0 {
             variables.push(left.variables.1);
-            context
+            domain
                 .forward_propose(&left.source_attribute)
                 .expect("forward propose trace does not exist")
                 .import_frontier(&nested.parent, &left.source_attribute)
         } else if target == left.variables.1 {
             variables.push(left.variables.0);
-            context
+            domain
                 .reverse_propose(&left.source_attribute)
                 .expect("reverse propose trace does not exist")
                 .import_frontier(&nested.parent, &left.source_attribute)
@@ -68,13 +69,13 @@ where
     let (right_arranged, shutdown_right) = {
         let (index, shutdown_button) = if target == right.variables.0 {
             variables.push(right.variables.1);
-            context
+            domain
                 .forward_propose(&right.source_attribute)
                 .expect("forward propose trace does not exist")
                 .import_frontier(&nested.parent, &right.source_attribute)
         } else if target == right.variables.1 {
             variables.push(right.variables.0);
-            context
+            domain
                 .reverse_propose(&right.source_attribute)
                 .expect("reverse propose trace does not exist")
                 .import_frontier(&nested.parent, &right.source_attribute)
@@ -102,17 +103,16 @@ where
     (Implemented::Collection(relation), shutdown_handle)
 }
 
-fn collection_collection<'b, T, S, I>(
+fn collection_collection<'b, S>(
     nested: &mut Iterative<'b, S, u64>,
-    context: &mut I,
+    domain: &mut Domain<S::Timestamp>,
     target_variables: &[Var],
     left: CollectionRelation<'b, S>,
     right: CollectionRelation<'b, S>,
 ) -> (Implemented<'b, S>, ShutdownHandle)
 where
-    T: Timestamp + Lattice,
-    I: ImplContext<T>,
-    S: Scope<Timestamp = T>,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
 {
     let mut shutdown_handle = ShutdownHandle::empty();
 
@@ -136,7 +136,7 @@ where
         Iterative<'b, S, u64>,
         TraceValHandle<Vec<Value>, Vec<Value>, Product<S::Timestamp, u64>, isize>,
     > = {
-        let (arranged, shutdown) = left.tuples_by_variables(nested, context, &target_variables);
+        let (arranged, shutdown) = left.tuples_by_variables(nested, domain, &target_variables);
         shutdown_handle.merge_with(shutdown);
         arranged.arrange()
     };
@@ -145,7 +145,7 @@ where
         Iterative<'b, S, u64>,
         TraceValHandle<Vec<Value>, Vec<Value>, Product<S::Timestamp, u64>, isize>,
     > = {
-        let (arranged, shutdown) = right.tuples_by_variables(nested, context, &target_variables);
+        let (arranged, shutdown) = right.tuples_by_variables(nested, domain, &target_variables);
         shutdown_handle.merge_with(shutdown);
         arranged.arrange()
     };
@@ -165,21 +165,20 @@ where
     (Implemented::Collection(relation), shutdown_handle)
 }
 
-fn collection_attribute<'b, T, S, I>(
+fn collection_attribute<'b, S>(
     nested: &mut Iterative<'b, S, u64>,
-    context: &mut I,
+    domain: &mut Domain<S::Timestamp>,
     target_variables: &[Var],
     left: CollectionRelation<'b, S>,
     right: AttributeBinding,
 ) -> (Implemented<'b, S>, ShutdownHandle)
 where
-    T: Timestamp + Lattice,
-    I: ImplContext<T>,
-    S: Scope<Timestamp = T>,
+    S: Scope,
+    S::Timestamp: Timestamp + Lattice + Rewind,
 {
     // @TODO specialized implementation
 
-    let (tuples, shutdown_propose) = match context.forward_propose(&right.source_attribute) {
+    let (tuples, shutdown_propose) = match domain.forward_propose(&right.source_attribute) {
         None => panic!("attribute {:?} does not exist", &right.source_attribute),
         Some(propose_trace) => {
             let (propose, shutdown_propose) =
@@ -199,7 +198,7 @@ where
     };
 
     let (implemented, mut shutdown_handle) =
-        collection_collection(nested, context, target_variables, left, right_collected);
+        collection_collection(nested, domain, target_variables, left, right_collected);
 
     shutdown_handle.add_button(shutdown_propose);
 
@@ -209,7 +208,7 @@ where
 //             Some(var) => {
 //                 assert!(*var == self.variables.1);
 
-//                 let (index, shutdown_button) = context
+//                 let (index, shutdown_button) = domain
 //                     .forward_validate(&self.source_attribute)
 //                     .unwrap()
 //                     .import_core(&scope.parent, &self.source_attribute);
@@ -227,7 +226,7 @@ where
 //             Some(var) => {
 //                 assert!(*var == self.variables.0);
 
-//                 let (index, shutdown_button) = context
+//                 let (index, shutdown_button) = domain
 //                     .reverse_validate(&self.source_attribute)
 //                     .unwrap()
 //                     .import_core(&scope.parent, &self.source_attribute);
@@ -288,35 +287,32 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
         data
     }
 
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         assert!(!self.variables.is_empty());
 
-        let (left, shutdown_left) = self
-            .left_plan
-            .implement(nested, local_arrangements, context);
-        let (right, shutdown_right) =
-            self.right_plan
-                .implement(nested, local_arrangements, context);
+        let (left, shutdown_left) = self.left_plan.implement(nested, domain, local_arrangements);
+        let (right, shutdown_right) = self
+            .right_plan
+            .implement(nested, domain, local_arrangements);
 
         let (implemented, mut shutdown_handle) = match left {
             Implemented::Attribute(left) => {
                 match right {
                     Implemented::Attribute(right) => {
                         if self.variables.len() == 1 {
-                            attribute_attribute(nested, context, self.variables[0], left, right)
+                            attribute_attribute(nested, domain, self.variables[0], left, right)
                         } else if self.variables.len() == 2 {
                             unimplemented!();
-                        // intersect_attributes(nested, context, self.variables, left, right)
+                        // intersect_attributes(domain, self.variables, left, right)
                         } else {
                             panic!(
                                 "Attribute<->Attribute joins can't target more than two variables."
@@ -324,16 +320,16 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
                         }
                     }
                     Implemented::Collection(right) => {
-                        collection_attribute(nested, context, &self.variables, right, left)
+                        collection_attribute(nested, domain, &self.variables, right, left)
                     }
                 }
             }
             Implemented::Collection(left) => match right {
                 Implemented::Attribute(right) => {
-                    collection_attribute(nested, context, &self.variables, left, right)
+                    collection_attribute(nested, domain, &self.variables, left, right)
                 }
                 Implemented::Collection(right) => {
-                    collection_collection(nested, context, &self.variables, left, right)
+                    collection_collection(nested, domain, &self.variables, left, right)
                 }
             },
         };

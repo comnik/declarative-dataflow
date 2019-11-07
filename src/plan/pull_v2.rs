@@ -10,7 +10,9 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 
 use crate::binding::AsBinding;
-use crate::plan::{Dependencies, ImplContext, Implementable, Plan};
+use crate::domain::Domain;
+use crate::plan::{Dependencies, Implementable, Plan};
+use crate::timestamp::Rewind;
 use crate::{Aid, Value, Var};
 use crate::{Relation, ShutdownHandle, VariableMap};
 
@@ -51,19 +53,18 @@ impl<P: Implementable> PullLevel<P> {
 
     /// See Implementable::implement, as PullLevel v2 can't implement
     /// Implementable directly.
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (
         HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         use differential_dataflow::operators::arrange::{Arrange, Arranged, TraceAgent};
         use differential_dataflow::operators::JoinCore;
@@ -72,7 +73,7 @@ impl<P: Implementable> PullLevel<P> {
 
         assert_eq!(self.pull_attributes.is_empty(), false);
 
-        let (input, mut shutdown_handle) = self.plan.implement(nested, local_arrangements, context);
+        let (input, mut shutdown_handle) = self.plan.implement(nested, domain, local_arrangements);
 
         // Arrange input entities by eid.
         let e_offset = input
@@ -80,14 +81,14 @@ impl<P: Implementable> PullLevel<P> {
             .expect("input relation doesn't bind pull_variable");
 
         let paths = {
-            let (tuples, shutdown) = input.tuples(nested, context);
+            let (tuples, shutdown) = input.tuples(nested, domain);
             shutdown_handle.merge_with(shutdown);
             tuples
         };
 
         let e_path: Arranged<
             Iterative<S, u64>,
-            TraceAgent<OrdValSpine<Value, Vec<Value>, Product<T, u64>, isize>>,
+            TraceAgent<OrdValSpine<Value, Vec<Value>, Product<S::Timestamp, u64>, isize>>,
         > = paths.map(move |t| (t[e_offset].clone(), t)).arrange();
 
         let mut shutdown_handle = shutdown_handle;
@@ -95,10 +96,10 @@ impl<P: Implementable> PullLevel<P> {
             .pull_attributes
             .iter()
             .map(|a| {
-                let e_v = match context.forward_propose(a) {
+                let e_v = match domain.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
-                        let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
+                        let frontier: Vec<S::Timestamp> = propose_trace.advance_frontier().to_vec();
                         let (arranged, shutdown_propose) =
                             propose_trace.import_core(&nested.parent, a);
 
@@ -164,19 +165,18 @@ impl PullAll {
 
     /// See Implementable::implement, as PullAll v2 can't implement
     /// Implementable directly.
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (
         HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         use differential_dataflow::trace::TraceReader;
 
@@ -188,10 +188,10 @@ impl PullAll {
             .pull_attributes
             .iter()
             .map(|a| {
-                let e_v = match context.forward_propose(a) {
+                let e_v = match domain.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
-                        let frontier: Vec<T> = propose_trace.advance_frontier().to_vec();
+                        let frontier: Vec<S::Timestamp> = propose_trace.advance_frontier().to_vec();
                         let (arranged, shutdown_propose) =
                             propose_trace.import_core(&nested.parent, a);
 
@@ -241,23 +241,22 @@ impl Pull {
 
     /// See Implementable::implement, as Pull v2 can't implement
     /// Implementable directly.
-    pub fn implement<'b, T, I, S>(
+    pub fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (
         HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         match self {
-            Pull::All(ref pull) => pull.implement(nested, local_arrangements, context),
-            Pull::Level(ref pull) => pull.implement(nested, local_arrangements, context),
+            Pull::All(ref pull) => pull.implement(nested, domain, local_arrangements),
+            Pull::Level(ref pull) => pull.implement(nested, domain, local_arrangements),
         }
     }
 }

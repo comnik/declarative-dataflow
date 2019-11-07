@@ -29,9 +29,10 @@ use differential_dataflow::{AsCollection, Collection, ExchangeData, Hashable};
 
 use crate::binding::{AsBinding, BinaryPredicate, Binding};
 use crate::binding::{BinaryPredicateBinding, ConstantBinding};
+use crate::domain::Domain;
 use crate::logging::DeclarativeEvent;
-use crate::plan::{Dependencies, ImplContext, Implementable};
-use crate::timestamp::altneu::AltNeu;
+use crate::plan::{Dependencies, Implementable};
+use crate::timestamp::{altneu::AltNeu, Rewind};
 use crate::{Aid, Value, Var};
 use crate::{CollectionRelation, Implemented, ShutdownHandle, VariableMap};
 
@@ -340,23 +341,22 @@ impl Hector {
     // @TODO pass single binding as argument?
     // @TODO make these static and take variables as well?
 
-    fn implement_single_binding<'b, T, I, S>(
+    fn implement_single_binding<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         // With only a single binding given, we don't want to do
         // anything fancy (provided the binding is sourceable).
 
         match self.bindings.first().unwrap() {
             Binding::Attribute(binding) => {
-                match context.forward_propose(&binding.source_attribute) {
+                match domain.forward_propose(&binding.source_attribute) {
                     None => panic!("Unknown attribute {}", &binding.source_attribute),
                     Some(forward_trace) => {
                         let name = format!("Propose({})", &binding.source_attribute);
@@ -393,7 +393,7 @@ impl Hector {
         }
     }
 
-    // fn two_way<'b, T, I, S>(
+    // fn two_way<'b, S>(
     //     nested: &mut Iterative<'b, S, u64>,
     //     _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     //     context: &mut I,
@@ -402,7 +402,6 @@ impl Hector {
     // ) -> (Implemented<'b, S>, ShutdownHandle)
     // where
     //     T: Timestamp + Lattice,
-    //     I: ImplContext<T>,
     //     S: Scope<Timestamp = T>,
     // {
     //     let (source, right) = match left {
@@ -423,7 +422,7 @@ impl Hector {
     //                 0 => {
     //                     // [?a :edge ?b] (constant ?a x) <=> [x :edge ?b]
 
-    //                     let (index, shutdown) = context.forward_propose(&source.source_attribute)
+    //                     let (index, shutdown) = domain.forward_propose(&source.source_attribute)
     //                         .unwrap_or_else(|| panic!("No forward index found for attribute {}", &source.source_attribute))
     //                         .import_core(&nested.parent, &source.source_attribute);
 
@@ -439,7 +438,7 @@ impl Hector {
     //                 1 => {
     //                     // [?a :edge ?b] (constant ?b x) <=> [?a :edge x]
 
-    //                     let (index, shutdown) = context.reverse_propose(&source.source_attribute)
+    //                     let (index, shutdown) = domain.reverse_propose(&source.source_attribute)
     //                         .unwrap_or_else(|| panic!("No reverse index found for attribute {}", &source.source_attribute))
     //                         .import_core(&nested.parent, &source.source_attribute);
 
@@ -484,31 +483,30 @@ impl Implementable for Hector {
         self.bindings.clone()
     }
 
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
+        domain: &mut Domain<S::Timestamp>,
+        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         if self.bindings.is_empty() {
             panic!("No bindings passed.");
         } else if self.variables.is_empty() {
             panic!("No variables requested.");
         } else if self.bindings.len() == 1 {
-            self.implement_single_binding(nested, _local_arrangements, context)
+            self.implement_single_binding(nested, domain, local_arrangements)
         // } else if self.bindings.len() == 2 {
-        //     Hector::two_way(nested, _local_arrangements, context, self.bindings[0].clone(), self.bindings[1].clone())
+        //     Hector::two_way(domain, local_arrangements, self.bindings[0].clone(), self.bindings[1].clone())
         } else {
             // In order to avoid delta pipelines looking at each
             // other's data in naughty ways, we need to run them all
             // inside a scope with lexicographic times.
 
-            let (joined, shutdown_handle) = nested.scoped::<AltNeu<Product<T,u64>>, _, _>("AltNeu", |inner| {
+            let (joined, shutdown_handle) = nested.scoped::<AltNeu<Product<S::Timestamp,u64>>, _, _>("AltNeu", |inner| {
 
                 let scope = inner.clone();
 
@@ -562,7 +560,7 @@ impl Implementable for Hector {
                             let propose = forward_proposes
                                 .entry(delta_binding.source_attribute.to_string())
                                 .or_insert_with(|| {
-                                    let (arranged, shutdown) = context
+                                    let (arranged, shutdown) = domain
                                         .forward_propose(&delta_binding.source_attribute)
                                         .expect("forward propose trace doesn't exist")
                                         .import_frontier(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
@@ -704,7 +702,7 @@ impl Implementable for Hector {
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
                                                                             let (arranged, shutdown) =
-                                                                                context.forward_count(&other.source_attribute)
+                                                                                domain.forward_count(&other.source_attribute)
                                                                                 .expect("forward count doesn't exist")
                                                                                 .import_frontier(&scope.parent.parent, &name);
 
@@ -725,7 +723,7 @@ impl Implementable for Hector {
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
                                                                             let name = format!("Propose({})", &delta_binding.source_attribute);
-                                                                            let (arranged, shutdown) = context
+                                                                            let (arranged, shutdown) = domain
                                                                                 .forward_propose(&other.source_attribute)
                                                                                 .expect("forward propose doesn't exist")
                                                                                 .import_frontier(&scope.parent.parent, &name);
@@ -747,7 +745,7 @@ impl Implementable for Hector {
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
                                                                             let name = format!("Validate({})", &delta_binding.source_attribute);
-                                                                            let (arranged, shutdown) = context
+                                                                            let (arranged, shutdown) = domain
                                                                                 .forward_validate(&other.source_attribute)
                                                                                 .expect("forward validate doesn't exist")
                                                                                 .import_frontier(&scope.parent.parent, &name);
@@ -780,7 +778,7 @@ impl Implementable for Hector {
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
                                                                             let name = format!("_Counts({})", &delta_binding.source_attribute);
-                                                                            let (arranged, shutdown) = context
+                                                                            let (arranged, shutdown) = domain
                                                                                 .reverse_count(&other.source_attribute)
                                                                                 .expect("reverse count doesn't exist")
                                                                                 .import_frontier(&scope.parent.parent, &name);
@@ -802,7 +800,7 @@ impl Implementable for Hector {
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
                                                                             let name = format!("_Propose({})", &delta_binding.source_attribute);
-                                                                            let (arranged, shutdown) = context
+                                                                            let (arranged, shutdown) = domain
                                                                                 .reverse_propose(&other.source_attribute)
                                                                                 .expect("reverse propose doesn't exist")
                                                                                 .import_frontier(&scope.parent.parent, &name);
@@ -824,7 +822,7 @@ impl Implementable for Hector {
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
                                                                             let name = format!("_Validate({})", &delta_binding.source_attribute);
-                                                                            let (arranged, shutdown) = context
+                                                                            let (arranged, shutdown) = domain
                                                                                 .reverse_validate(&other.source_attribute)
                                                                                 .expect("reverse validate doesn't exist")
                                                                                 .import_frontier(&scope.parent.parent, &name);

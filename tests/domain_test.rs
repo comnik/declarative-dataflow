@@ -3,9 +3,8 @@ use timely::progress::frontier::AntichainRef;
 
 use differential_dataflow::trace::TraceReader;
 
-use declarative_dataflow::domain::Domain;
+use declarative_dataflow::domain::{AsSingletonDomain, Domain};
 use declarative_dataflow::Value;
-use declarative_dataflow::{AttributeConfig, InputSemantics};
 
 #[test]
 fn test_advance_epoch() {
@@ -25,29 +24,18 @@ fn test_advance_epoch() {
 #[test]
 fn test_advance_only_epoch() {
     timely::execute_directly(move |worker| {
-        let mut domain = Domain::<u64>::new(0);
+        let (domain, _handle, _cap) = worker.dataflow::<u64, _, _>(|scope| {
+            let tx_test: Domain<u64> = scope
+                .new_unordered_input::<((Value, Value), u64, isize)>()
+                .as_singleton_domain("tx_test")
+                .into();
 
-        let (_handle, _cap) = worker.dataflow::<u64, _, _>(|scope| {
-            let ((handle, cap), pairs) =
+            let ((handle, cap), source) =
                 scope.new_unordered_input::<((Value, Value), u64, isize)>();
 
-            domain
-                .create_sourced_attribute(
-                    "source_test",
-                    AttributeConfig::tx_time(InputSemantics::Raw),
-                    &pairs,
-                )
-                .unwrap();
+            let source_test: Domain<u64> = source.as_singleton_domain("source_test").into();
 
-            domain
-                .create_transactable_attribute(
-                    "tx_test",
-                    AttributeConfig::tx_time(InputSemantics::Raw),
-                    scope,
-                )
-                .unwrap();
-
-            (handle, cap)
+            (tx_test + source_test, handle, cap)
         });
 
         assert_eq!(domain.probed_source_count(), 1);
@@ -64,31 +52,26 @@ fn test_advance_only_epoch() {
 #[test]
 fn test_advance_only_source() {
     timely::execute_directly(move |worker| {
-        let mut domain = Domain::<u64>::new(0);
+        let (mut domain, _handle, mut cap): (Domain<u64>, _, _) =
+            worker.dataflow::<u64, _, _>(|scope| {
+                let ((handle, cap), source) =
+                    scope.new_unordered_input::<((Value, Value), u64, isize)>();
 
-        let (_handle, mut cap) = worker.dataflow::<u64, _, _>(|scope| {
-            let ((handle, cap), pairs) =
-                scope.new_unordered_input::<((Value, Value), u64, isize)>();
+                let source_test: Domain<u64> = source
+                    .as_singleton_domain("source_test")
+                    .with_slack(1)
+                    .into();
 
-            domain
-                .create_sourced_attribute(
-                    "source_test",
-                    AttributeConfig::tx_time(InputSemantics::Raw),
-                    &pairs,
-                )
-                .unwrap();
+                let tx_test: Domain<u64> = scope
+                    .new_unordered_input::<((Value, Value), u64, isize)>()
+                    .as_singleton_domain("tx_test")
+                    .with_slack(1)
+                    .into();
 
-            domain
-                .create_transactable_attribute(
-                    "tx_test",
-                    AttributeConfig::tx_time(InputSemantics::Raw),
-                    scope,
-                )
-                .unwrap();
+                (source_test + tx_test, handle, cap)
+            });
 
-            (handle, cap)
-        });
-
+        assert_eq!(domain.attributes.len(), 2);
         assert_eq!(domain.probed_source_count(), 1);
         assert_eq!(domain.epoch(), &0);
         assert!(!domain.dominates(AntichainRef::new(&[])));

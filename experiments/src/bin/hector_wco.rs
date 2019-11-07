@@ -82,9 +82,7 @@ fn main() {
 
         worker.dataflow::<u64, _, _>(|scope| {
             server
-                .context
-                .internal
-                .create_transactable_attribute("edge", AttributeConfig::tx_time(InputSemantics::Raw), scope)
+                .create_attribute(scope, "edge", AttributeConfig::tx_time(InputSemantics::Raw))
                 .unwrap();
 
             server

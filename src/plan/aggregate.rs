@@ -10,7 +10,9 @@ use differential_dataflow::operators::Join as JoinMap;
 use differential_dataflow::operators::{Count, Reduce, Threshold};
 
 use crate::binding::{AsBinding, Binding};
-use crate::plan::{Dependencies, ImplContext, Implementable};
+use crate::domain::Domain;
+use crate::plan::{Dependencies, Implementable};
+use crate::timestamp::Rewind;
 use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};
@@ -64,24 +66,23 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         self.plan.into_bindings()
     }
 
-    fn implement<'b, T, I, S>(
+    fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
+        domain: &mut Domain<S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-        context: &mut I,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
-        T: Timestamp + Lattice,
-        I: ImplContext<T>,
-        S: Scope<Timestamp = T>,
+        S: Scope,
+        S::Timestamp: Timestamp + Lattice + Rewind,
     {
         let (relation, mut shutdown_handle) =
-            self.plan.implement(nested, local_arrangements, context);
+            self.plan.implement(nested, domain, local_arrangements);
 
         // We split the incoming tuples into their (key, value) parts.
         let tuples = {
             let (tuples, shutdown) =
-                relation.tuples_by_variables(nested, context, &self.key_variables);
+                relation.tuples_by_variables(nested, domain, &self.key_variables);
             shutdown_handle.merge_with(shutdown);
             tuples
         };

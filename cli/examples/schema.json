@@ -12,7 +12,6 @@
         "input_semantics": "Distinct",
         "query_support": "Basic",
         "index_direction": "Forward",
-        "timeless": false
       }
     }
   },
@@ -29,7 +28,6 @@
         "input_semantics": "Distinct",
         "query_support": "Basic",
         "index_direction": "Forward",
-        "timeless": false
       }
     }
   },
@@ -46,7 +44,6 @@
         "input_semantics": "Distinct",
         "query_support": "Basic",
         "index_direction": "Forward",
-        "timeless": false
       }
     }
   },
@@ -63,7 +60,6 @@
         "input_semantics": "Distinct",
         "query_support": "Basic",
         "index_direction": "Forward",
-        "timeless": false
       }
     }
   }

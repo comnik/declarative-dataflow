@@ -24,11 +24,7 @@ fn match_ea_after_input() {
                 ..Default::default()
             };
 
-            server
-                .context
-                .internal
-                .create_transactable_attribute(":name", config, scope)
-                .unwrap();
+            server.create_attribute(scope, ":name", config).unwrap();
         });
 
         let tx_data = vec![
@@ -80,9 +76,8 @@ fn join_after_input() {
 
         worker.dataflow::<u64, _, _>(|scope| {
             server
-                .context
-                .internal
-                .create_transactable_attribute(
+                .create_attribute(
+                    scope,
                     ":transfer/from",
                     AttributeConfig {
                         index_direction: IndexDirection::Both,
@@ -90,13 +85,11 @@ fn join_after_input() {
                         trace_slack: Some(Time::TxId(1)),
                         ..Default::default()
                     },
-                    scope,
                 )
                 .unwrap();
             server
-                .context
-                .internal
-                .create_transactable_attribute(
+                .create_attribute(
+                    scope,
                     ":user/id",
                     AttributeConfig {
                         index_direction: IndexDirection::Both,
@@ -104,7 +97,6 @@ fn join_after_input() {
                         trace_slack: Some(Time::TxId(1)),
                         ..Default::default()
                     },
-                    scope,
                 )
                 .unwrap();
         });
