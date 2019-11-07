@@ -426,6 +426,21 @@ fn main() {
                                 result
                             }
                         }
+                        Request::Derive(namespace, query) => {
+                            use timely::dataflow::Scope;
+                            use declarative_dataflow::derive::graphql::GraphQl;
+                            
+                            let world = worker.dataflow::<T, _, _>(|scope| {
+                                scope.iterative(|nested| {
+                                    GraphQl::new(query)
+                                        .derive(nested, &mut server.internal, &namespace)
+                                })
+                            });
+
+                            server.internal += world;
+
+                            Ok(())
+                        }
                         Request::Interest(req) => {
                             let interests = server.interests
                                 .entry(req.name.clone())

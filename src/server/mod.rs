@@ -154,6 +154,8 @@ pub enum Request {
     Transact(Vec<TxData>),
     /// Expresses interest in an entire attribute.
     Subscribe(String),
+    /// Derives new attributes under a new namespace.
+    Derive(String, String),
     /// Expresses interest in a named relation.
     Interest(Interest),
     /// Expresses that the interest in a named relation has
