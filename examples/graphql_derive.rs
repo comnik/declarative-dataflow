@@ -5,8 +5,13 @@ use declarative_dataflow::domain::{AsSingletonDomain, Domain};
 use declarative_dataflow::{TxData, Value};
 use Value::{Eid, Number, String};
 
+#[cfg(feature = "graphql")]
 use declarative_dataflow::derive::graphql::GraphQl;
 
+#[cfg(not(feature = "graphql"))]
+fn main() {}
+
+#[cfg(feature = "graphql")]
 fn main() {
     timely::execute_directly(move |worker| {
         // let (send_results, results) = channel();
