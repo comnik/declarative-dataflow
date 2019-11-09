@@ -9,7 +9,7 @@ edition = "2018"
 jemallocator = "0.1.8"
 timely = { git = "https://github.com/TimelyDataflow/timely-dataflow", features = ["bincode"] }
 differential-dataflow = { git = "https://github.com/TimelyDataflow/differential-dataflow" }
-declarative-dataflow = { path = "../", features = ["serde_json", "uuid"] }
+declarative-dataflow = { path = "../", features = ["serde_json"] }
 serde = "1"
 serde_derive = "1"
 serde_json = "1"

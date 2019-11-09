@@ -308,7 +308,6 @@ fn last_write_wins_unordered() {
 }
 
 #[test]
-#[cfg(feature = "uuid")]
 #[cfg(feature = "real")]
 fn bitemporal() {
     vec![

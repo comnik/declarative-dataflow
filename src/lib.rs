@@ -42,7 +42,6 @@ use differential_dataflow::operators::Threshold;
 use differential_dataflow::trace::implementations::ord::{OrdKeySpine, OrdValSpine};
 use differential_dataflow::{Collection, ExchangeData};
 
-#[cfg(feature = "uuid")]
 pub use uuid::Uuid;
 
 pub use num_rational::Rational32;
@@ -79,7 +78,6 @@ pub enum Value {
     /// Milliseconds since midnight, January 1, 1970 UTC
     Instant(u64),
     /// A 16 byte unique identifier.
-    #[cfg(feature = "uuid")]
     Uuid(Uuid),
     /// A fixed-precision real number.
     #[cfg(feature = "real")]
@@ -93,7 +91,6 @@ impl Value {
     }
 
     /// Helper to create a UUID value from a string representation.
-    #[cfg(feature = "uuid")]
     pub fn uuid_str(v: &str) -> Self {
         let uuid = Uuid::parse_str(v).expect("failed to parse UUID");
         Value::Uuid(uuid)

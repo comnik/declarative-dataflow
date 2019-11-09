@@ -21,11 +21,11 @@ serde_derive = "1"
 log = "0.4"
 num-rational = { version = "0.2", features = ["std", "serde"] }
 timely_sort = "0.1.6"
+uuid = { version = "0.7", features = ["serde"] }
 
 serde_json = { version = "1", optional = true }
 csv = { version = "1", optional = true }
 chrono = { version = "0.4", optional = true }
-uuid = { version = "0.7", features = ["serde"], optional = true }
 graphql-parser = { version = "0.2.2", optional = true }
 fixed = { version = "0.3.2", optional = true, features = ["serde"] }
 
