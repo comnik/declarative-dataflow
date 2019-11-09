@@ -2,7 +2,7 @@ use timely::dataflow::operators::unordered_input::UnorderedInput;
 use timely::dataflow::scopes::Scope;
 
 use declarative_dataflow::domain::{AsSingletonDomain, Domain};
-use declarative_dataflow::{TxData, Value};
+use declarative_dataflow::{Datom, Value};
 use Value::{Eid, Number, String};
 
 #[cfg(feature = "graphql")]
@@ -70,24 +70,24 @@ fn main() {
 
         domain
             .transact(vec![
-                TxData(
+                Datom(
                     1,
                     Eid(100),
                     "human_name".to_string(),
                     String("Alice".to_string()),
                     None,
                 ),
-                TxData(
+                Datom(
                     1,
                     Eid(200),
                     "human_name".to_string(),
                     String("Bob".to_string()),
                     None,
                 ),
-                TxData(1, Eid(100), "human_age".to_string(), Number(40), None),
-                TxData(1, Eid(200), "human_age".to_string(), Number(30), None),
-                TxData(1, Eid(123), "available".to_string(), Eid(100), None),
-                TxData(1, Eid(123), "available".to_string(), Eid(200), None),
+                Datom(1, Eid(100), "human_age".to_string(), Number(40), None),
+                Datom(1, Eid(200), "human_age".to_string(), Number(30), None),
+                Datom(1, Eid(123), "available".to_string(), Eid(100), None),
+                Datom(1, Eid(123), "available".to_string(), Eid(200), None),
             ])
             .unwrap();
 
@@ -95,7 +95,7 @@ fn main() {
         domain.advance().unwrap();
 
         domain
-            .transact(vec![TxData(
+            .transact(vec![Datom(
                 -1,
                 Eid(123),
                 "available".to_string(),

@@ -2,7 +2,7 @@ use graph_map::GraphMMap;
 
 use declarative_dataflow::server::Server;
 use declarative_dataflow::plan::{Plan, Join};
-use declarative_dataflow::{q, Binding, AttributeConfig, InputSemantics, Rule, TxData, Value};
+use declarative_dataflow::{q, Binding, AttributeConfig, InputSemantics, Rule, Datom, Value};
 use Value::Eid;
 
 fn main() {
@@ -108,7 +108,7 @@ fn main() {
                     graph
                         .edges(index)
                         .iter()
-                        .map(|y| TxData(1, index as u64, "edge".to_string(), Eid(*y as u64)))
+                        .map(|y| Datom(index as u64, "edge".to_string(), Eid(*y as u64), None, 1))
                         .collect(),
                     0,
                     0,

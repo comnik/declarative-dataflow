@@ -15,7 +15,7 @@ use differential_dataflow::operators::arrange::Arrange;
 use differential_dataflow::trace::TraceReader;
 use differential_dataflow::{AsCollection, Collection};
 
-use crate::{Aid, Error, Rewind, Rule, TxData, Value};
+use crate::{Aid, Datom, Error, Rewind, Rule, Value};
 use crate::{AttributeConfig, QuerySupport};
 use crate::{ShutdownHandle, TraceKeyHandle, TraceValHandle};
 
@@ -193,15 +193,15 @@ where
     }
 
     /// Transact data into one or more inputs.
-    pub fn transact(&mut self, tx_data: Vec<TxData<Aid>>) -> Result<(), Error> {
-        for TxData(op, e, a, v, t) in tx_data {
+    pub fn transact(&mut self, tx_data: Vec<Datom<Aid>>) -> Result<(), Error> {
+        for Datom(e, a, v, t, diff) in tx_data {
             match self.input_sessions.get_mut(&a) {
                 None => {
                     return Err(Error::not_found(format!("Attribute {} does not exist.", a)));
                 }
                 Some(handle) => match t {
-                    None => handle.update((e, v), op),
-                    Some(t) => handle.update_at((e, v), t.into(), op),
+                    None => handle.update((e, v), diff),
+                    Some(t) => handle.update_at((e, v), t.into(), diff),
                 },
             }
         }

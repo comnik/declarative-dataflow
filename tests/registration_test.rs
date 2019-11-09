@@ -4,7 +4,7 @@ use declarative_dataflow::plan::{Join, Project};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Plan, Rule, TxData, Value};
+use declarative_dataflow::{Datom, Plan, Rule, Value};
 use Value::{Eid, String};
 
 #[test]
@@ -28,9 +28,9 @@ fn match_ea_after_input() {
         });
 
         let tx_data = vec![
-            TxData::add(1, ":name", String("Dipper".to_string())),
-            TxData::add(1, ":name", String("Alias".to_string())),
-            TxData::add(2, ":name", String("Mabel".to_string())),
+            Datom::add(1, ":name", String("Dipper".to_string())),
+            Datom::add(1, ":name", String("Alias".to_string())),
+            Datom::add(2, ":name", String("Mabel".to_string())),
         ];
 
         server.transact(tx_data, 0, 0).unwrap();
@@ -108,11 +108,7 @@ fn join_after_input() {
         {
             server
                 .transact(
-                    vec![TxData::add(
-                        1,
-                        ":user/id",
-                        String("123-456-789".to_string()),
-                    )],
+                    vec![Datom::add(1, ":user/id", String("123-456-789".to_string()))],
                     0,
                     0,
                 )
@@ -126,7 +122,7 @@ fn join_after_input() {
         {
             server
                 .transact(
-                    vec![TxData::add(
+                    vec![Datom::add(
                         101,
                         ":transfer/from",
                         String("123-456-789".to_string()),

@@ -9,14 +9,14 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::plan::{Implementable, PullLevel};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
-use declarative_dataflow::{Aid, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
 use Value::{Bool, Eid, Number, String};
 
 struct Case {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData<Aid>>>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -123,14 +123,14 @@ fn pull_level() {
             cardinality_many: false,
         }),
         transactions: vec![vec![
-            TxData::add(100, "admin?", Bool(true)),
-            TxData::add(200, "admin?", Bool(false)),
-            TxData::add(300, "admin?", Bool(false)),
-            TxData::add(100, "name", String("Mabel".to_string())),
-            TxData::add(200, "name", String("Dipper".to_string())),
-            TxData::add(300, "name", String("Soos".to_string())),
-            TxData::add(100, "age", Number(12)),
-            TxData::add(200, "age", Number(13)),
+            Datom::add(100, "admin?", Bool(true)),
+            Datom::add(200, "admin?", Bool(false)),
+            Datom::add(300, "admin?", Bool(false)),
+            Datom::add(100, "name", String("Mabel".to_string())),
+            Datom::add(200, "name", String("Dipper".to_string())),
+            Datom::add(300, "name", String("Soos".to_string())),
+            Datom::add(100, "age", Number(12)),
+            Datom::add(200, "age", Number(13)),
         ]],
         expectations: vec![vec![
             (vec![Eid(200), Value::aid("age"), Number(13)], 0, 1),
@@ -156,20 +156,20 @@ fn graph_ql() {
     use declarative_dataflow::binding::Binding;
 
     let transactions = vec![vec![
-        TxData::add(100, "name", Value::from("Alice")),
-        TxData::add(100, "hero", Bool(true)),
-        TxData::add(200, "name", Value::from("Bob")),
-        TxData::add(200, "hero", Bool(true)),
-        TxData::add(300, "name", Value::from("Mabel")),
-        TxData::add(300, "hero", Bool(true)),
-        TxData::add(400, "name", Value::from("Dipper")),
-        TxData::add(400, "hero", Bool(true)),
+        Datom::add(100, "name", Value::from("Alice")),
+        Datom::add(100, "hero", Bool(true)),
+        Datom::add(200, "name", Value::from("Bob")),
+        Datom::add(200, "hero", Bool(true)),
+        Datom::add(300, "name", Value::from("Mabel")),
+        Datom::add(300, "hero", Bool(true)),
+        Datom::add(400, "name", Value::from("Dipper")),
+        Datom::add(400, "hero", Bool(true)),
         
-        TxData::add(300, "bested", Eid(400)),
-        TxData::add(200, "bested", Eid(100)),
+        Datom::add(300, "bested", Eid(400)),
+        Datom::add(200, "bested", Eid(100)),
 
-        TxData::add(300, "age", Number(13)),
-        TxData::add(400, "age", Number(12)),
+        Datom::add(300, "age", Number(13)),
+        Datom::add(400, "age", Number(12)),
     ]];
 
     // We want to pull all entities carrying the `hero` attribute.

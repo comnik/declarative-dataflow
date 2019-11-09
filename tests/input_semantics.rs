@@ -10,14 +10,14 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::pair::Pair;
 use declarative_dataflow::timestamp::Time;
-use declarative_dataflow::{Aid, AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Aid, AttributeConfig, Datom, InputSemantics, Plan, Rule, Value};
 use Time::TxId;
 use Value::{Eid, Number};
 
 struct Case<T> {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData<Aid>>>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, T, isize)>>,
 }
 
@@ -201,10 +201,10 @@ fn last_write_wins() {
             plan: Plan::MatchA(0, ":amount".to_string(), 1),
             transactions: vec![
                 vec![
-                    TxData::add(100, ":amount", Number(5)),
-                    TxData::add(200, ":amount", Number(100)),
+                    Datom::add(100, ":amount", Number(5)),
+                    Datom::add(200, ":amount", Number(100)),
                 ],
-                vec![TxData::add(100, ":amount", Number(10))],
+                vec![Datom::add(100, ":amount", Number(10))],
             ],
             expectations: vec![
                 vec![
@@ -222,10 +222,10 @@ fn last_write_wins() {
             plan: Plan::MatchA(0, ":amount".to_string(), 1),
             transactions: vec![
                 vec![
-                    TxData::add(100, ":amount", Number(10)),
-                    TxData::add(200, ":amount", Number(100)),
+                    Datom::add(100, ":amount", Number(10)),
+                    Datom::add(200, ":amount", Number(100)),
                 ],
-                vec![TxData::add(100, ":amount", Number(5))],
+                vec![Datom::add(100, ":amount", Number(5))],
             ],
             expectations: vec![
                 vec![
@@ -243,10 +243,10 @@ fn last_write_wins() {
             plan: Plan::MatchA(0, ":amount".to_string(), 1),
             transactions: vec![
                 vec![
-                    TxData::add(100, ":amount", Number(5)),
-                    TxData::add(200, ":amount", Number(100)),
+                    Datom::add(100, ":amount", Number(5)),
+                    Datom::add(200, ":amount", Number(100)),
                 ],
-                vec![TxData::retract(200, ":amount", Number(100))],
+                vec![Datom::retract(200, ":amount", Number(100))],
             ],
             expectations: vec![
                 vec![
@@ -260,9 +260,9 @@ fn last_write_wins() {
             description: "toggle",
             plan: Plan::MatchA(0, ":amount".to_string(), 1),
             transactions: vec![
-                vec![TxData::add(100, ":amount", Number(5))],
-                vec![TxData::add(100, ":amount", Number(10))],
-                vec![TxData::add(100, ":amount", Number(5))],
+                vec![Datom::add(100, ":amount", Number(5))],
+                vec![Datom::add(100, ":amount", Number(10))],
+                vec![Datom::add(100, ":amount", Number(5))],
             ],
             expectations: vec![
                 vec![(vec![Eid(100), Number(5)], 0, 1)],
@@ -287,10 +287,10 @@ fn last_write_wins_unordered() {
         plan: Plan::MatchA(0, ":amount".to_string(), 1),
         transactions: vec![
             vec![
-                TxData::add(100, ":amount", Number(0)),
-                TxData::add_at(100, ":amount", Number(2), TxId(2)),
+                Datom::add(100, ":amount", Number(0)),
+                Datom::add_at(100, ":amount", Number(2), TxId(2)),
             ],
-            vec![TxData::add(100, ":amount", Number(1))],
+            vec![Datom::add(100, ":amount", Number(1))],
         ],
         expectations: vec![
             vec![(vec![Eid(100), Number(0)], 0, 1)],
@@ -315,19 +315,19 @@ fn bitemporal() {
             description: "bitemporal conflict",
             plan: Plan::MatchA(0, ":amount".to_string(), 1),
             transactions: vec![vec![
-                TxData::add_at(
+                Datom::add_at(
                     100,
                     ":amount",
                     Number(0),
                     Time::Bi(Duration::from_secs(0), 0),
                 ),
-                TxData::add_at(
+                Datom::add_at(
                     100,
                     ":amount",
                     Number(2),
                     Time::Bi(Duration::from_secs(0), 2),
                 ),
-                TxData::add_at(
+                Datom::add_at(
                     100,
                     ":amount",
                     Number(1),
@@ -357,20 +357,20 @@ fn bitemporal() {
             plan: Plan::MatchA(0, ":amount".to_string(), 1),
             transactions: vec![
                 vec![
-                    TxData::add_at(
+                    Datom::add_at(
                         100,
                         ":amount",
                         Number(0),
                         Time::Bi(Duration::from_secs(0), 0),
                     ),
-                    TxData::add_at(
+                    Datom::add_at(
                         100,
                         ":amount",
                         Number(2),
                         Time::Bi(Duration::from_secs(0), 2),
                     ),
                 ],
-                vec![TxData::add_at(
+                vec![Datom::add_at(
                     100,
                     ":amount",
                     Number(1),
@@ -413,21 +413,21 @@ fn bitemporal() {
             description: "bitemporal toggle",
             plan: Plan::MatchA(0, ":flow".to_string(), 1),
             transactions: vec![vec![
-                TxData(
+                Datom(
                     1,
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),
                     Value::from(30.006),
                     Some(Time::Bi(Duration::from_secs(0), 1_554_120_030_000)), // 2019-04-01T12:00:30+00:00
                 ),
-                TxData(
+                Datom(
                     1,
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),
                     Value::from(31.006),
                     Some(Time::Bi(Duration::from_secs(0), 1_554_120_061_000)), // 2019-04-01T12:01:01+00:00
                 ),
-                TxData(
+                Datom(
                     1,
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),

@@ -10,14 +10,14 @@ use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Implementable, Join, Project};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
-use declarative_dataflow::{q, Aid, Plan, Rule, TxData, Value};
+use declarative_dataflow::{q, Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, InputSemantics, QuerySupport};
 use Value::{Eid, Number, String};
 
 struct Case {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData<Aid>>>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -122,9 +122,9 @@ fn run_cases(mut cases: Vec<Case>) {
 #[test]
 fn base_patterns() {
     let data = vec![
-        TxData::add(100, ":name", String("Dipper".to_string())),
-        TxData::add(100, ":name", String("Alias".to_string())),
-        TxData::add(200, ":name", String("Mabel".to_string())),
+        Datom::add(100, ":name", String("Dipper".to_string())),
+        Datom::add(100, ":name", String("Alias".to_string())),
+        Datom::add(200, ":name", String("Mabel".to_string())),
     ];
 
     run_cases(vec![
@@ -159,9 +159,9 @@ fn base_patterns() {
 #[test]
 fn base_projections() {
     let data = vec![
-        TxData::add(100, ":name", String("Dipper".to_string())),
-        TxData::add(100, ":name", String("Alias".to_string())),
-        TxData::add(200, ":name", String("Mabel".to_string())),
+        Datom::add(100, ":name", String("Dipper".to_string())),
+        Datom::add(100, ":name", String("Alias".to_string())),
+        Datom::add(200, ":name", String("Mabel".to_string())),
     ];
 
     run_cases(vec![
@@ -219,9 +219,9 @@ fn base_projections() {
 #[test]
 fn wco_base_patterns() {
     let data = vec![
-        TxData::add(100, ":name", String("Dipper".to_string())),
-        TxData::add(100, ":name", String("Alias".to_string())),
-        TxData::add(200, ":name", String("Mabel".to_string())),
+        Datom::add(100, ":name", String("Dipper".to_string())),
+        Datom::add(100, ":name", String("Alias".to_string())),
+        Datom::add(200, ":name", String("Mabel".to_string())),
     ];
 
     run_cases(vec![
@@ -280,8 +280,8 @@ fn joins() {
                 })),
             }),
             transactions: vec![vec![
-                TxData::add(1, ":name", String("Dipper".to_string())),
-                TxData::add(1, ":age", Number(12)),
+                Datom::add(1, ":name", String("Dipper".to_string())),
+                Datom::add(1, ":age", Number(12)),
             ]],
             expectations: vec![vec![(
                 vec![Eid(1), String("Dipper".to_string()), Number(12)],
@@ -295,13 +295,13 @@ fn joins() {
 #[test]
 fn wco_joins() {
     let data = vec![
-        TxData::add(1, ":name", String("Ivan".to_string())),
-        TxData::add(1, ":age", Number(15)),
-        TxData::add(2, ":name", String("Petr".to_string())),
-        TxData::add(2, ":age", Number(37)),
-        TxData::add(3, ":name", String("Ivan".to_string())),
-        TxData::add(3, ":age", Number(37)),
-        TxData::add(4, ":age", Number(15)),
+        Datom::add(1, ":name", String("Ivan".to_string())),
+        Datom::add(1, ":age", Number(15)),
+        Datom::add(2, ":name", String("Petr".to_string())),
+        Datom::add(2, ":age", Number(37)),
+        Datom::add(3, ":name", String("Ivan".to_string())),
+        Datom::add(3, ":age", Number(37)),
+        Datom::add(4, ":age", Number(15)),
     ];
 
     run_cases(vec![
@@ -374,12 +374,12 @@ fn wco_joins() {
 #[test]
 fn wco_join_many() {
     let data = vec![
-        TxData::add(1, ":name", String("Ivan".to_string())),
-        TxData::add(1, ":aka", String("ivolga".to_string())),
-        TxData::add(1, ":aka", String("pi".to_string())),
-        TxData::add(2, ":name", String("Petr".to_string())),
-        TxData::add(2, ":aka", String("porosenok".to_string())),
-        TxData::add(2, ":aka", String("pi".to_string())),
+        Datom::add(1, ":name", String("Ivan".to_string())),
+        Datom::add(1, ":aka", String("ivolga".to_string())),
+        Datom::add(1, ":aka", String("pi".to_string())),
+        Datom::add(2, ":name", String("Petr".to_string())),
+        Datom::add(2, ":aka", String("porosenok".to_string())),
+        Datom::add(2, ":aka", String("pi".to_string())),
     ];
 
     let (e1, x, e2, n1, n2) = (0, 1, 2, 3, 4);
@@ -446,10 +446,10 @@ fn wco_join_many() {
 //         }),
 //         transactions: vec![
 //             vec![
-//                 TxData::add(100, ":name", String("Dipper".to_string())),
-//                 TxData::add(100, ":age", Number(12)),
-//                 TxData::add(100, ":name", String("Soos".to_string())),
-//                 TxData::add(100, ":age", Number(30)),
+//                 Datom::add(100, ":name", String("Dipper".to_string())),
+//                 Datom::add(100, ":age", Number(12)),
+//                 Datom::add(100, ":name", String("Soos".to_string())),
+//                 Datom::add(100, ":age", Number(30)),
 //             ],
 //         ],
 //         expectations: vec![

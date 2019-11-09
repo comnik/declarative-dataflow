@@ -10,13 +10,13 @@ use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Function, Implementable, Transform};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::{Aid, Value};
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData};
+use declarative_dataflow::{AttributeConfig, Datom, InputSemantics, Plan, Rule};
 use Value::{Eid, Instant};
 
 struct Case {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData<Aid>>>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -49,8 +49,8 @@ fn run_transform_cases() {
             })
         },
         transactions: vec![vec![
-            TxData::add(1, ":timestamp", Instant(1_540_048_515_500)),
-            TxData::add(2, ":timestamp", Instant(1_540_048_515_616)),
+            Datom::add(1, ":timestamp", Instant(1_540_048_515_500)),
+            Datom::add(2, ":timestamp", Instant(1_540_048_515_616)),
         ]],
         expectations: vec![vec![
             (

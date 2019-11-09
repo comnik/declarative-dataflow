@@ -15,7 +15,7 @@ use ws::{connect, CloseCode};
 use declarative_dataflow::plan::{GraphQl, Plan};
 use declarative_dataflow::server::{Interest, Register, Request};
 use declarative_dataflow::sinks::{AssocIn, Sink};
-use declarative_dataflow::{Output, Rule, TxData};
+use declarative_dataflow::{Aid, Output, Rule, Datom};
 
 fn main() {
     env_logger::init();
@@ -73,7 +73,7 @@ fn main() {
 
     if let Some(matches) = matches.subcommand_matches("tx") {
         connect(addr.clone(), |out| {
-            let tx_data: Vec<TxData> = match matches.value_of("TXDATA") {
+            let tx_data: Vec<Datom<Aid>> = match matches.value_of("TXDATA") {
                 None => {
                     let mut buf = String::new();
                     std::io::stdin()

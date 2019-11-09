@@ -29,7 +29,7 @@ use crate::Rule;
 use crate::{
     implement, implement_neu, AttributeConfig, IndexDirection, InputSemantics, ShutdownHandle,
 };
-use crate::{Aid, Error, Rewind, Time, TxData, Value};
+use crate::{Aid, Datom, Error, Rewind, Time, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -151,7 +151,7 @@ pub struct CreateAttribute {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
     /// Sends inputs via one or more registered handles.
-    Transact(Vec<TxData<Aid>>),
+    Transact(Vec<Datom<Aid>>),
     /// Expresses interest in an entire attribute.
     Subscribe(String),
     /// Derives new attributes under a new namespace.
@@ -279,7 +279,7 @@ where
     /// Handles a Transact request.
     pub fn transact(
         &mut self,
-        tx_data: Vec<TxData<Aid>>,
+        tx_data: Vec<Datom<Aid>>,
         owner: usize,
         worker_index: usize,
     ) -> Result<(), Error> {
@@ -329,9 +329,9 @@ where
             } else {
                 // if self.config.enable_meta {
                 //     let mut data = rule.plan.datafy();
-                //     let tx_data: Vec<TxData> = data
+                //     let tx_data: Vec<Datom> = data
                 //         .drain(..)
-                //         .map(|(e, a, v)| TxData(1, Value::Eid(e), a, v, None))
+                //         .map(|(e, a, v)| Datom(1, Value::Eid(e), a, v, None))
                 //         .collect();
 
                 //     self.transact(tx_data, 0, 0)?;

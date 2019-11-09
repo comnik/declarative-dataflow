@@ -10,7 +10,7 @@ use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Aggregate, AggregationFn, Implementable, Join, Project};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::{Aid, Value};
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData};
+use declarative_dataflow::{AttributeConfig, Datom, InputSemantics, Plan, Rule};
 use Value::{Eid, Number, Rational32, String};
 
 use num_rational::Ratio;
@@ -18,7 +18,7 @@ use num_rational::Ratio;
 struct Case {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData<Aid>>>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -112,12 +112,12 @@ fn run_cases(mut cases: Vec<Case>) {
 fn count() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData::add(1, ":amount", Number(5)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(1, ":amount", Number(2)),
-        TxData::add(1, ":amount", Number(4)),
-        TxData::add(1, ":amount", Number(6)),
+        Datom::add(1, ":amount", Number(5)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(1, ":amount", Number(2)),
+        Datom::add(1, ":amount", Number(4)),
+        Datom::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -171,12 +171,12 @@ fn count() {
 fn max() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData::add(1, ":amount", Number(5)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(1, ":amount", Number(2)),
-        TxData::add(1, ":amount", Number(4)),
-        TxData::add(1, ":amount", Number(6)),
+        Datom::add(1, ":amount", Number(5)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(1, ":amount", Number(2)),
+        Datom::add(1, ":amount", Number(4)),
+        Datom::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -219,12 +219,12 @@ fn max() {
 fn min() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData::add(1, ":amount", Number(5)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(1, ":amount", Number(2)),
-        TxData::add(1, ":amount", Number(4)),
-        TxData::add(1, ":amount", Number(6)),
+        Datom::add(1, ":amount", Number(5)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(1, ":amount", Number(2)),
+        Datom::add(1, ":amount", Number(4)),
+        Datom::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -267,12 +267,12 @@ fn min() {
 fn sum() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData::add(1, ":amount", Number(5)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(1, ":amount", Number(2)),
-        TxData::add(1, ":amount", Number(4)),
-        TxData::add(1, ":amount", Number(6)),
+        Datom::add(1, ":amount", Number(5)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(1, ":amount", Number(2)),
+        Datom::add(1, ":amount", Number(4)),
+        Datom::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -326,12 +326,12 @@ fn sum() {
 fn avg() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData::add(1, ":amount", Number(5)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(1, ":amount", Number(2)),
-        TxData::add(1, ":amount", Number(4)),
-        TxData::add(1, ":amount", Number(6)),
+        Datom::add(1, ":amount", Number(5)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(1, ":amount", Number(2)),
+        Datom::add(1, ":amount", Number(4)),
+        Datom::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -385,12 +385,12 @@ fn avg() {
 fn variance() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData::add(1, ":amount", Number(5)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(1, ":amount", Number(2)),
-        TxData::add(1, ":amount", Number(4)),
-        TxData::add(1, ":amount", Number(6)),
+        Datom::add(1, ":amount", Number(5)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(1, ":amount", Number(2)),
+        Datom::add(1, ":amount", Number(4)),
+        Datom::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -437,12 +437,12 @@ fn variance() {
 fn median() {
     let (e, amount) = (1, 2);
     let data = vec![
-        TxData::add(1, ":amount", Number(5)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(2, ":amount", Number(10)),
-        TxData::add(1, ":amount", Number(2)),
-        TxData::add(1, ":amount", Number(4)),
-        TxData::add(1, ":amount", Number(6)),
+        Datom::add(1, ":amount", Number(5)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(2, ":amount", Number(10)),
+        Datom::add(1, ":amount", Number(2)),
+        Datom::add(1, ":amount", Number(4)),
+        Datom::add(1, ":amount", Number(6)),
     ];
 
     run_cases(vec![
@@ -513,20 +513,20 @@ fn multiple_aggregations() {
             },
             transactions: vec![
                 vec![
-                    TxData::add(1, ":amount", Number(5)),
-                    TxData::add(1, ":amount", Number(2)),
-                    TxData::add(1, ":amount", Number(6)),
-                    TxData::add(1, ":amount", Number(9)),
-                    TxData::add(1, ":amount", Number(10)),
-                    TxData::add(1, ":debt", Number(13)),
-                    TxData::add(1, ":debt", Number(4)),
-                    TxData::add(1, ":debt", Number(9)),
-                    TxData::add(1, ":debt", Number(15)),
-                    TxData::add(1, ":debt", Number(10)),
-                    TxData::add(2, ":amount", Number(2)),
-                    TxData::add(2, ":amount", Number(4)),
-                    TxData::add(2, ":debt", Number(5)),
-                    TxData::add(2, ":debt", Number(42)),
+                    Datom::add(1, ":amount", Number(5)),
+                    Datom::add(1, ":amount", Number(2)),
+                    Datom::add(1, ":amount", Number(6)),
+                    Datom::add(1, ":amount", Number(9)),
+                    Datom::add(1, ":amount", Number(10)),
+                    Datom::add(1, ":debt", Number(13)),
+                    Datom::add(1, ":debt", Number(4)),
+                    Datom::add(1, ":debt", Number(9)),
+                    Datom::add(1, ":debt", Number(15)),
+                    Datom::add(1, ":debt", Number(10)),
+                    Datom::add(2, ":amount", Number(2)),
+                    Datom::add(2, ":amount", Number(4)),
+                    Datom::add(2, ":debt", Number(5)),
+                    Datom::add(2, ":debt", Number(42)),
                 ],
             ],
             expectations: vec![
@@ -574,20 +574,20 @@ fn multiple_aggregations() {
             },
             transactions: vec![
                 vec![
-                    TxData::add(1, ":amount", Number(5)),
-                    TxData::add(1, ":amount", Number(2)),
-                    TxData::add(1, ":amount", Number(6)),
-                    TxData::add(1, ":amount", Number(9)),
-                    TxData::add(1, ":amount", Number(10)),
-                    TxData::add(1, ":debt", Number(13)),
-                    TxData::add(1, ":debt", Number(4)),
-                    TxData::add(1, ":debt", Number(9)),
-                    TxData::add(1, ":debt", Number(15)),
-                    TxData::add(1, ":debt", Number(10)),
-                    TxData::add(2, ":amount", Number(2)),
-                    TxData::add(2, ":amount", Number(4)),
-                    TxData::add(2, ":debt", Number(5)),
-                    TxData::add(2, ":debt", Number(42)),
+                    Datom::add(1, ":amount", Number(5)),
+                    Datom::add(1, ":amount", Number(2)),
+                    Datom::add(1, ":amount", Number(6)),
+                    Datom::add(1, ":amount", Number(9)),
+                    Datom::add(1, ":amount", Number(10)),
+                    Datom::add(1, ":debt", Number(13)),
+                    Datom::add(1, ":debt", Number(4)),
+                    Datom::add(1, ":debt", Number(9)),
+                    Datom::add(1, ":debt", Number(15)),
+                    Datom::add(1, ":debt", Number(10)),
+                    Datom::add(2, ":amount", Number(2)),
+                    Datom::add(2, ":amount", Number(4)),
+                    Datom::add(2, ":debt", Number(5)),
+                    Datom::add(2, ":debt", Number(42)),
                 ],
             ],
             expectations: vec![
@@ -629,14 +629,14 @@ fn multiple_aggregations() {
             },
             transactions: vec![
                 vec![
-                    TxData::add(1, ":monster", String("Cerberus".to_string())),
-                    TxData::add(1, ":heads", Number(3)),
-                    TxData::add(2, ":monster", String("Medusa".to_string())),
-                    TxData::add(2, ":heads", Number(1)),
-                    TxData::add(3, ":monster", String("Cyclops".to_string())),
-                    TxData::add(3, ":heads", Number(1)),
-                    TxData::add(4, ":monster", String("Chimera".to_string())),
-                    TxData::add(4, ":heads", Number(1)),
+                    Datom::add(1, ":monster", String("Cerberus".to_string())),
+                    Datom::add(1, ":heads", Number(3)),
+                    Datom::add(2, ":monster", String("Medusa".to_string())),
+                    Datom::add(2, ":heads", Number(1)),
+                    Datom::add(3, ":monster", String("Cyclops".to_string())),
+                    Datom::add(3, ":heads", Number(1)),
+                    Datom::add(4, ":monster", String("Chimera".to_string())),
+                    Datom::add(4, ":heads", Number(1)),
                 ],
             ],
             expectations: vec![

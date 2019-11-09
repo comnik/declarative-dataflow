@@ -12,13 +12,13 @@ use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
 use declarative_dataflow::{Aid, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Plan, Rule, TxData};
+use declarative_dataflow::{Datom, Plan, Rule};
 use Value::{Eid, Number, String};
 
 struct Case {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData<Aid>>>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -122,18 +122,18 @@ fn run_cases(mut cases: Vec<Case>) {
 #[test]
 fn or() {
     let data = vec![
-        TxData::add(1, ":name", String("Ivan".to_string())),
-        TxData::add(1, ":age", Number(10)),
-        TxData::add(2, ":name", String("Ivan".to_string())),
-        TxData::add(2, ":age", Number(20)),
-        TxData::add(3, ":name", String("Oleg".to_string())),
-        TxData::add(3, ":age", Number(10)),
-        TxData::add(4, ":name", String("Oleg".to_string())),
-        TxData::add(4, ":age", Number(20)),
-        TxData::add(5, ":name", String("Ivan".to_string())),
-        TxData::add(5, ":age", Number(10)),
-        TxData::add(6, ":name", String("Ivan".to_string())),
-        TxData::add(6, ":age", Number(20)),
+        Datom::add(1, ":name", String("Ivan".to_string())),
+        Datom::add(1, ":age", Number(10)),
+        Datom::add(2, ":name", String("Ivan".to_string())),
+        Datom::add(2, ":age", Number(20)),
+        Datom::add(3, ":name", String("Oleg".to_string())),
+        Datom::add(3, ":age", Number(10)),
+        Datom::add(4, ":name", String("Oleg".to_string())),
+        Datom::add(4, ":age", Number(20)),
+        Datom::add(5, ":name", String("Ivan".to_string())),
+        Datom::add(5, ":age", Number(10)),
+        Datom::add(6, ":name", String("Ivan".to_string())),
+        Datom::add(6, ":age", Number(20)),
     ];
 
     run_cases(vec![
@@ -291,18 +291,18 @@ fn or() {
 #[test]
 fn or_join() {
     let data = vec![
-        TxData::add(1, ":name", String("Ivan".to_string())),
-        TxData::add(1, ":age", Number(10)),
-        TxData::add(2, ":name", String("Ivan".to_string())),
-        TxData::add(2, ":age", Number(20)),
-        TxData::add(3, ":name", String("Oleg".to_string())),
-        TxData::add(3, ":age", Number(10)),
-        TxData::add(4, ":name", String("Oleg".to_string())),
-        TxData::add(4, ":age", Number(20)),
-        TxData::add(5, ":name", String("Ivan".to_string())),
-        TxData::add(5, ":age", Number(10)),
-        TxData::add(6, ":name", String("Ivan".to_string())),
-        TxData::add(6, ":age", Number(20)),
+        Datom::add(1, ":name", String("Ivan".to_string())),
+        Datom::add(1, ":age", Number(10)),
+        Datom::add(2, ":name", String("Ivan".to_string())),
+        Datom::add(2, ":age", Number(20)),
+        Datom::add(3, ":name", String("Oleg".to_string())),
+        Datom::add(3, ":age", Number(10)),
+        Datom::add(4, ":name", String("Oleg".to_string())),
+        Datom::add(4, ":age", Number(20)),
+        Datom::add(5, ":name", String("Ivan".to_string())),
+        Datom::add(5, ":age", Number(10)),
+        Datom::add(6, ":name", String("Ivan".to_string())),
+        Datom::add(6, ":age", Number(20)),
     ];
 
     run_cases(vec![Case {
