@@ -327,16 +327,6 @@ where
                 // panic!("Attempted to re-register a named relation");
                 continue;
             } else {
-                // if self.config.enable_meta {
-                //     let mut data = rule.plan.datafy();
-                //     let tx_data: Vec<Datom> = data
-                //         .drain(..)
-                //         .map(|(e, a, v)| Datom(1, Value::Eid(e), a, v, None))
-                //         .collect();
-
-                //     self.transact(tx_data, 0, 0)?;
-                // }
-
                 self.internal.rules.insert(rule.name.to_string(), rule);
             }
         }
