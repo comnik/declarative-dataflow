@@ -24,7 +24,9 @@ fn match_ea_after_input() {
                 ..Default::default()
             };
 
-            server.create_attribute(scope, ":name", config).unwrap();
+            server
+                .create_attribute(scope, ":name".to_string(), config)
+                .unwrap();
         });
 
         let tx_data = vec![
@@ -78,7 +80,7 @@ fn join_after_input() {
             server
                 .create_attribute(
                     scope,
-                    ":transfer/from",
+                    ":transfer/from".to_string(),
                     AttributeConfig {
                         index_direction: IndexDirection::Both,
                         query_support: QuerySupport::Basic,
@@ -90,7 +92,7 @@ fn join_after_input() {
             server
                 .create_attribute(
                     scope,
-                    ":user/id",
+                    ":user/id".to_string(),
                     AttributeConfig {
                         index_direction: IndexDirection::Both,
                         query_support: QuerySupport::Basic,

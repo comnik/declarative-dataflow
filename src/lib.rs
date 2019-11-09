@@ -57,6 +57,11 @@ pub type Eid = u64;
 /// A unique attribute identifier.
 pub type Aid = String; // u32
 
+/// A unique attribute identifier.
+pub trait AsAid: Clone + Eq + std::hash::Hash + std::fmt::Display {}
+
+impl<T: Clone + Eq + std::hash::Hash + std::fmt::Display> AsAid for T {}
+
 /// Possible data values.
 ///
 /// This enum captures the currently supported data types, and is the
@@ -454,7 +459,7 @@ where
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -465,7 +470,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -481,7 +486,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -525,7 +530,7 @@ where
     fn tuples(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<S::Timestamp>,
+        _domain: &mut Domain<Aid, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -536,7 +541,7 @@ where
     fn projected(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<S::Timestamp>,
+        _domain: &mut Domain<Aid, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -565,7 +570,7 @@ where
     fn tuples_by_variables(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<S::Timestamp>,
+        _domain: &mut Domain<Aid, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -626,7 +631,7 @@ where
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -638,7 +643,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -673,7 +678,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -763,7 +768,7 @@ where
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -777,7 +782,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -796,7 +801,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -836,7 +841,7 @@ pub fn q(target_variables: Vec<Var>, bindings: Vec<Binding>) -> Plan {
 
 /// Returns a deduplicates list of all rules used in the definition of
 /// the specified names. Includes the specified names.
-pub fn collect_dependencies<T>(domain: &Domain<T>, names: &[&str]) -> Result<Vec<Rule>, Error>
+pub fn collect_dependencies<T>(domain: &Domain<Aid, T>, names: &[Aid]) -> Result<Vec<Rule>, Error>
 where
     T: Timestamp + Lattice + Rewind,
 {
@@ -891,8 +896,8 @@ where
 /// Takes a query plan and turns it into a differential dataflow.
 pub fn implement<S>(
     scope: &mut S,
-    domain: &mut Domain<S::Timestamp>,
-    name: &str,
+    domain: &mut Domain<Aid, S::Timestamp>,
+    name: Aid,
 ) -> Result<
     (
         HashMap<String, Collection<S, Vec<Value>, isize>>,
@@ -905,7 +910,7 @@ where
     S::Timestamp: Timestamp + Lattice + Rewind + Default,
 {
     scope.iterative::<u64, _, _>(|nested| {
-        let publish = vec![name];
+        let publish = vec![name.clone()];
         let mut rules = collect_dependencies(domain, &publish[..])?;
 
         let mut local_arrangements = VariableMap::new();
@@ -939,7 +944,7 @@ where
 
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
-            if let Some(relation) = local_arrangements.get(name) {
+            if let Some(relation) = local_arrangements.get(&name) {
                 result_map.insert(name.to_string(), relation.leave());
             } else {
                 return Err(Error::not_found(format!(
@@ -989,8 +994,8 @@ where
 /// @TODO
 pub fn implement_neu<S>(
     scope: &mut S,
-    domain: &mut Domain<S::Timestamp>,
-    name: &str,
+    domain: &mut Domain<Aid, S::Timestamp>,
+    name: Aid,
 ) -> Result<
     (
         HashMap<String, Collection<S, Vec<Value>, isize>>,
@@ -1003,7 +1008,7 @@ where
     S::Timestamp: Timestamp + Lattice + Rewind + Default,
 {
     scope.iterative::<u64, _, _>(move |nested| {
-        let publish = vec![name];
+        let publish = vec![name.clone()];
         let mut rules = collect_dependencies(domain, &publish[..])?;
 
         let mut local_arrangements = VariableMap::new();
@@ -1045,7 +1050,7 @@ where
 
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
-            if let Some(relation) = local_arrangements.get(name) {
+            if let Some(relation) = local_arrangements.get(&name) {
                 result_map.insert(name.to_string(), relation.leave());
             } else {
                 return Err(Error::not_found(format!(

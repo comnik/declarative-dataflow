@@ -64,7 +64,7 @@ impl<P: Implementable> PullLevel<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
@@ -173,7 +173,7 @@ impl PullAll {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
@@ -249,7 +249,7 @@ impl Pull {
     pub fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
@@ -508,9 +508,9 @@ impl GraphQl {
     pub fn derive<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         namespace: &str,
-    ) -> Domain<S::Timestamp>
+    ) -> Domain<Aid, S::Timestamp>
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
@@ -526,7 +526,7 @@ impl GraphQl {
             for (path_id, stream) in streams.into_iter() {
                 let path = stream
                     .exchange(|((e, _v), _t, _diff)| e.clone().hashed())
-                    .as_singleton_domain(&format!("{}/{}", namespace, path_id.last().unwrap()))
+                    .as_singleton_domain(format!("{}/{}", namespace, path_id.last().unwrap()))
                     .into();
 
                 out_domain += path;

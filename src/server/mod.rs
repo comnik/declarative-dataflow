@@ -155,6 +155,7 @@ pub enum Request {
     /// Expresses interest in an entire attribute.
     Subscribe(String),
     /// Derives new attributes under a new namespace.
+    #[cfg(feature = "graphql")]
     Derive(String, String),
     /// Expresses interest in a named relation.
     Interest(Interest),
@@ -201,7 +202,7 @@ where
     /// (copied from worker).
     pub t0: Instant,
     /// Internal domain in server time.
-    pub internal: Domain<T>,
+    pub internal: Domain<Aid, T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<String, HashSet<Token>>,
     // Mapping from query names to their shutdown handles. This is
@@ -294,16 +295,16 @@ where
     /// Handles an Interest request.
     pub fn interest<S: Scope<Timestamp = T>>(
         &mut self,
-        name: &str,
+        name: Aid,
         scope: &mut S,
     ) -> Result<Collection<S, Vec<Value>, isize>, Error> {
         let (mut rel_map, shutdown_handle) = if self.config.enable_optimizer {
-            implement_neu(scope, &mut self.internal, name)?
+            implement_neu(scope, &mut self.internal, name.clone())?
         } else {
-            implement(scope, &mut self.internal, name)?
+            implement(scope, &mut self.internal, name.clone())?
         };
 
-        match rel_map.remove(name) {
+        match rel_map.remove(&name) {
             None => Err(Error::fault(format!(
                 "Relation of interest ({}) wasn't actually implemented.",
                 name
@@ -338,7 +339,7 @@ where
     pub fn create_attribute<S>(
         &mut self,
         scope: &mut S,
-        name: &str,
+        name: Aid,
         config: AttributeConfig,
     ) -> Result<(), Error>
     where
@@ -356,7 +357,7 @@ where
             InputSemantics::Distinct => pairs.as_collection().distinct(),
         };
 
-        let mut scoped_domain = ((handle, cap), tuples).as_singleton_domain(name);
+        let mut scoped_domain = ((handle, cap), tuples).as_singleton_domain(name.clone());
 
         if let Some(slack) = config.trace_slack {
             scoped_domain = scoped_domain.with_slack(slack.into());
@@ -422,7 +423,7 @@ where
                 InputSemantics::Distinct => pairs.as_collection().distinct(),
             };
 
-            let mut scoped_domain = pairs.as_singleton_domain(&aid);
+            let mut scoped_domain = pairs.as_singleton_domain(aid);
 
             if let Some(slack) = config.trace_slack {
                 scoped_domain = scoped_domain.with_slack(slack.into());
@@ -470,7 +471,7 @@ where
 
     /// Handles an Uninterest request, possibly cleaning up dataflows
     /// that are no longer interesting to any client.
-    pub fn uninterest(&mut self, client: Token, name: &str) -> Result<(), Error> {
+    pub fn uninterest(&mut self, client: Token, name: &Aid) -> Result<(), Error> {
         // All workers keep track of every client's interests, s.t. they
         // know when to clean up unused dataflows.
         if let Some(entry) = self.interests.get_mut(name) {
@@ -520,7 +521,7 @@ where
         })
         .unwrap();
 
-        match self.interest(&interest_name, scope) {
+        match self.interest(interest_name, scope) {
             Err(error) => panic!("{:?}", error),
             Ok(relation) => relation.probe_with(&mut self.probe),
         }

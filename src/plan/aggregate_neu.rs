@@ -13,7 +13,9 @@ use crate::binding::{AsBinding, Binding};
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
+use crate::{
+    Aid, CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap,
+};
 
 use num_rational::{Ratio, Rational32};
 
@@ -69,7 +71,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where

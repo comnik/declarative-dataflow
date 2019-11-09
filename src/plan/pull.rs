@@ -92,7 +92,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
@@ -247,7 +247,7 @@ impl<P: Implementable> Implementable for Pull<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where
@@ -309,7 +309,7 @@ impl Implementable for PullAll {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where

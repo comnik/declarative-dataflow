@@ -56,7 +56,7 @@ impl<P: Implementable> PullLevel<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
@@ -168,7 +168,7 @@ impl PullAll {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
@@ -244,7 +244,7 @@ impl Pull {
     pub fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,

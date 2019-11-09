@@ -11,7 +11,7 @@ use crate::binding::Binding;
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
+use crate::{Aid, CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -45,7 +45,7 @@ impl<P: Implementable> Implementable for Union<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where

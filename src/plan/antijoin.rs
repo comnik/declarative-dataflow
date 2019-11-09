@@ -11,7 +11,7 @@ use crate::binding::{AsBinding, Binding};
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
+use crate::{Aid, CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
 /// variables. Throws if the sources are not union-compatible, i.e. bind
@@ -49,7 +49,7 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, S>, ShutdownHandle)
     where

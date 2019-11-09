@@ -51,7 +51,9 @@ fn run_cases(mut cases: Vec<Case>) {
                         ..Default::default()
                     };
 
-                    server.create_attribute(scope, dep, config).unwrap();
+                    server
+                        .create_attribute(scope, dep.to_string(), config)
+                        .unwrap();
                 }
 
                 server

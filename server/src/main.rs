@@ -426,10 +426,11 @@ fn main() {
                                 result
                             }
                         }
+                        #[cfg(feature = "graphql")]
                         Request::Derive(namespace, query) => {
                             use timely::dataflow::Scope;
                             use declarative_dataflow::derive::graphql::GraphQl;
-                            
+
                             let world = worker.dataflow::<T, _, _>(|scope| {
                                 scope.iterative(|nested| {
                                     GraphQl::new(query)
@@ -470,7 +471,7 @@ fn main() {
                                 let result = worker.dataflow::<T, _, _>(|scope| {
                                     let sink_context: SinkingContext = (&req).into();
 
-                                    let relation = match server.interest(&req.name, scope) {
+                                    let relation = match server.interest(req.name, scope) {
                                         Err(error) => { return Err(error); }
                                         Ok(relation) => relation,
                                     };
@@ -574,7 +575,7 @@ fn main() {
                         }
                         Request::CreateAttribute(CreateAttribute { name, config }) => {
                             worker.dataflow::<T, _, _>(|scope| {
-                                server.create_attribute(scope, &name, config)
+                                server.create_attribute(scope, name, config)
                             })
                         }
                         Request::AdvanceDomain(name, next) => server.advance_domain(name, next.into()),

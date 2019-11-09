@@ -382,7 +382,9 @@ fn run_hector_cases() {
                         ..Default::default()
                     };
 
-                    server.create_attribute(scope, dep, config).unwrap();
+                    server
+                        .create_attribute(scope, dep.to_string(), config)
+                        .unwrap();
                 }
 
                 server

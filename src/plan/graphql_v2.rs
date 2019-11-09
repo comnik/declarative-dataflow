@@ -279,7 +279,7 @@ impl GraphQl {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<Aid, S::Timestamp>,
         _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
     ) -> (Stream<S, Output>, ShutdownHandle)
     where
