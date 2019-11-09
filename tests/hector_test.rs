@@ -12,14 +12,14 @@ use declarative_dataflow::plan::hector::{plan_order, source_conflicts};
 use declarative_dataflow::plan::{Hector, Implementable};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{Aid, Plan, Rule, TxData, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Plan, Rule, TxData, Value};
 use Value::{Bool, Eid, Number, String};
 
 struct Case {
     description: &'static str,
     plan: Hector,
-    transactions: Vec<Vec<TxData>>,
+    transactions: Vec<Vec<TxData<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 

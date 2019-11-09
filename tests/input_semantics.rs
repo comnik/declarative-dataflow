@@ -10,14 +10,14 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::pair::Pair;
 use declarative_dataflow::timestamp::Time;
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Aid, AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
 use Time::TxId;
 use Value::{Eid, Number};
 
 struct Case<T> {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData>>,
+    transactions: Vec<Vec<TxData<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, T, isize)>>,
 }
 

@@ -29,7 +29,7 @@ use crate::Rule;
 use crate::{
     implement, implement_neu, AttributeConfig, IndexDirection, InputSemantics, ShutdownHandle,
 };
-use crate::{Error, Rewind, Time, TxData, Value};
+use crate::{Aid, Error, Rewind, Time, TxData, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -151,7 +151,7 @@ pub struct CreateAttribute {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Request {
     /// Sends inputs via one or more registered handles.
-    Transact(Vec<TxData>),
+    Transact(Vec<TxData<Aid>>),
     /// Expresses interest in an entire attribute.
     Subscribe(String),
     /// Derives new attributes under a new namespace.
@@ -279,7 +279,7 @@ where
     /// Handles a Transact request.
     pub fn transact(
         &mut self,
-        tx_data: Vec<TxData>,
+        tx_data: Vec<TxData<Aid>>,
         owner: usize,
         worker_index: usize,
     ) -> Result<(), Error> {

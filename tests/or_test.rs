@@ -18,7 +18,7 @@ use Value::{Eid, Number, String};
 struct Case {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData>>,
+    transactions: Vec<Vec<TxData<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 

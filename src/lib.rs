@@ -192,29 +192,29 @@ impl Error {
 
 /// Transaction data.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct TxData(pub isize, pub Value, pub Aid, pub Value, pub Option<Time>);
+pub struct TxData<A>(pub isize, pub Value, pub A, pub Value, pub Option<Time>);
 
-impl TxData {
+impl TxData<String> {
     /// Creates TxData representing the addition of a single fact.
     pub fn add(e: Eid, a: &str, v: Value) -> Self {
-        TxData(1, Value::Eid(e), a.to_string(), v, None)
+        TxData(1, Value::Eid(e), a.to_owned(), v, None)
     }
 
     /// Creates TxData representing the addition of a single fact at a
     /// specific point in time.
     pub fn add_at(e: Eid, a: &str, v: Value, t: Time) -> Self {
-        TxData(1, Value::Eid(e), a.to_string(), v, Some(t))
+        TxData(1, Value::Eid(e), a.to_owned(), v, Some(t))
     }
 
     /// Creates TxData representing the retraction of a single fact.
     pub fn retract(e: Eid, a: &str, v: Value) -> Self {
-        TxData(-1, Value::Eid(e), a.to_string(), v, None)
+        TxData(-1, Value::Eid(e), a.to_owned(), v, None)
     }
 
     /// Creates TxData representing the retraction of a single fact at
     /// a specific point in time.
     pub fn retract_at(e: Eid, a: &str, v: Value, t: Time) -> Self {
-        TxData(-1, Value::Eid(e), a.to_string(), v, Some(t))
+        TxData(-1, Value::Eid(e), a.to_owned(), v, Some(t))
     }
 }
 

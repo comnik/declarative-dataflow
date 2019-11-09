@@ -9,14 +9,14 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::plan::{Implementable, PullLevel};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{Aid, Plan, Rule, TxData, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Plan, Rule, TxData, Value};
-use Value::{Aid, Bool, Eid, Number, String};
+use Value::{Bool, Eid, Number, String};
 
 struct Case {
     description: &'static str,
     plan: Plan,
-    transactions: Vec<Vec<TxData>>,
+    transactions: Vec<Vec<TxData<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -133,22 +133,14 @@ fn pull_level() {
             TxData::add(200, "age", Number(13)),
         ]],
         expectations: vec![vec![
-            (vec![Eid(200), Aid("age".to_string()), Number(13)], 0, 1),
+            (vec![Eid(200), Value::aid("age"), Number(13)], 0, 1),
             (
-                vec![
-                    Eid(200),
-                    Aid("name".to_string()),
-                    String("Dipper".to_string()),
-                ],
+                vec![Eid(200), Value::aid("name"), String("Dipper".to_string())],
                 0,
                 1,
             ),
             (
-                vec![
-                    Eid(300),
-                    Aid("name".to_string()),
-                    String("Soos".to_string()),
-                ],
+                vec![Eid(300), Value::aid("name"), String("Soos".to_string())],
                 0,
                 1,
             ),
@@ -163,7 +155,7 @@ fn graph_ql() {
     use declarative_dataflow::plan::GraphQl;
     use declarative_dataflow::binding::Binding;
 
-    let transactions = vec![vec![        
+    let transactions = vec![vec![
         TxData::add(100, "name", Value::from("Alice")),
         TxData::add(100, "hero", Bool(true)),
         TxData::add(200, "name", Value::from("Bob")),

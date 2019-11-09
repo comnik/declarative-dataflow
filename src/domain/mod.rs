@@ -193,7 +193,7 @@ where
     }
 
     /// Transact data into one or more inputs.
-    pub fn transact(&mut self, tx_data: Vec<TxData>) -> Result<(), Error> {
+    pub fn transact(&mut self, tx_data: Vec<TxData<Aid>>) -> Result<(), Error> {
         for TxData(op, e, a, v, t) in tx_data {
             match self.input_sessions.get_mut(&a) {
                 None => {
