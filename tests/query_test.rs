@@ -46,7 +46,7 @@ fn run_cases(mut cases: Vec<Case>) {
 
             for tx in case.transactions.iter() {
                 for datum in tx {
-                    deps.insert(datum.2.clone());
+                    deps.insert(datum.1.clone());
                 }
             }
 

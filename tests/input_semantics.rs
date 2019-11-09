@@ -37,7 +37,7 @@ impl Run for Vec<Case<u64>> {
                 let mut deps = HashMap::new();
                 for tx in case.transactions.iter() {
                     for datum in tx {
-                        deps.entry(datum.2.clone()).or_insert_with(|| {
+                        deps.entry(datum.1.clone()).or_insert_with(|| {
                             AttributeConfig::tx_time(InputSemantics::LastWriteWins)
                         });
                     }
@@ -118,7 +118,7 @@ impl Run for Vec<Case<Pair<Duration, u64>>> {
                 let mut deps = HashMap::new();
                 for tx in case.transactions.iter() {
                     for datum in tx {
-                        deps.entry(datum.2.clone())
+                        deps.entry(datum.1.clone())
                             .or_insert_with(|| AttributeConfig {
                                 input_semantics: InputSemantics::LastWriteWins,
                                 trace_slack: Some(Time::Bi(Duration::from_secs(0), 1)),
