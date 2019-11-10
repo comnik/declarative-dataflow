@@ -131,7 +131,7 @@ impl std::convert::From<&Interest> for crate::sinks::SinkingContext {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Register {
     /// A list of rules to synthesise in order.
-    pub rules: Vec<Rule>,
+    pub rules: Vec<Rule<Aid>>,
     /// The names of rules that should be published.
     pub publish: Vec<String>,
 }
@@ -510,7 +510,7 @@ where
     pub fn test_single<S: Scope<Timestamp = T>>(
         &mut self,
         scope: &mut S,
-        rule: Rule,
+        rule: Rule<Aid>,
     ) -> Collection<S, Vec<Value>, isize> {
         let interest_name = rule.name.clone();
         let publish_name = rule.name.clone();

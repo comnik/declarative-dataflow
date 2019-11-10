@@ -11,7 +11,7 @@ use crate::binding::Binding;
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{Aid, CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -25,17 +25,13 @@ pub struct Union<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Union<P> {
-    fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
+    type A = P::A;
 
-        for plan in self.plans.iter() {
-            dependencies = Dependencies::merge(dependencies, plan.dependencies());
-        }
-
-        dependencies
+    fn dependencies(&self) -> Dependencies<Self::A> {
+        self.plans.iter().map(|plan| plan.dependencies()).sum()
     }
 
-    fn into_bindings(&self) -> Vec<Binding> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
         self.plans
             .iter()
             .flat_map(Implementable::into_bindings)
@@ -45,9 +41,9 @@ impl<P: Implementable> Implementable for Union<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<Self::A, S::Timestamp>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,

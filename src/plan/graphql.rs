@@ -232,21 +232,15 @@ fn selection_set_to_paths(
 
 impl Implementable for GraphQl {
     fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
-
-        for path in self.paths.iter() {
-            dependencies = Dependencies::merge(dependencies, path.dependencies());
-        }
-
-        dependencies
+        self.paths.iter().map(|path| path.dependencies()).sum()
     }
 
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,

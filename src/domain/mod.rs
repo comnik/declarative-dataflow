@@ -45,6 +45,7 @@ use unordered_session::UnorderedSession;
 /// they will never block overall progress.
 pub struct Domain<A, T>
 where
+    A: AsAid,
     T: Timestamp + Lattice,
 {
     /// A namespace under which all attributes in this domain are
@@ -77,7 +78,7 @@ where
     /// Reverse validate traces.
     pub reverse_validate: HashMap<A, TraceKeyHandle<(Value, Value), T, isize>>,
     /// Representation of named rules.
-    pub rules: HashMap<A, Rule>,
+    pub rules: HashMap<A, Rule<A>>,
     /// Mapping from query names to their shutdown handles.
     pub shutdown_handles: HashMap<String, ShutdownHandle>,
 }
@@ -372,7 +373,7 @@ where
     }
 
     /// Returns the definition for the rule of the given name.
-    pub fn rule(&self, name: &A) -> Option<&Rule> {
+    pub fn rule(&self, name: &A) -> Option<&Rule<A>> {
         self.rules.get(name)
     }
 
@@ -427,6 +428,7 @@ where
 /// A domain that is still under construction in a specific scope.
 pub struct ScopedDomain<A, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
@@ -535,6 +537,7 @@ where
 
 impl<A, S> ScopedDomain<A, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind + std::convert::Into<crate::timestamp::Time>,
 {
@@ -551,6 +554,7 @@ where
 
 impl<A, S> Into<Domain<A, S::Timestamp>> for ScopedDomain<A, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
@@ -563,6 +567,7 @@ where
 /// attribute.
 pub trait AsSingletonDomain<A, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {

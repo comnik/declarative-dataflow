@@ -49,14 +49,14 @@ impl<P: Implementable> PullLevel<P> {
     /// See Implementable::dependencies, as PullLevel v2 can't
     /// implement Implementable directly.
     fn dependencies(&self) -> Dependencies {
-        let mut dependencies = self.plan.dependencies();
+        let attribute_dependencies = self
+            .pull_attributes
+            .iter()
+            .cloned()
+            .map(|aid| Dependencies::attribute(aid))
+            .sum();
 
-        for attribute in &self.pull_attributes {
-            let attribute_dependencies = Dependencies::attribute(&attribute);
-            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
-        }
-
-        dependencies
+        self.plan.dependencies() + attribute_dependencies
     }
 
     /// See Implementable::implement, as PullLevel v2 can't implement
@@ -65,7 +65,7 @@ impl<P: Implementable> PullLevel<P> {
         &self,
         nested: &mut Iterative<'b, S, u64>,
         domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
         ShutdownHandle,
@@ -158,14 +158,11 @@ impl PullAll {
     /// See Implementable::dependencies, as PullAll v2 can't implement
     /// Implementable directly.
     fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
-
-        for attribute in &self.pull_attributes {
-            let attribute_dependencies = Dependencies::attribute(&attribute);
-            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
-        }
-
-        dependencies
+        self.pull_attributes
+            .iter()
+            .cloned()
+            .map(|aid| Dependencies::attribute(aid))
+            .sum()
     }
 
     /// See Implementable::implement, as PullAll v2 can't implement
@@ -174,7 +171,7 @@ impl PullAll {
         &self,
         nested: &mut Iterative<'b, S, u64>,
         domain: &mut Domain<Aid, S::Timestamp>,
-        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        _local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
         ShutdownHandle,
@@ -250,7 +247,7 @@ impl Pull {
         &self,
         nested: &mut Iterative<'b, S, u64>,
         domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
         ShutdownHandle,
@@ -495,13 +492,7 @@ impl GraphQl {
     /// See Implementable::dependencies, as GraphQl v2 can't implement
     /// Implementable directly.
     pub fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
-
-        for path in self.paths.iter() {
-            dependencies = Dependencies::merge(dependencies, path.dependencies());
-        }
-
-        dependencies
+        self.paths.iter().map(|path| path.dependencies()).sum()
     }
 
     /// @TODO

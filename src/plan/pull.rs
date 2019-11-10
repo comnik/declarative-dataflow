@@ -13,7 +13,7 @@ use crate::binding::AsBinding;
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{Aid, Value, Var};
+use crate::{AsAid, Value, Var};
 use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, VariableMap};
 
 /// A plan stage for extracting all matching [e a v] tuples for a
@@ -27,10 +27,10 @@ pub struct PullLevel<P: Implementable> {
     /// Eid variable.
     pub pull_variable: Var,
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<Aid>,
+    pub pull_attributes: Vec<P::A>,
     /// Attribute names to distinguish plans of the same
     /// length. Useful to feed into a nested hash-map directly.
-    pub path_attributes: Vec<Aid>,
+    pub path_attributes: Vec<P::A>,
     /// @TODO
     pub cardinality_many: bool,
 }
@@ -46,10 +46,10 @@ pub struct Pull<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
     /// Individual paths to pull.
-    pub paths: Vec<P>,
+    pub paths: Vec<P::A>,
 }
 
-fn interleave(values: &[Value], constants: &[Aid]) -> Vec<Value> {
+fn interleave<A: AsAid>(values: &[Value], constants: &[A]) -> Vec<Value> {
     if values.is_empty() || constants.is_empty() {
         values.to_owned()
     } else {
@@ -78,23 +78,25 @@ fn interleave(values: &[Value], constants: &[Aid]) -> Vec<Value> {
 }
 
 impl<P: Implementable> Implementable for PullLevel<P> {
-    fn dependencies(&self) -> Dependencies {
-        let mut dependencies = self.plan.dependencies();
+    type A = P::A;
 
-        for attribute in &self.pull_attributes {
-            let attribute_dependencies = Dependencies::attribute(&attribute);
-            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
-        }
+    fn dependencies(&self) -> Dependencies<Self::A> {
+        let attribute_dependencies = self
+            .pull_attributes
+            .iter()
+            .cloned()
+            .map(|aid| Dependencies::attribute(aid))
+            .sum();
 
-        dependencies
+        self.plan.dependencies() + attribute_dependencies
     }
 
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<Self::A, S::Timestamp>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
@@ -150,8 +152,8 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let frontier: Vec<S::Timestamp> = propose_trace.advance_frontier().to_vec();
-                        let (arranged, shutdown_propose) =
-                            propose_trace.import_core(&nested.parent, a);
+                        let (arranged, shutdown_propose) = propose_trace
+                            .import_frontier(&nested.parent, &format!("Propose({:?})", a));
 
                         let e_v = arranged.enter_at(nested, move |_, _, time| {
                             let mut forwarded = time.clone();
@@ -166,7 +168,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                 };
 
                 let attribute = Value::Aid(a.clone());
-                let path_attributes: Vec<Aid> = self.path_attributes.clone();
+                let path_attributes: Vec<Self::A> = self.path_attributes.clone();
 
                 if path_attributes.is_empty() || self.cardinality_many {
                     e_path
@@ -235,21 +237,18 @@ impl<P: Implementable> Implementable for PullLevel<P> {
 }
 
 impl<P: Implementable> Implementable for Pull<P> {
-    fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
-        for path in self.paths.iter() {
-            dependencies = Dependencies::merge(dependencies, path.dependencies());
-        }
+    type A = P::A;
 
-        dependencies
+    fn dependencies(&self) -> Dependencies<Self::A> {
+        self.paths.iter().map(|path| path.dependencies()).sum()
     }
 
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<Self::A, S::Timestamp>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
@@ -287,31 +286,33 @@ impl<P: Implementable> Implementable for Pull<P> {
 /// A plan stage for extracting all tuples for a given set of
 /// attributes.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct PullAll {
+pub struct PullAll<A> {
     /// TODO
     pub variables: Vec<Var>,
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<Aid>,
+    pub pull_attributes: Vec<A>,
 }
 
-impl Implementable for PullAll {
-    fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
+impl<A> Implementable for PullAll<A>
+where
+    A: AsAid + timely::ExchangeData,
+{
+    type A = A;
 
-        for attribute in &self.pull_attributes {
-            let attribute_dependencies = Dependencies::attribute(&attribute);
-            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
-        }
-
-        dependencies
+    fn dependencies(&self) -> Dependencies<A> {
+        self.pull_attributes
+            .iter()
+            .cloned()
+            .map(|aid| Dependencies::attribute(aid))
+            .sum()
     }
 
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<A, S::Timestamp>,
+        _local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
@@ -327,7 +328,8 @@ impl Implementable for PullAll {
                 None => panic!("attribute {:?} does not exist", a),
                 Some(propose_trace) => {
                     let frontier: Vec<S::Timestamp> = propose_trace.advance_frontier().to_vec();
-                    let (arranged, shutdown_propose) = propose_trace.import_core(&nested.parent, a);
+                    let (arranged, shutdown_propose) =
+                        propose_trace.import_frontier(&nested.parent, &format!("Propose({:?})", a));
 
                     let e_v = arranged.enter_at(nested, move |_, _, time| {
                         let mut forwarded = time.clone();

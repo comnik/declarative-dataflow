@@ -13,9 +13,7 @@ use crate::binding::{AsBinding, Binding};
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{
-    Aid, CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap,
-};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 use num_rational::{Ratio, Rational32};
 
@@ -60,20 +58,22 @@ pub struct Aggregate<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
-    fn dependencies(&self) -> Dependencies {
+    type A = P::A;
+
+    fn dependencies(&self) -> Dependencies<Self::A> {
         self.plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
         self.plan.into_bindings()
     }
 
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<Self::A, S::Timestamp>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,

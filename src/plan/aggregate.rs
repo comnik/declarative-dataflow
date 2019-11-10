@@ -62,7 +62,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         self.plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
         self.plan.into_bindings()
     }
 
@@ -70,8 +70,8 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         &self,
         nested: &mut Iterative<'b, S, u64>,
         domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,

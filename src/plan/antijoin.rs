@@ -11,7 +11,7 @@ use crate::binding::{AsBinding, Binding};
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{Aid, CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
 /// variables. Throws if the sources are not union-compatible, i.e. bind
@@ -26,15 +26,14 @@ pub struct Antijoin<P1: Implementable, P2: Implementable> {
     pub right_plan: Box<P2>,
 }
 
-impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
-    fn dependencies(&self) -> Dependencies {
-        Dependencies::merge(
-            self.left_plan.dependencies(),
-            self.right_plan.dependencies(),
-        )
+impl<P1: Implementable, P2: Implementable<A = P1::A>> Implementable for Antijoin<P1, P2> {
+    type A = P1::A;
+
+    fn dependencies(&self) -> Dependencies<Self::A> {
+        self.left_plan.dependencies() + self.right_plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
         unimplemented!();
         // let mut left_bindings = self.left_plan.into_bindings();
         // let mut right_bindings = self.right_plan.into_bindings();
@@ -49,9 +48,9 @@ impl<P1: Implementable, P2: Implementable> Implementable for Antijoin<P1, P2> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<Self::A, S::Timestamp>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,

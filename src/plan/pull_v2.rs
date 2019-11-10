@@ -13,12 +13,12 @@ use crate::binding::AsBinding;
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable, Plan};
 use crate::timestamp::Rewind;
-use crate::{Aid, Value, Var};
+use crate::{AsAid, Value, Var};
 use crate::{Relation, ShutdownHandle, VariableMap};
 
 /// A sequence of attributes that uniquely identify a nesting level in
 /// a Pull query.
-pub type PathId = Vec<Aid>;
+pub type PathId<A> = Vec<A>;
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
@@ -29,10 +29,10 @@ pub struct PullLevel<P: Implementable> {
     /// Eid variable.
     pub pull_variable: Var,
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<Aid>,
+    pub pull_attributes: Vec<P::A>,
     /// Attribute names to distinguish plans of the same
     /// length. Useful to feed into a nested hash-map directly.
-    pub path_attributes: Vec<Aid>,
+    pub path_attributes: Vec<P::A>,
     /// @TODO
     pub cardinality_many: bool,
 }
@@ -40,15 +40,15 @@ pub struct PullLevel<P: Implementable> {
 impl<P: Implementable> PullLevel<P> {
     /// See Implementable::dependencies, as PullLevel v2 can't
     /// implement Implementable directly.
-    fn dependencies(&self) -> Dependencies {
-        let mut dependencies = self.plan.dependencies();
+    fn dependencies(&self) -> Dependencies<P::A> {
+        let attribute_dependencies = self
+            .pull_attributes
+            .iter()
+            .cloned()
+            .map(|aid| Dependencies::attribute(aid))
+            .sum();
 
-        for attribute in &self.pull_attributes {
-            let attribute_dependencies = Dependencies::attribute(&attribute);
-            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
-        }
-
-        dependencies
+        self.plan.dependencies() + attribute_dependencies
     }
 
     /// See Implementable::implement, as PullLevel v2 can't implement
@@ -56,10 +56,10 @@ impl<P: Implementable> PullLevel<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        domain: &mut Domain<P::A, S::Timestamp>,
+        local_arrangements: &VariableMap<P::A, Iterative<'b, S, u64>>,
     ) -> (
-        HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
+        HashMap<PathId<P::A>, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
@@ -100,8 +100,8 @@ impl<P: Implementable> PullLevel<P> {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let frontier: Vec<S::Timestamp> = propose_trace.advance_frontier().to_vec();
-                        let (arranged, shutdown_propose) =
-                            propose_trace.import_core(&nested.parent, a);
+                        let (arranged, shutdown_propose) = propose_trace
+                            .import_frontier(&nested.parent, &format!("Propose({:?})", a));
 
                         let e_v = arranged.enter_at(nested, move |_, _, time| {
                             let mut forwarded = time.clone();
@@ -115,7 +115,7 @@ impl<P: Implementable> PullLevel<P> {
                     }
                 };
 
-                let path_id: Vec<Aid> = {
+                let path_id: Vec<P::A> = {
                     assert_eq!(self.path_attributes.is_empty(), false);
 
                     let mut path_attributes = self.path_attributes.clone();
@@ -144,23 +144,20 @@ impl<P: Implementable> PullLevel<P> {
 /// A plan stage for extracting all tuples for a given set of
 /// attributes.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct PullAll {
+pub struct PullAll<A> {
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<Aid>,
+    pub pull_attributes: Vec<A>,
 }
 
-impl PullAll {
+impl<A: AsAid> PullAll<A> {
     /// See Implementable::dependencies, as PullAll v2 can't implement
     /// Implementable directly.
-    fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
-
-        for attribute in &self.pull_attributes {
-            let attribute_dependencies = Dependencies::attribute(&attribute);
-            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
-        }
-
-        dependencies
+    fn dependencies(&self) -> Dependencies<A> {
+        self.pull_attributes
+            .iter()
+            .cloned()
+            .map(|aid| Dependencies::attribute(aid))
+            .sum()
     }
 
     /// See Implementable::implement, as PullAll v2 can't implement
@@ -168,10 +165,10 @@ impl PullAll {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        domain: &mut Domain<A, S::Timestamp>,
+        _local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (
-        HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
+        HashMap<PathId<A>, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
@@ -192,8 +189,8 @@ impl PullAll {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let frontier: Vec<S::Timestamp> = propose_trace.advance_frontier().to_vec();
-                        let (arranged, shutdown_propose) =
-                            propose_trace.import_core(&nested.parent, a);
+                        let (arranged, shutdown_propose) = propose_trace
+                            .import_frontier(&nested.parent, &format!("Propose({:?})", a));
 
                         let e_v = arranged.enter_at(nested, move |_, _, time| {
                             let mut forwarded = time.clone();
@@ -212,7 +209,7 @@ impl PullAll {
                     .leave()
                     .inner;
 
-                (vec![a.to_string()], path_stream)
+                (vec![a.clone()], path_stream)
             })
             .collect::<HashMap<_, _>>();
 
@@ -222,17 +219,20 @@ impl PullAll {
 
 /// @TODO
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum Pull {
+pub enum Pull<A: AsAid> {
     /// @TODO
-    All(PullAll),
+    All(PullAll<A>),
     /// @TODO
-    Level(PullLevel<Plan>),
+    Level(PullLevel<Plan<A>>),
 }
 
-impl Pull {
+impl<A> Pull<A>
+where
+    A: AsAid + timely::ExchangeData,
+{
     /// See Implementable::dependencies, as Pull v2 can't implement
     /// Implementable directly.
-    pub fn dependencies(&self) -> Dependencies {
+    pub fn dependencies(&self) -> Dependencies<A> {
         match self {
             Pull::All(ref pull) => pull.dependencies(),
             Pull::Level(ref pull) => pull.dependencies(),
@@ -244,10 +244,10 @@ impl Pull {
     pub fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        domain: &mut Domain<A, S::Timestamp>,
+        local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (
-        HashMap<PathId, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
+        HashMap<PathId<A>, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
