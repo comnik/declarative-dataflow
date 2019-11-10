@@ -49,13 +49,7 @@ pub use self::pull::{Pull, PullAll, PullLevel};
 pub use self::transform::{Function, Transform};
 pub use self::union::Union;
 
-static ID: AtomicUsize = AtomicUsize::new(0);
 static SYM: AtomicUsize = AtomicUsize::new(std::usize::MAX);
-
-/// @FIXME
-pub fn next_id() -> Eid {
-    ID.fetch_add(1, atomic::Ordering::SeqCst) as Eid
-}
 
 /// @FIXME
 pub fn gensym() -> Var {
@@ -265,48 +259,6 @@ impl Implementable for Plan {
             Plan::PullAll(ref path) => path.into_bindings(),
             #[cfg(feature = "graphql")]
             Plan::GraphQl(ref q) => q.into_bindings(),
-        }
-    }
-
-    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
-        // @TODO provide a general fold for plans
-        match *self {
-            Plan::Project(ref projection) => projection.datafy(),
-            Plan::Aggregate(ref aggregate) => aggregate.datafy(),
-            Plan::Union(ref union) => union.datafy(),
-            Plan::Join(ref join) => join.datafy(),
-            Plan::Hector(ref hector) => hector.datafy(),
-            Plan::Antijoin(ref antijoin) => antijoin.datafy(),
-            Plan::Negate(ref plan) => plan.datafy(),
-            Plan::Filter(ref filter) => filter.datafy(),
-            Plan::Transform(ref transform) => transform.datafy(),
-            Plan::MatchA(_e, ref a, _v) => vec![(
-                next_id(),
-                "df.pattern/a".to_string(),
-                Value::Aid(a.to_string()),
-            )],
-            Plan::MatchEA(e, ref a, _) => vec![
-                (next_id(), "df.pattern/e".to_string(), Value::Eid(e)),
-                (
-                    next_id(),
-                    "df.pattern/a".to_string(),
-                    Value::Aid(a.to_string()),
-                ),
-            ],
-            Plan::MatchAV(_, ref a, ref v) => vec![
-                (
-                    next_id(),
-                    "df.pattern/a".to_string(),
-                    Value::Aid(a.to_string()),
-                ),
-                (next_id(), "df.pattern/v".to_string(), v.clone()),
-            ],
-            Plan::NameExpr(_, ref _name) => Vec::new(),
-            Plan::Pull(ref pull) => pull.datafy(),
-            Plan::PullLevel(ref path) => path.datafy(),
-            Plan::PullAll(ref path) => path.datafy(),
-            #[cfg(feature = "graphql")]
-            Plan::GraphQl(ref q) => q.datafy(),
         }
     }
 

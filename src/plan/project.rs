@@ -8,7 +8,7 @@ use differential_dataflow::lattice::Lattice;
 
 use crate::binding::Binding;
 use crate::domain::Domain;
-use crate::plan::{next_id, Dependencies, Implementable};
+use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
 use crate::{Aid, Eid, Value, Var};
 use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, VariableMap};
@@ -31,21 +31,6 @@ impl<P: Implementable> Implementable for Project<P> {
 
     fn into_bindings(&self) -> Vec<Binding> {
         self.plan.into_bindings()
-    }
-
-    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
-        let eid = next_id();
-        let mut data = self.plan.datafy();
-
-        if data.is_empty() {
-            Vec::new()
-        } else {
-            let child_eid = data[0].0;
-
-            data.push((eid, "df.project/binding".to_string(), Value::Eid(child_eid)));
-
-            data
-        }
     }
 
     fn implement<'b, S>(
