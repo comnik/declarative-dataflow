@@ -58,16 +58,23 @@ pub type Eid = u64;
 pub type Aid = String; // u32
 
 /// A unique attribute identifier.
-pub trait AsAid: Clone + Eq + Ord + std::hash::Hash + std::fmt::Display + std::fmt::Debug {
+pub trait AsAid:
+    Clone + Eq + Ord + std::hash::Hash + std::fmt::Display + std::fmt::Debug + 'static
+{
     /// Moves self into the specified namespace.
-    fn with_namespace(self, namespace: Self) -> Self;
+    fn with_namespace(&self, namespace: Self) -> Self;
+
+    /// Converts the aid into a value for use in a query result.
+    fn into_value(self) -> Value;
 }
 
-// impl<T: Clone + Eq + Ord + std::hash::Hash + std::fmt::Display + std::fmt::Debug> AsAid for T {}
-
 impl AsAid for String {
-    fn with_namespace(self, namespace: Self) -> Self {
+    fn with_namespace(&self, namespace: Self) -> Self {
         format!("{}/{}", namespace, self)
+    }
+
+    fn into_value(self) -> Value {
+        Value::Aid(self)
     }
 }
 

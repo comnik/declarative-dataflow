@@ -19,7 +19,7 @@ use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, VariableM
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct PullLevel<P: Implementable> {
+pub struct PullLevel<A: AsAid, P: Implementable<A = A>> {
     /// TODO
     pub variables: Vec<Var>,
     /// Plan for the input relation.
@@ -27,10 +27,10 @@ pub struct PullLevel<P: Implementable> {
     /// Eid variable.
     pub pull_variable: Var,
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<P::A>,
+    pub pull_attributes: Vec<A>,
     /// Attribute names to distinguish plans of the same
     /// length. Useful to feed into a nested hash-map directly.
-    pub path_attributes: Vec<P::A>,
+    pub path_attributes: Vec<A>,
     /// @TODO
     pub cardinality_many: bool,
 }
@@ -46,7 +46,7 @@ pub struct Pull<P: Implementable> {
     /// TODO
     pub variables: Vec<Var>,
     /// Individual paths to pull.
-    pub paths: Vec<P::A>,
+    pub paths: Vec<P>,
 }
 
 fn interleave<A: AsAid>(values: &[Value], constants: &[A]) -> Vec<Value> {
@@ -68,7 +68,7 @@ fn interleave<A: AsAid>(values: &[Value], constants: &[A]) -> Vec<Value> {
             } else {
                 // on odd indices we interleave an attribute
                 let a = constants[next_const].clone();
-                result.push(Value::Aid(a));
+                result.push(a.into_value());
                 next_const += 1;
             }
         }
@@ -77,8 +77,8 @@ fn interleave<A: AsAid>(values: &[Value], constants: &[A]) -> Vec<Value> {
     }
 }
 
-impl<P: Implementable> Implementable for PullLevel<P> {
-    type A = P::A;
+impl<A: AsAid + 'static, P: Implementable<A = A>> Implementable for PullLevel<A, P> {
+    type A = A;
 
     fn dependencies(&self) -> Dependencies<Self::A> {
         let attribute_dependencies = self
@@ -167,7 +167,7 @@ impl<P: Implementable> Implementable for PullLevel<P> {
                     }
                 };
 
-                let attribute = Value::Aid(a.clone());
+                let attribute = a.clone().into_value();
                 let path_attributes: Vec<Self::A> = self.path_attributes.clone();
 
                 if path_attributes.is_empty() || self.cardinality_many {
@@ -286,17 +286,14 @@ impl<P: Implementable> Implementable for Pull<P> {
 /// A plan stage for extracting all tuples for a given set of
 /// attributes.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct PullAll<A> {
+pub struct PullAll<A: AsAid> {
     /// TODO
     pub variables: Vec<Var>,
     /// Attributes to pull for the input entities.
     pub pull_attributes: Vec<A>,
 }
 
-impl<A> Implementable for PullAll<A>
-where
-    A: AsAid + timely::ExchangeData,
-{
+impl<A: AsAid> Implementable for PullAll<A> {
     type A = A;
 
     fn dependencies(&self) -> Dependencies<A> {
@@ -343,7 +340,7 @@ where
                 }
             };
 
-            let attribute = Value::Aid(a.clone());
+            let attribute = a.clone().into_value();
 
             e_v.as_collection(move |e, v| vec![e.clone(), attribute.clone(), v.clone()])
                 .inner

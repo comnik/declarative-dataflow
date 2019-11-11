@@ -178,15 +178,15 @@ pub enum Plan<A: AsAid> {
     MatchAV(Var, A, Value),
     /// Sources data from another relation.
     NameExpr(Vec<Var>, A),
-    // /// Pull expression
-    // Pull(Pull<Plan<A>>),
-    // /// Single-level pull expression
-    // PullLevel(PullLevel<Plan<A>>),
-    // /// Single-level pull expression
-    // PullAll(PullAll<A>),
-    /// GraphQl pull expression
-    #[cfg(feature = "graphql")]
-    GraphQl(GraphQl),
+    /// Pull expression
+    Pull(Pull<Plan<A>>),
+    /// Single-level pull expression
+    PullLevel(PullLevel<A, Plan<A>>),
+    /// Single-level pull expression
+    PullAll(PullAll<A>),
+    // /// GraphQl pull expression
+    // #[cfg(feature = "graphql")]
+    // GraphQl(GraphQl),
 }
 
 impl<A: AsAid> Plan<A> {
@@ -206,11 +206,11 @@ impl<A: AsAid> Plan<A> {
             Plan::MatchEA(_, _, v) => vec![v],
             Plan::MatchAV(e, _, _) => vec![e],
             Plan::NameExpr(ref variables, ref _name) => variables.clone(),
-            // Plan::Pull(ref pull) => pull.variables.clone(),
-            // Plan::PullLevel(ref path) => path.variables.clone(),
-            // Plan::PullAll(ref path) => path.variables.clone(),
-            #[cfg(feature = "graphql")]
-            Plan::GraphQl(_) => unimplemented!(),
+            Plan::Pull(ref pull) => pull.variables.clone(),
+            Plan::PullLevel(ref path) => path.variables.clone(),
+            Plan::PullAll(ref path) => path.variables.clone(),
+            // #[cfg(feature = "graphql")]
+            // Plan::GraphQl(_) => unimplemented!(),
         }
     }
 }
@@ -237,11 +237,11 @@ where
             Plan::MatchEA(_, ref a, _) => Dependencies::attribute(a.clone()),
             Plan::MatchAV(_, ref a, _) => Dependencies::attribute(a.clone()),
             Plan::NameExpr(_, ref name) => Dependencies::name(name.clone()),
-            // Plan::Pull(ref pull) => pull.dependencies(),
-            // Plan::PullLevel(ref path) => path.dependencies(),
-            // Plan::PullAll(ref path) => path.dependencies(),
-            #[cfg(feature = "graphql")]
-            Plan::GraphQl(ref q) => q.dependencies(),
+            Plan::Pull(ref pull) => pull.dependencies(),
+            Plan::PullLevel(ref path) => path.dependencies(),
+            Plan::PullAll(ref path) => path.dependencies(),
+            // #[cfg(feature = "graphql")]
+            // Plan::GraphQl(ref q) => q.dependencies(),
         }
     }
 
@@ -273,11 +273,11 @@ where
                 ]
             }
             Plan::NameExpr(_, ref _name) => unimplemented!(), // @TODO hmm...
-            // Plan::Pull(ref pull) => pull.into_bindings(),
-            // Plan::PullLevel(ref path) => path.into_bindings(),
-            // Plan::PullAll(ref path) => path.into_bindings(),
-            #[cfg(feature = "graphql")]
-            Plan::GraphQl(ref q) => q.into_bindings(),
+            Plan::Pull(ref pull) => pull.into_bindings(),
+            Plan::PullLevel(ref path) => path.into_bindings(),
+            Plan::PullAll(ref path) => path.into_bindings(),
+            // #[cfg(feature = "graphql")]
+            // Plan::GraphQl(ref q) => q.into_bindings(),
         }
     }
 
@@ -397,11 +397,11 @@ where
                     }
                 }
             }
-            // Plan::Pull(ref pull) => pull.implement(nested, domain, local_arrangements),
-            // Plan::PullLevel(ref path) => path.implement(nested, domain, local_arrangements),
-            // Plan::PullAll(ref path) => path.implement(nested, domain, local_arrangements),
-            #[cfg(feature = "graphql")]
-            Plan::GraphQl(ref query) => query.implement(nested, domain, local_arrangements),
+            Plan::Pull(ref pull) => pull.implement(nested, domain, local_arrangements),
+            Plan::PullLevel(ref path) => path.implement(nested, domain, local_arrangements),
+            Plan::PullAll(ref path) => path.implement(nested, domain, local_arrangements),
+            // #[cfg(feature = "graphql")]
+            // Plan::GraphQl(ref query) => query.implement(nested, domain, local_arrangements),
         }
     }
 }

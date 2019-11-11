@@ -31,21 +31,21 @@ pub type PathId<A> = Vec<A>;
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct PullLevel<P: Implementable> {
+pub struct PullLevel<A: AsAid, P: Implementable<A = A>> {
     /// Plan for the input relation.
     pub plan: Box<P>,
     /// Eid variable.
     pub pull_variable: Var,
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<P::A>,
+    pub pull_attributes: Vec<A>,
     /// Attribute names to distinguish plans of the same
     /// length. Useful to feed into a nested hash-map directly.
-    pub path_attributes: Vec<P::A>,
+    pub path_attributes: Vec<A>,
     /// @TODO
     pub cardinality_many: bool,
 }
 
-impl<P: Implementable> PullLevel<P> {
+impl<A: AsAid, P: Implementable<A = A>> PullLevel<A, P> {
     /// See Implementable::dependencies, as PullLevel v2 can't
     /// implement Implementable directly.
     fn dependencies(&self) -> Dependencies<P::A> {
@@ -228,7 +228,7 @@ pub enum Pull<A: AsAid> {
     /// @TODO
     All(PullAll<A>),
     /// @TODO
-    Level(PullLevel<Plan<A>>),
+    Level(PullLevel<A, Plan<A>>),
 }
 
 impl<A: AsAid> Pull<A> {
@@ -517,9 +517,10 @@ impl<A: AsAid> GraphQl<A> {
             std::mem::forget(shutdown);
 
             for (path_id, stream) in streams.into_iter() {
+                let aid = path_id.last().unwrap();
                 let path = stream
                     .exchange(|((e, _v), _t, _diff)| e.clone().hashed())
-                    .as_singleton_domain(path_id.last().unwrap().with_namespace(namespace))
+                    .as_singleton_domain(aid.with_namespace(namespace.clone()))
                     .into();
 
                 out_domain += path;
