@@ -58,7 +58,9 @@ pub struct Aggregate<P: Implementable> {
 }
 
 impl<P: Implementable> Implementable for Aggregate<P> {
-    fn dependencies(&self) -> Dependencies {
+    type A = P::A;
+
+    fn dependencies(&self) -> Dependencies<Self::A> {
         self.plan.dependencies()
     }
 
@@ -69,8 +71,8 @@ impl<P: Implementable> Implementable for Aggregate<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Aid, S::Timestamp>,
-        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+        domain: &mut Domain<Self::A, S::Timestamp>,
+        local_arrangements: &VariableMap<P::A, Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
