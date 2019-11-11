@@ -573,7 +573,7 @@ where
 {
     /// Returns a domain containing only a single attribute of the
     /// specified name, with a single forward index installed.
-    fn as_singleton_domain(self, name: A) -> ScopedDomain<A, S>;
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S>;
 }
 
 impl<A, S> AsSingletonDomain<A, S> for Stream<S, ((Value, Value), isize)>
@@ -582,7 +582,9 @@ where
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain(self, name: A) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
+        let name: A = name.into();
+
         let mut domain = Domain::new(Default::default());
 
         // When given only a stream without timestamps, we must assume
@@ -621,7 +623,9 @@ where
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain(self, name: A) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
+        let name: A = name.into();
+
         let mut domain = Domain::new(Default::default());
 
         // When given only a collection we must assume that this
@@ -658,7 +662,7 @@ where
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain(self, name: A) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
         self.as_collection().as_singleton_domain(name)
     }
 }
@@ -676,7 +680,9 @@ where
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain(self, name: A) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
+        let name: A = name.into();
+
         let mut domain = Domain::new(Default::default());
 
         // When a handle and a capability are available, we can infer
@@ -723,7 +729,7 @@ where
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain(self, name: A) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
         let ((handle, cap), pairs) = self;
         ((handle, cap), pairs.as_collection()).as_singleton_domain(name)
     }

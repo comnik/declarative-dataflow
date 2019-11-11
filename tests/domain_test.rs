@@ -4,9 +4,7 @@ use timely::progress::frontier::AntichainRef;
 use differential_dataflow::trace::TraceReader;
 
 use declarative_dataflow::domain::{AsSingletonDomain, Domain};
-use declarative_dataflow::Value;
-
-type Aid = &'static str;
+use declarative_dataflow::{Aid, Value};
 
 #[test]
 fn test_advance_epoch() {

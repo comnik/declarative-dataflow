@@ -24,13 +24,13 @@ pub mod antijoin;
 pub mod filter;
 #[cfg(feature = "graphql")]
 pub mod graphql;
-#[cfg(feature = "graphql")]
-pub mod graphql_v2;
+// #[cfg(feature = "graphql")]
+// pub mod graphql_v2;
 pub mod hector;
 pub mod join;
 pub mod project;
 pub mod pull;
-pub mod pull_v2;
+// pub mod pull_v2;
 pub mod transform;
 pub mod union;
 
@@ -184,9 +184,9 @@ pub enum Plan<A: AsAid> {
     PullLevel(PullLevel<A, Plan<A>>),
     /// Single-level pull expression
     PullAll(PullAll<A>),
-    // /// GraphQl pull expression
-    // #[cfg(feature = "graphql")]
-    // GraphQl(GraphQl),
+    /// GraphQl pull expression
+    #[cfg(feature = "graphql")]
+    GraphQl(GraphQl<A>),
 }
 
 impl<A: AsAid> Plan<A> {
@@ -224,8 +224,8 @@ impl<A: AsAid> Plan<A> {
             Plan::Pull(ref pull) => pull.variables.clone(),
             Plan::PullLevel(ref path) => path.variables.clone(),
             Plan::PullAll(ref path) => path.variables.clone(),
-            // #[cfg(feature = "graphql")]
-            // Plan::GraphQl(_) => unimplemented!(),
+            #[cfg(feature = "graphql")]
+            Plan::GraphQl(_) => unimplemented!(),
         }
     }
 }
@@ -255,8 +255,8 @@ where
             Plan::Pull(ref pull) => pull.dependencies(),
             Plan::PullLevel(ref path) => path.dependencies(),
             Plan::PullAll(ref path) => path.dependencies(),
-            // #[cfg(feature = "graphql")]
-            // Plan::GraphQl(ref q) => q.dependencies(),
+            #[cfg(feature = "graphql")]
+            Plan::GraphQl(ref q) => q.dependencies(),
         }
     }
 
@@ -291,8 +291,8 @@ where
             Plan::Pull(ref pull) => pull.into_bindings(),
             Plan::PullLevel(ref path) => path.into_bindings(),
             Plan::PullAll(ref path) => path.into_bindings(),
-            // #[cfg(feature = "graphql")]
-            // Plan::GraphQl(ref q) => q.into_bindings(),
+            #[cfg(feature = "graphql")]
+            Plan::GraphQl(ref q) => q.into_bindings(),
         }
     }
 
@@ -415,8 +415,8 @@ where
             Plan::Pull(ref pull) => pull.implement(nested, domain, local_arrangements),
             Plan::PullLevel(ref path) => path.implement(nested, domain, local_arrangements),
             Plan::PullAll(ref path) => path.implement(nested, domain, local_arrangements),
-            // #[cfg(feature = "graphql")]
-            // Plan::GraphQl(ref query) => query.implement(nested, domain, local_arrangements),
+            #[cfg(feature = "graphql")]
+            Plan::GraphQl(ref query) => query.implement(nested, domain, local_arrangements),
         }
     }
 }

@@ -59,7 +59,7 @@ pub type Aid = String; // u32
 
 /// A unique attribute identifier.
 pub trait AsAid:
-    Clone + Eq + Ord + std::hash::Hash + std::fmt::Display + std::fmt::Debug + 'static
+    Clone + Eq + Ord + std::hash::Hash + std::fmt::Display + std::fmt::Debug + From<String> + 'static
 {
     /// Moves self into the specified namespace.
     fn with_namespace(&self, namespace: Self) -> Self;
@@ -75,16 +75,6 @@ impl AsAid for String {
 
     fn into_value(self) -> Value {
         Value::Aid(self)
-    }
-}
-
-impl AsAid for &'static str {
-    fn with_namespace(&self, namespace: Self) -> Self {
-        unimplemented!()
-    }
-
-    fn into_value(self) -> Value {
-        Value::Aid(self.to_string())
     }
 }
 
@@ -476,7 +466,7 @@ impl<A: AsAid> Rule<A> {
     pub fn named<X: Into<A>>(name: X, plan: Plan<A>) -> Self {
         Rule {
             name: name.into(),
-            plan: plan,
+            plan,
         }
     }
 }

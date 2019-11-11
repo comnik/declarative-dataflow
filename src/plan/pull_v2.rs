@@ -45,7 +45,7 @@ impl<P: Implementable> PullLevel<P> {
             .pull_attributes
             .iter()
             .cloned()
-            .map(|aid| Dependencies::attribute(aid))
+            .map(Dependencies::attribute)
             .sum();
 
         self.plan.dependencies() + attribute_dependencies
@@ -156,7 +156,7 @@ impl<A: AsAid> PullAll<A> {
         self.pull_attributes
             .iter()
             .cloned()
-            .map(|aid| Dependencies::attribute(aid))
+            .map(Dependencies::attribute)
             .sum()
     }
 

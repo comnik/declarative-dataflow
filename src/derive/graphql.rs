@@ -53,7 +53,7 @@ impl<A: AsAid, P: Implementable<A = A>> PullLevel<A, P> {
             .pull_attributes
             .iter()
             .cloned()
-            .map(|aid| Dependencies::attribute(aid))
+            .map(Dependencies::attribute)
             .sum();
 
         self.plan.dependencies() + attribute_dependencies
@@ -161,7 +161,7 @@ impl<A: AsAid> PullAll<A> {
         self.pull_attributes
             .iter()
             .cloned()
-            .map(|aid| Dependencies::attribute(aid))
+            .map(Dependencies::attribute)
             .sum()
     }
 
@@ -498,16 +498,19 @@ impl<A: AsAid> GraphQl<A> {
     }
 
     /// @TODO
-    pub fn derive<'b, S>(
+    pub fn derive<'b, X, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
         domain: &mut Domain<A, S::Timestamp>,
-        namespace: A,
+        namespace: X,
     ) -> Domain<A, S::Timestamp>
     where
+        X: Into<A>,
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
     {
+        let namespace: A = namespace.into();
+
         let mut out_domain = Domain::new_from("", domain);
         let dummy = HashMap::new();
 
