@@ -18,6 +18,7 @@ use differential_dataflow::collection::{AsCollection, Collection};
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::logging::DifferentialEvent;
 use differential_dataflow::operators::Threshold;
+use differential_dataflow::ExchangeData;
 
 use crate::domain::{AsSingletonDomain, Domain};
 use crate::logging::DeclarativeEvent;
@@ -29,7 +30,7 @@ use crate::Rule;
 use crate::{
     implement, implement_neu, AttributeConfig, IndexDirection, InputSemantics, ShutdownHandle,
 };
-use crate::{Aid, Datom, Error, Rewind, Time, Value};
+use crate::{AsAid, Datom, Error, Rewind, Time, Value};
 
 /// Server configuration.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -129,11 +130,11 @@ impl std::convert::From<&Interest> for crate::sinks::SinkingContext {
 /// A request with the intent of synthesising one or more new rules
 /// and optionally publishing one or more of them.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct Register {
+pub struct Register<A: AsAid> {
     /// A list of rules to synthesise in order.
-    pub rules: Vec<Rule<Aid>>,
+    pub rules: Vec<Rule<A>>,
     /// The names of rules that should be published.
-    pub publish: Vec<String>,
+    pub publish: Vec<A>,
 }
 
 /// A request with the intent of creating a new named, globally
@@ -149,9 +150,9 @@ pub struct CreateAttribute {
 
 /// Possible request types.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum Request {
+pub enum Request<A: AsAid + From<&'static str>> {
     /// Sends inputs via one or more registered handles.
-    Transact(Vec<Datom<Aid>>),
+    Transact(Vec<Datom<A>>),
     /// Expresses interest in an entire attribute.
     Subscribe(String),
     /// Derives new attributes under a new namespace.
@@ -164,10 +165,10 @@ pub enum Request {
     /// dataflow can be cleaned up.
     Uninterest(String),
     /// Registers one or more named relations.
-    Register(Register),
+    Register(Register<A>),
     /// A request with the intent of attaching to an external data
     /// source that publishes one or more attributes and relations.
-    RegisterSource(Source),
+    RegisterSource(Source<A>),
     /// Creates a named input handle that can be `Transact`ed upon.
     CreateAttribute(CreateAttribute),
     /// Advances the specified domain to the specified time.
@@ -191,8 +192,9 @@ pub enum Request {
 
 /// Server context maintaining globally registered arrangements and
 /// input handles.
-pub struct Server<T, Token>
+pub struct Server<A, T, Token>
 where
+    A: AsAid,
     T: Timestamp + Lattice,
     Token: Hash + Eq + Copy,
 {
@@ -202,14 +204,14 @@ where
     /// (copied from worker).
     pub t0: Instant,
     /// Internal domain in server time.
-    pub internal: Domain<Aid, T>,
+    pub internal: Domain<A, T>,
     /// Mapping from query names to interested client tokens.
-    pub interests: HashMap<String, HashSet<Token>>,
+    pub interests: HashMap<A, HashSet<Token>>,
     // Mapping from query names to their shutdown handles. This is
     // separate from internal shutdown handles on domains, because
     // user queries might be one-off and not result in a new domain
     // being created.
-    shutdown_handles: HashMap<String, ShutdownHandle>,
+    shutdown_handles: HashMap<A, ShutdownHandle>,
     /// Probe keeping track of overall dataflow progress.
     pub probe: ProbeHandle<T>,
     /// Scheduler managing deferred operator activations.
@@ -220,8 +222,9 @@ where
     differential_events: Option<Rc<EventLink<Duration, (Duration, usize, DifferentialEvent)>>>,
 }
 
-impl<T, Token> Server<T, Token>
+impl<A, T, Token> Server<A, T, Token>
 where
+    A: AsAid + ExchangeData + From<&'static str>,
     T: Timestamp + Lattice + Default + Rewind,
     Token: Hash + Eq + Copy,
 {
@@ -253,7 +256,7 @@ where
     }
 
     /// Returns commands to install built-in plans.
-    pub fn builtins() -> Vec<Request> {
+    pub fn builtins() -> Vec<Request<A>> {
         vec![
             // Request::CreateAttribute(CreateAttribute {
             //     name: "df.pattern/e".to_string(),
@@ -272,7 +275,7 @@ where
 
     /// Drops all shutdown handles associated with the specified
     /// query, resulting in its dataflow getting cleaned up.
-    fn shutdown_query(&mut self, name: &str) {
+    fn shutdown_query(&mut self, name: &A) {
         info!("Shutting down {}", name);
         self.shutdown_handles.remove(name);
     }
@@ -280,7 +283,7 @@ where
     /// Handles a Transact request.
     pub fn transact(
         &mut self,
-        tx_data: Vec<Datom<Aid>>,
+        tx_data: Vec<Datom<A>>,
         owner: usize,
         worker_index: usize,
     ) -> Result<(), Error> {
@@ -295,7 +298,7 @@ where
     /// Handles an Interest request.
     pub fn interest<S: Scope<Timestamp = T>>(
         &mut self,
-        name: Aid,
+        name: A,
         scope: &mut S,
     ) -> Result<Collection<S, Vec<Value>, isize>, Error> {
         let (mut rel_map, shutdown_handle) = if self.config.enable_optimizer {
@@ -310,8 +313,7 @@ where
                 name
             ))),
             Some(relation) => {
-                self.shutdown_handles
-                    .insert(name.to_string(), shutdown_handle);
+                self.shutdown_handles.insert(name, shutdown_handle);
 
                 Ok(relation)
             }
@@ -319,7 +321,7 @@ where
     }
 
     /// Handles a Register request.
-    pub fn register(&mut self, req: Register) -> Result<(), Error> {
+    pub fn register(&mut self, req: Register<A>) -> Result<(), Error> {
         let Register { rules, .. } = req;
 
         for rule in rules.into_iter() {
@@ -328,7 +330,7 @@ where
                 // panic!("Attempted to re-register a named relation");
                 continue;
             } else {
-                self.internal.rules.insert(rule.name.to_string(), rule);
+                self.internal.rules.insert(rule.name.clone(), rule);
             }
         }
 
@@ -336,13 +338,14 @@ where
     }
 
     /// Handles a CreateAttribute request.
-    pub fn create_attribute<S>(
+    pub fn create_attribute<X, S>(
         &mut self,
         scope: &mut S,
-        name: Aid,
+        name: X,
         config: AttributeConfig,
     ) -> Result<(), Error>
     where
+        X: Into<A>,
         S: Scope<Timestamp = T>,
         S::Timestamp: std::convert::Into<crate::timestamp::Time>,
     {
@@ -357,7 +360,7 @@ where
             InputSemantics::Distinct => pairs.as_collection().distinct(),
         };
 
-        let mut scoped_domain = ((handle, cap), tuples).as_singleton_domain(name.clone());
+        let mut scoped_domain = ((handle, cap), tuples).as_singleton_domain(name.into());
 
         if let Some(slack) = config.trace_slack {
             scoped_domain = scoped_domain.with_slack(slack.into());
@@ -374,8 +377,6 @@ where
         }
 
         self.internal += scoped_domain.into();
-
-        info!("Created attribute {}", name);
 
         Ok(())
     }
@@ -395,7 +396,7 @@ where
     /// Handles a RegisterSource request.
     pub fn register_source<S>(
         &mut self,
-        source: Box<dyn Sourceable<S>>,
+        source: Box<dyn Sourceable<A, S>>,
         scope: &mut S,
     ) -> Result<(), Error>
     where
@@ -471,7 +472,7 @@ where
 
     /// Handles an Uninterest request, possibly cleaning up dataflows
     /// that are no longer interesting to any client.
-    pub fn uninterest(&mut self, client: Token, name: &Aid) -> Result<(), Error> {
+    pub fn uninterest(&mut self, client: Token, name: &A) -> Result<(), Error> {
         // All workers keep track of every client's interests, s.t. they
         // know when to clean up unused dataflows.
         if let Some(entry) = self.interests.get_mut(name) {
@@ -488,7 +489,7 @@ where
 
     /// Cleans up all bookkeeping state for the specified client.
     pub fn disconnect_client(&mut self, client: Token) -> Result<(), Error> {
-        let names: Vec<String> = self.interests.keys().cloned().collect();
+        let names: Vec<A> = self.interests.keys().cloned().collect();
 
         for query_name in names.iter() {
             self.uninterest(client, query_name)?
@@ -510,7 +511,7 @@ where
     pub fn test_single<S: Scope<Timestamp = T>>(
         &mut self,
         scope: &mut S,
-        rule: Rule<Aid>,
+        rule: Rule<A>,
     ) -> Collection<S, Vec<Value>, isize> {
         let interest_name = rule.name.clone();
         let publish_name = rule.name.clone();
@@ -528,12 +529,13 @@ where
     }
 }
 
-impl<Token> Server<Duration, Token>
+impl<A, Token> Server<A, Duration, Token>
 where
+    A: AsAid + ExchangeData + From<&'static str>,
     Token: Hash + Eq + Copy,
 {
     /// Registers loggers for use in the various logging sources.
-    pub fn enable_logging<A: Allocate>(&self, worker: &mut Worker<A>) -> Result<(), Error> {
+    pub fn enable_logging<Al: Allocate>(&self, worker: &mut Worker<Al>) -> Result<(), Error> {
         let mut timely_logger = BatchLogger::new(self.timely_events.clone().unwrap());
         worker
             .log_register()
@@ -552,7 +554,7 @@ where
     }
 
     /// Unregisters loggers.
-    pub fn shutdown_logging<A: Allocate>(&self, worker: &mut Worker<A>) -> Result<(), Error> {
+    pub fn shutdown_logging<Al: Allocate>(&self, worker: &mut Worker<Al>) -> Result<(), Error> {
         worker
             .log_register()
             .insert::<TimelyEvent, _>("timely", move |_time, _data| {});

@@ -3,18 +3,18 @@ use std::sync::mpsc::channel;
 use declarative_dataflow::plan::{Join, Project};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Datom, Plan, Rule, Value};
 use Value::{Eid, String};
 
 #[test]
 fn match_ea_after_input() {
     timely::execute_directly(move |worker| {
-        let mut server = Server::<u64, u64>::new(Default::default());
+        let mut server = Server::<Aid, u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [:find ?v :where [1 :name ?n]]
-        let plan = Plan::MatchEA(1, ":name".to_string(), 1);
+        let plan = Plan::match_ea(1, ":name", 1);
 
         worker.dataflow::<u64, _, _>(|scope| {
             let config = AttributeConfig {
@@ -24,9 +24,7 @@ fn match_ea_after_input() {
                 ..Default::default()
             };
 
-            server
-                .create_attribute(scope, ":name".to_string(), config)
-                .unwrap();
+            server.create_attribute(scope, ":name", config).unwrap();
         });
 
         let tx_data = vec![
@@ -43,13 +41,7 @@ fn match_ea_after_input() {
 
         worker.dataflow::<u64, _, _>(|scope| {
             server
-                .test_single(
-                    scope,
-                    Rule {
-                        name: "match_ea".to_string(),
-                        plan,
-                    },
-                )
+                .test_single(scope, Rule::named("match_ea", plan))
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -73,14 +65,14 @@ fn match_ea_after_input() {
 #[test]
 fn join_after_input() {
     timely::execute_directly(move |worker| {
-        let mut server = Server::<u64, u64>::new(Default::default());
+        let mut server = Server::<Aid, u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         worker.dataflow::<u64, _, _>(|scope| {
             server
                 .create_attribute(
                     scope,
-                    ":transfer/from".to_string(),
+                    ":transfer/from",
                     AttributeConfig {
                         index_direction: IndexDirection::Both,
                         query_support: QuerySupport::Basic,
@@ -92,7 +84,7 @@ fn join_after_input() {
             server
                 .create_attribute(
                     scope,
-                    ":user/id".to_string(),
+                    ":user/id",
                     AttributeConfig {
                         index_direction: IndexDirection::Both,
                         query_support: QuerySupport::Basic,
@@ -145,19 +137,13 @@ fn join_after_input() {
                 variables: vec![transfer, sender],
                 plan: Box::new(Plan::Join(Join {
                     variables: vec![uuid],
-                    left_plan: Box::new(Plan::MatchA(transfer, ":transfer/from".to_string(), uuid)),
-                    right_plan: Box::new(Plan::MatchA(sender, ":user/id".to_string(), uuid)),
+                    left_plan: Box::new(Plan::match_a(transfer, ":transfer/from", uuid)),
+                    right_plan: Box::new(Plan::match_a(sender, ":user/id", uuid)),
                 })),
             });
 
             server
-                .test_single(
-                    scope,
-                    Rule {
-                        name: "join".to_string(),
-                        plan,
-                    },
-                )
+                .test_single(scope, Rule::named("join", plan))
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

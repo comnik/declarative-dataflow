@@ -10,14 +10,13 @@ use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Hector, Implementable, Union};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
-use declarative_dataflow::{Aid, Value};
+use declarative_dataflow::{Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Datom, Plan, Rule};
 use Value::{Eid, Number, String};
 
 struct Case {
     description: &'static str,
-    plan: Plan,
+    plan: Plan<Aid>,
     transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
@@ -37,7 +36,7 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
 fn run_cases(mut cases: Vec<Case>) {
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -60,19 +59,11 @@ fn run_cases(mut cases: Vec<Case>) {
                         ..Default::default()
                     };
 
-                    server
-                        .create_attribute(scope, dep.to_string(), config)
-                        .unwrap();
+                    server.create_attribute(scope, dep.clone(), config).unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "query".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("query", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {

@@ -15,7 +15,7 @@ use Value::{Bool, Eid, Number, String};
 
 struct Case {
     description: &'static str,
-    plan: Plan,
+    plan: Plan<Aid>,
     transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
@@ -23,7 +23,7 @@ struct Case {
 fn run_cases(mut cases: Vec<Case>) {
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -51,19 +51,11 @@ fn run_cases(mut cases: Vec<Case>) {
                         ..Default::default()
                     };
 
-                    server
-                        .create_attribute(scope, dep.to_string(), config)
-                        .unwrap();
+                    server.create_attribute(scope, dep.clone(), config).unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "query".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("query", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {
@@ -119,7 +111,7 @@ fn pull_level() {
         plan: Plan::PullLevel(PullLevel {
             variables: vec![],
             pull_variable: 0,
-            plan: Box::new(Plan::MatchAV(0, "admin?".to_string(), Bool(false))),
+            plan: Box::new(Plan::match_av(0, "admin?", Bool(false))),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
             path_attributes: vec![],
             cardinality_many: false,

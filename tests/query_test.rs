@@ -16,7 +16,7 @@ use Value::{Eid, Number, String};
 
 struct Case {
     description: &'static str,
-    plan: Plan,
+    plan: Plan<Aid>,
     transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
@@ -36,7 +36,7 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
 fn run_cases(mut cases: Vec<Case>) {
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -60,19 +60,11 @@ fn run_cases(mut cases: Vec<Case>) {
                         ..Default::default()
                     };
 
-                    server
-                        .create_attribute(scope, dep.to_string(), config)
-                        .unwrap();
+                    server.create_attribute(scope, dep, config).unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "query".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("query", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {
@@ -132,7 +124,7 @@ fn base_patterns() {
     run_cases(vec![
         Case {
             description: "[:find ?e ?n :where [?e :name ?n]]",
-            plan: Plan::MatchA(0, ":name".to_string(), 1),
+            plan: Plan::match_a(0, ":name", 1),
             transactions: vec![data.clone()],
             expectations: vec![vec![
                 (vec![Eid(100), String("Dipper".to_string())], 0, 1),
@@ -142,7 +134,7 @@ fn base_patterns() {
         },
         Case {
             description: "[:find ?n :where [100 :name ?n]]",
-            plan: Plan::MatchEA(100, ":name".to_string(), 0),
+            plan: Plan::match_ea(100, ":name", 0),
             transactions: vec![data.clone()],
             expectations: vec![vec![
                 (vec![String("Alias".to_string())], 0, 1),
@@ -151,7 +143,7 @@ fn base_patterns() {
         },
         Case {
             description: "[:find ?e :where [?e :name Mabel]]",
-            plan: Plan::MatchAV(0, ":name".to_string(), String("Mabel".to_string())),
+            plan: Plan::match_av(0, ":name", String("Mabel".to_string())),
             transactions: vec![data.clone()],
             expectations: vec![vec![(vec![Eid(200)], 0, 1)]],
         },
@@ -171,7 +163,7 @@ fn base_projections() {
             description: "[:find ?e :where [?e :name ?n]]",
             plan: Plan::Project(Project {
                 variables: vec![0],
-                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+                plan: Box::new(Plan::match_a(0, ":name", 1)),
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![(vec![Eid(100)], 0, 2), (vec![Eid(200)], 0, 1)]],
@@ -180,7 +172,7 @@ fn base_projections() {
             description: "[:find ?n :where [?e :name ?n]]",
             plan: Plan::Project(Project {
                 variables: vec![1],
-                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+                plan: Box::new(Plan::match_a(0, ":name", 1)),
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -193,7 +185,7 @@ fn base_projections() {
             description: "[:find ?e ?n :where [?e :name ?n]]",
             plan: Plan::Project(Project {
                 variables: vec![0, 1],
-                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+                plan: Box::new(Plan::match_a(0, ":name", 1)),
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -206,7 +198,7 @@ fn base_projections() {
             description: "[:find ?n ?e :where [?e :name ?n]]",
             plan: Plan::Project(Project {
                 variables: vec![1, 0],
-                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+                plan: Box::new(Plan::match_a(0, ":name", 1)),
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -277,8 +269,8 @@ fn joins() {
                 variables: vec![e, n, a],
                 plan: Box::new(Plan::Join(Join {
                     variables: vec![e],
-                    left_plan: Box::new(Plan::MatchA(e, ":name".to_string(), n)),
-                    right_plan: Box::new(Plan::MatchA(e, ":age".to_string(), a)),
+                    left_plan: Box::new(Plan::match_a(e, ":name", n)),
+                    right_plan: Box::new(Plan::match_a(e, ":age", a)),
                 })),
             }),
             transactions: vec![vec![
@@ -437,11 +429,11 @@ fn wco_join_many() {
 //             variables: vec![e, n, a],
 //             plan: Box::new(Plan::Join(Join {
 //                 variables: vec![e],
-//                 left_plan: Box::new(Plan::MatchA(e, ":name".to_string(), n)),
+//                 left_plan: Box::new(Plan::match_a(e, ":name", n)),
 //                 right_plan: Box::new(Plan::Filter(Filter {
 //                     variables: vec![a],
 //                     predicate: Predicate::LTE,
-//                     plan: Box::new(Plan::MatchA(e, ":age".to_string(), a)),
+//                     plan: Box::new(Plan::match_a(e, ":age", a)),
 //                     constants: constants,
 //                 })),
 //             })),

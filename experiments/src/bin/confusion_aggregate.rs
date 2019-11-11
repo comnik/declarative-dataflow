@@ -11,13 +11,13 @@ use differential_dataflow::operators::Count;
 use declarative_dataflow::plan::{Aggregate, AggregationFn, Join};
 use declarative_dataflow::server::{Register, RegisterSource, Server};
 use declarative_dataflow::sources::{JsonFile, Source};
-use declarative_dataflow::{Plan, Rule};
+use declarative_dataflow::{Aid, Plan, Rule};
 
 fn main() {
     let filename = std::env::args().nth(1).unwrap();
 
     timely::execute(Configuration::Process(1), move |worker| {
-        let mut server = Server::<u64, u64>::new(Default::default());
+        let mut server = Server::<Aid, u64, u64>::new(Default::default());
 
         let (e, country, target, count) = (1, 2, 3, 4);
         let rules = vec![Rule {

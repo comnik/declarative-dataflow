@@ -16,25 +16,25 @@ use timely::dataflow::{Scope, Stream};
 use crate::scheduling::Scheduler;
 use crate::sources::Sourceable;
 use crate::{AttributeConfig, InputSemantics};
-use crate::{Aid, Eid, Value};
+use crate::{AsAid, Eid, Value};
 use Value::{Bool, Number};
 
 /// A local filesystem data source containing JSON objects.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct JsonFile {
+pub struct JsonFile<A: AsAid> {
     /// Path to a file on each workers local filesystem.
     pub path: String,
     /// Attributes to ingest.
-    pub attributes: Vec<Aid>,
+    pub attributes: Vec<A>,
 }
 
-impl Sourceable<Duration> for JsonFile {
+impl<A: AsAid> Sourceable<A, Duration> for JsonFile<A> {
     fn source<S: Scope<Timestamp = Duration>>(
         &self,
         scope: &mut S,
         t0: Instant,
         _scheduler: Weak<RefCell<Scheduler<Duration>>>,
-    ) -> Vec<(Aid, AttributeConfig, Stream<S, ((Value, Value), Duration, isize)>)> {
+    ) -> Vec<(A, AttributeConfig, Stream<S, ((Value, Value), Duration, isize)>)> {
         let filename = self.path.clone();
 
         // The following is mostly the innards of

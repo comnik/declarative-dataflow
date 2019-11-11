@@ -190,6 +190,21 @@ pub enum Plan<A: AsAid> {
 }
 
 impl<A: AsAid> Plan<A> {
+    /// Returns a plan expressing a base data pattern.
+    pub fn match_a<X: Into<A>>(e: Var, a: X, v: Var) -> Self {
+        Plan::MatchA(e, a.into(), v)
+    }
+
+    /// Returns a plan expressing a base data pattern.
+    pub fn match_ea<AX: Into<A>>(e: Eid, a: AX, v: Var) -> Self {
+        Plan::MatchEA(e, a.into(), v)
+    }
+
+    /// Returns a plan expressing a base data pattern.
+    pub fn match_av<AX: Into<A>, VX: Into<Value>>(e: Var, a: AX, v: VX) -> Self {
+        Plan::MatchAV(e, a.into(), v.into())
+    }
+
     /// Returns the variables bound by this plan.
     pub fn variables(&self) -> Vec<Var> {
         match *self {

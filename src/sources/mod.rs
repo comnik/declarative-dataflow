@@ -14,7 +14,7 @@ use differential_dataflow::logging::DifferentialEvent;
 
 use crate::scheduling::Scheduler;
 use crate::AttributeConfig;
-use crate::{Aid, Value};
+use crate::{AsAid, Value};
 
 #[cfg(feature = "csv-source")]
 pub mod csv_file;
@@ -44,8 +44,9 @@ pub struct SourcingContext<T: Timestamp> {
 }
 
 /// An external data source that can provide Datoms.
-pub trait Sourceable<S>
+pub trait Sourceable<A, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Timestamp + Lattice,
 {
@@ -56,7 +57,7 @@ where
         scope: &mut S,
         context: SourcingContext<S::Timestamp>,
     ) -> Vec<(
-        Aid,
+        A,
         AttributeConfig,
         Stream<S, ((Value, Value), S::Timestamp, isize)>,
     )>;
@@ -64,28 +65,32 @@ where
 
 /// Supported external data sources.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum Source {
+pub enum Source<A: AsAid + From<&'static str>> {
     /// Timely logging streams
-    TimelyLogging(timely_logging::TimelyLogging),
+    TimelyLogging(timely_logging::TimelyLogging<A>),
     /// Differential logging streams
-    DifferentialLogging(differential_logging::DifferentialLogging),
+    DifferentialLogging(differential_logging::DifferentialLogging<A>),
     // /// Declarative logging streams
     // DeclarativeLogging(declarative_logging::DeclarativeLogging),
     /// CSV files
     #[cfg(feature = "csv-source")]
-    CsvFile(CsvFile),
+    CsvFile(CsvFile<A>),
     // /// Files containing json objects
-    // JsonFile(JsonFile),
+    // JsonFile(JsonFile<A>),
 }
 
 #[cfg(feature = "real-time")]
-impl<S: Scope<Timestamp = Duration>> Sourceable<S> for Source {
+impl<A, S> Sourceable<A, S> for Source<A>
+where
+    A: AsAid + From<&'static str>,
+    S: Scope<Timestamp = Duration>,
+{
     fn source(
         &self,
         scope: &mut S,
         context: SourcingContext<S::Timestamp>,
     ) -> Vec<(
-        Aid,
+        A,
         AttributeConfig,
         Stream<S, ((Value, Value), Duration, isize)>,
     )> {
@@ -101,8 +106,10 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for Source {
 }
 
 #[cfg(not(feature = "real-time"))]
-impl<S: Scope> Sourceable<S> for Source
+impl<A, S> Sourceable<A, S> for Source<A>
 where
+    A: AsAid + From<&'static str>,
+    S: Scope,
     S::Timestamp: Timestamp + Lattice,
 {
     fn source(
@@ -110,7 +117,7 @@ where
         _scope: &mut S,
         _context: SourcingContext<S::Timestamp>,
     ) -> Vec<(
-        Aid,
+        A,
         AttributeConfig,
         Stream<S, ((Value, Value), S::Timestamp, isize)>,
     )> {

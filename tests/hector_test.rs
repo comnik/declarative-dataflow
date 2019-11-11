@@ -18,7 +18,7 @@ use Value::{Bool, Eid, Number, String};
 
 struct Case {
     description: &'static str,
-    plan: Hector,
+    plan: Hector<Aid>,
     transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
@@ -30,19 +30,19 @@ fn binding_requirements() {
     let (a, b, c, d) = (0, 1, 2, 3);
 
     assert_eq!(
-        Binding::attribute(a, ":edge", b).required_to_extend(&vec![a, c], d),
+        Binding::<Aid>::attribute(a, ":edge", b).required_to_extend(&vec![a, c], d),
         None
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).required_to_extend(&vec![a, c], b),
+        Binding::<Aid>::attribute(a, ":edge", b).required_to_extend(&vec![a, c], b),
         Some(None)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).required_to_extend(&vec![c, d], a),
+        Binding::<Aid>::attribute(a, ":edge", b).required_to_extend(&vec![c, d], a),
         Some(Some(b))
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).required_to_extend(&vec![c, d], b),
+        Binding::<Aid>::attribute(a, ":edge", b).required_to_extend(&vec![c, d], b),
         Some(Some(a))
     );
 }
@@ -54,31 +54,31 @@ fn binding_readiness() {
     let (a, b, c, d) = (0, 1, 2, 3);
 
     assert_eq!(
-        Binding::constant(a, Eid(100)).ready_to_extend(&vec![a, b]),
+        Binding::<Aid>::constant(a, Eid(100)).ready_to_extend(&vec![a, b]),
         None
     );
     assert_eq!(
-        Binding::constant(a, Eid(100)).ready_to_extend(&vec![c, d]),
+        Binding::<Aid>::constant(a, Eid(100)).ready_to_extend(&vec![c, d]),
         Some(a)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, d]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![c, d]),
         None
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![a, c]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![a, c]),
         Some(b)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, a]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![c, a]),
         Some(b)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, b]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![c, b]),
         Some(a)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![b, c]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![b, c]),
         Some(a)
     );
 }
@@ -88,7 +88,7 @@ fn binding_readiness() {
 #[test]
 fn conflicts() {
     let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
-    let bindings = vec![
+    let bindings: Vec<Binding<Aid>> = vec![
         Binding::attribute(e2, ":age", a),
         Binding::attribute(e, ":age", a),
         Binding::attribute(e, ":name", c),
@@ -97,7 +97,7 @@ fn conflicts() {
         Binding::not(Binding::constant(c, String("Petr".to_string()))),
     ];
 
-    assert_eq!(source_conflicts(0, &bindings), Vec::<&Binding>::new());
+    assert_eq!(source_conflicts(0, &bindings), Vec::<&Binding<Aid>>::new());
     assert_eq!(
         source_conflicts(2, &bindings),
         vec![
@@ -112,7 +112,7 @@ fn conflicts() {
 #[test]
 fn ordering() {
     let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
-    let bindings = vec![
+    let bindings: Vec<Binding<Aid>> = vec![
         Binding::attribute(e2, ":age", a),
         Binding::attribute(e, ":age", a),
         Binding::attribute(e, ":name", c),
@@ -365,7 +365,7 @@ fn run_hector_cases() {
 
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -382,19 +382,11 @@ fn run_hector_cases() {
                         ..Default::default()
                     };
 
-                    server
-                        .create_attribute(scope, dep.to_string(), config)
-                        .unwrap();
+                    server.create_attribute(scope, dep.clone(), config).unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "hector".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("hector", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {

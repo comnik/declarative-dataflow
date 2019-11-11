@@ -63,10 +63,10 @@ pub enum Binding<A: AsAid> {
 
 impl<A: AsAid> Binding<A> {
     /// Creates an AttributeBinding.
-    pub fn attribute(e: Var, name: A, v: Var) -> Self {
+    pub fn attribute<X: Into<A>>(e: Var, name: X, v: Var) -> Self {
         Binding::Attribute(AttributeBinding {
             variables: (e, v),
-            source_attribute: name,
+            source_attribute: name.into(),
         })
     }
 

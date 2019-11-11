@@ -78,6 +78,16 @@ impl AsAid for String {
     }
 }
 
+impl AsAid for &'static str {
+    fn with_namespace(&self, namespace: Self) -> Self {
+        unimplemented!()
+    }
+
+    fn into_value(self) -> Value {
+        Value::Aid(self.to_string())
+    }
+}
+
 /// Possible data values.
 ///
 /// This enum captures the currently supported data types, and is the
@@ -215,27 +225,27 @@ impl Error {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub struct Datom<A>(pub Value, pub A, pub Value, pub Option<Time>, pub isize);
 
-impl Datom<String> {
+impl<A: AsAid + ExchangeData> Datom<A> {
     /// Creates a datom representing the addition of a single fact.
-    pub fn add(e: Eid, a: &str, v: Value) -> Self {
-        Self(Value::Eid(e), a.to_owned(), v, None, 1)
+    pub fn add<X: Into<A>>(e: Eid, a: X, v: Value) -> Self {
+        Self(Value::Eid(e), a.into(), v, None, 1)
     }
 
     /// Creates a datom representing the addition of a single fact at
     /// a specific point in time.
-    pub fn add_at(e: Eid, a: &str, v: Value, t: Time) -> Self {
-        Self(Value::Eid(e), a.to_owned(), v, Some(t), 1)
+    pub fn add_at<X: Into<A>>(e: Eid, a: X, v: Value, t: Time) -> Self {
+        Self(Value::Eid(e), a.into(), v, Some(t), 1)
     }
 
     /// Creates a datom representing the retraction of a single fact.
-    pub fn retract(e: Eid, a: &str, v: Value) -> Self {
-        Self(Value::Eid(e), a.to_owned(), v, None, -1)
+    pub fn retract<X: Into<A>>(e: Eid, a: X, v: Value) -> Self {
+        Self(Value::Eid(e), a.into(), v, None, -1)
     }
 
     /// Creates a datom representing the retraction of a single fact
     /// at a specific point in time.
-    pub fn retract_at(e: Eid, a: &str, v: Value, t: Time) -> Self {
-        Self(Value::Eid(e), a.to_owned(), v, Some(t), -1)
+    pub fn retract_at<X: Into<A>>(e: Eid, a: X, v: Value, t: Time) -> Self {
+        Self(Value::Eid(e), a.into(), v, Some(t), -1)
     }
 }
 
@@ -459,6 +469,16 @@ pub struct Rule<A: AsAid> {
     pub name: A,
     /// The plan describing contents of the relation.
     pub plan: Plan<A>,
+}
+
+impl<A: AsAid> Rule<A> {
+    /// Returns a named rule from a given plan.
+    pub fn named<X: Into<A>>(name: X, plan: Plan<A>) -> Self {
+        Rule {
+            name: name.into(),
+            plan: plan,
+        }
+    }
 }
 
 /// A relation between a set of variables.

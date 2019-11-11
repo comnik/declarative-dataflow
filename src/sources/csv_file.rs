@@ -9,12 +9,12 @@ use timely::dataflow::{Scope, Stream};
 // use chrono::DateTime;
 
 use crate::sources::{Sourceable, SourcingContext};
-use crate::{Aid, Eid, Value};
+use crate::{AsAid, Eid, Value};
 use crate::{AttributeConfig, InputSemantics};
 
 /// A local filesystem data source.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct CsvFile {
+pub struct CsvFile<A: AsAid> {
     /// Path to a file on each workers local filesystem.
     pub path: String,
     /// Does the file include a header?
@@ -31,20 +31,20 @@ pub struct CsvFile {
     pub timestamp_offset: Option<usize>,
     /// Specifies the column offsets and their value types, that
     /// should be introduced.
-    pub schema: Vec<(Aid, (usize, Value))>,
+    pub schema: Vec<(A, (usize, Value))>,
     /// Batch size.
     pub fuel: Option<usize>,
     /// Scheduling interval.
     pub interval: Option<Duration>,
 }
 
-impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
+impl<A: AsAid, S: Scope<Timestamp = Duration>> Sourceable<A, S> for CsvFile<A> {
     fn source(
         &self,
         scope: &mut S,
         context: SourcingContext<S::Timestamp>,
     ) -> Vec<(
-        Aid,
+        A,
         AttributeConfig,
         Stream<S, ((Value, Value), Duration, isize)>,
     )> {
@@ -205,7 +205,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for CsvFile {
         for (idx, stream) in streams.drain(..).enumerate() {
             let aid = self.schema[idx].0.clone();
             out.push((
-                aid.to_string(),
+                aid,
                 AttributeConfig::real_time(InputSemantics::Distinct),
                 stream,
             ));

@@ -9,15 +9,14 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Aggregate, AggregationFn, Implementable, Join, Project};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Aid, Value};
-use declarative_dataflow::{AttributeConfig, Datom, InputSemantics, Plan, Rule};
+use declarative_dataflow::{Aid, AttributeConfig, Datom, InputSemantics, Plan, Rule, Value};
 use Value::{Eid, Number, Rational32, String};
 
 use num_rational::Ratio;
 
 struct Case {
     description: &'static str,
-    plan: Plan,
+    plan: Plan<Aid>,
     transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
@@ -37,7 +36,7 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
 fn run_cases(mut cases: Vec<Case>) {
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -48,22 +47,12 @@ fn run_cases(mut cases: Vec<Case>) {
             worker.dataflow::<u64, _, _>(|scope| {
                 for dep in deps.iter() {
                     server
-                        .create_attribute(
-                            scope,
-                            dep.to_string(),
-                            AttributeConfig::tx_time(InputSemantics::Raw),
-                        )
+                        .create_attribute(scope, dep, AttributeConfig::tx_time(InputSemantics::Raw))
                         .unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "hector".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("hector", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {
@@ -131,7 +120,7 @@ fn count() {
                 variables: vec![amount],
                 plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                    plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 })),
                 aggregation_fns: vec![AggregationFn::COUNT],
                 key_variables: vec![],
@@ -149,7 +138,7 @@ fn count() {
             description: "[:find ?e (count ?amount) :where [?e :amount ?amount]]",
             plan: Plan::Aggregate(Aggregate {
                 variables: vec![e, amount],
-                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 aggregation_fns: vec![AggregationFn::COUNT],
                 key_variables: vec![e],
                 aggregation_variables: vec![amount],
@@ -190,7 +179,7 @@ fn max() {
                 variables: vec![amount],
                 plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                    plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 })),
                 aggregation_fns: vec![AggregationFn::MAX],
                 key_variables: vec![],
@@ -204,7 +193,7 @@ fn max() {
             description: "[:find ?e (max ?amount) :where [?e :amount ?amount]]",
             plan: Plan::Aggregate(Aggregate {
                 variables: vec![e, amount],
-                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 aggregation_fns: vec![AggregationFn::MAX],
                 key_variables: vec![e],
                 aggregation_variables: vec![amount],
@@ -238,7 +227,7 @@ fn min() {
                 variables: vec![amount],
                 plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                    plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 })),
                 aggregation_fns: vec![AggregationFn::MIN],
                 key_variables: vec![],
@@ -252,7 +241,7 @@ fn min() {
             description: "[:find ?e (min ?amount) :where [?e :amount ?amount]]",
             plan: Plan::Aggregate(Aggregate {
                 variables: vec![e, amount],
-                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 aggregation_fns: vec![AggregationFn::MIN],
                 key_variables: vec![e],
                 aggregation_variables: vec![amount],
@@ -286,7 +275,7 @@ fn sum() {
                 variables: vec![amount],
                 plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                    plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 })),
                 aggregation_fns: vec![AggregationFn::SUM],
                 key_variables: vec![],
@@ -304,7 +293,7 @@ fn sum() {
             description: "[:find ?e (sum ?amount) :where [?e :amount ?amount]]",
             plan: Plan::Aggregate(Aggregate {
                 variables: vec![e, amount],
-                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 aggregation_fns: vec![AggregationFn::SUM],
                 key_variables: vec![e],
                 aggregation_variables: vec![amount],
@@ -345,7 +334,7 @@ fn avg() {
                 variables: vec![amount],
                 plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                    plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 })),
                 aggregation_fns: vec![AggregationFn::AVG],
                 key_variables: vec![],
@@ -363,7 +352,7 @@ fn avg() {
             description: "[:find ?e (avg ?amount) :where [?e :amount ?amount]]",
             plan: Plan::Aggregate(Aggregate {
                 variables: vec![e, amount],
-                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 aggregation_fns: vec![AggregationFn::AVG],
                 key_variables: vec![e],
                 aggregation_variables: vec![amount],
@@ -404,7 +393,7 @@ fn variance() {
                 variables: vec![amount],
                 plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                    plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 })),
                 aggregation_fns: vec![AggregationFn::VARIANCE],
                 key_variables: vec![],
@@ -422,7 +411,7 @@ fn variance() {
             description: "[:find ?e (variance ?amount) :where [?e :amount ?amount]]",
             plan: Plan::Aggregate(Aggregate {
                 variables: vec![e, amount],
-                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 aggregation_fns: vec![AggregationFn::VARIANCE],
                 key_variables: vec![e],
                 aggregation_variables: vec![amount],
@@ -456,7 +445,7 @@ fn median() {
                 variables: vec![amount],
                 plan: Box::new(Plan::Project(Project {
                     variables: vec![amount],
-                    plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                    plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 })),
                 aggregation_fns: vec![AggregationFn::MEDIAN],
                 key_variables: vec![],
@@ -470,7 +459,7 @@ fn median() {
             description: "[:find ?e (median ?amount) :where [?e :amount ?amount]]",
             plan: Plan::Aggregate(Aggregate {
                 variables: vec![e, amount],
-                plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
+                plan: Box::new(Plan::match_a(e, ":amount", amount)),
                 aggregation_fns: vec![AggregationFn::MEDIAN],
                 key_variables: vec![e],
                 aggregation_variables: vec![amount],
@@ -500,8 +489,8 @@ fn multiple_aggregations() {
                         variables: vec![amount, debt],
                         plan: Box::new(Plan::Join(Join {
                             variables: vec![e],
-                            left_plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                            right_plan: Box::new(Plan::MatchA(e, ":debt".to_string(), debt)),
+                            left_plan: Box::new(Plan::match_a(e, ":amount", amount)),
+                            right_plan: Box::new(Plan::match_a(e, ":debt", debt)),
                         })),
                     })),
                     aggregation_fns: vec![
@@ -557,8 +546,8 @@ fn multiple_aggregations() {
                         variables: vec![e, amount, debt],
                         plan: Box::new(Plan::Join(Join {
                             variables: vec![e],
-                            left_plan: Box::new(Plan::MatchA(e, ":amount".to_string(), amount)),
-                            right_plan: Box::new(Plan::MatchA(e, ":debt".to_string(), debt)),
+                            left_plan: Box::new(Plan::match_a(e, ":amount", amount)),
+                            right_plan: Box::new(Plan::match_a(e, ":debt", debt)),
                         })),
                     })),
                     aggregation_fns: vec![
@@ -621,8 +610,8 @@ fn multiple_aggregations() {
                         variables: vec![heads, monster],
                         plan: Box::new(Plan::Join(Join {
                             variables: vec![e],
-                            left_plan: Box::new(Plan::MatchA(e, ":monster".to_string(), monster)),
-                            right_plan: Box::new(Plan::MatchA(e, ":heads".to_string(), heads)),
+                            left_plan: Box::new(Plan::match_a(e, ":monster", monster)),
+                            right_plan: Box::new(Plan::match_a(e, ":heads", heads)),
                         })),
                     })),
                     aggregation_fns: vec![AggregationFn::SUM],
