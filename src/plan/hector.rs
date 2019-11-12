@@ -350,7 +350,7 @@ impl<A: AsAid> Hector<A> {
     fn implement_single_binding<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         _local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, A, S>, ShutdownHandle)
     where
@@ -497,7 +497,7 @@ where
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where

@@ -165,7 +165,7 @@ impl<A: AsAid> PullAll<A> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         _local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId<A>, Stream<S, (Vec<Value>, S::Timestamp, isize)>>,

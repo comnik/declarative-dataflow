@@ -34,7 +34,7 @@ pub struct Join<P1: Implementable, P2: Implementable> {
 
 fn attribute_attribute<'b, A, S>(
     nested: &mut Iterative<'b, S, u64>,
-    domain: &mut Domain<A, S::Timestamp>,
+    domain: &mut Domain<A, Value, S::Timestamp>,
     target: Var,
     left: AttributeBinding<A>,
     right: AttributeBinding<A>,
@@ -118,7 +118,7 @@ where
 
 fn collection_collection<'b, A, S>(
     nested: &mut Iterative<'b, S, u64>,
-    domain: &mut Domain<A, S::Timestamp>,
+    domain: &mut Domain<A, Value, S::Timestamp>,
     target_variables: &[Var],
     left: CollectionRelation<'b, S>,
     right: CollectionRelation<'b, S>,
@@ -181,7 +181,7 @@ where
 
 fn collection_attribute<'b, A, S>(
     nested: &mut Iterative<'b, S, u64>,
-    domain: &mut Domain<A, S::Timestamp>,
+    domain: &mut Domain<A, Value, S::Timestamp>,
     target_variables: &[Var],
     left: CollectionRelation<'b, S>,
     right: AttributeBinding<A>,
@@ -279,7 +279,7 @@ impl<P1: Implementable, P2: Implementable<A = P1::A>> Implementable for Join<P1,
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Self::A, S::Timestamp>,
+        domain: &mut Domain<Self::A, Value, S::Timestamp>,
         local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where

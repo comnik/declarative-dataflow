@@ -13,9 +13,9 @@ use timely::progress::Timestamp;
 use differential_dataflow::lattice::Lattice;
 use differential_dataflow::operators::arrange::Arrange;
 use differential_dataflow::trace::TraceReader;
-use differential_dataflow::{AsCollection, Collection};
+use differential_dataflow::{AsCollection, Collection, ExchangeData};
 
-use crate::{AsAid, Datom, Error, Rewind, Rule, Value};
+use crate::{AsAid, AsV, Datom, Error, Rewind, Rule};
 use crate::{AttributeConfig, QuerySupport};
 use crate::{ShutdownHandle, TraceKeyHandle, TraceValHandle};
 
@@ -43,9 +43,10 @@ use unordered_session::UnorderedSession;
 /// attributes must be automatically advanced in lockstep with a
 /// high-watermark of all timeful domain inputs. This ensures that
 /// they will never block overall progress.
-pub struct Domain<A, T>
+pub struct Domain<A, V, T>
 where
     A: AsAid,
+    V: AsV,
     T: Timestamp + Lattice,
 {
     /// A namespace under which all attributes in this domain are
@@ -56,7 +57,7 @@ where
     /// Last trace advance.
     last_advance: Vec<T>,
     /// Input handles to attributes in this domain.
-    input_sessions: HashMap<A, UnorderedSession<T, (Value, Value), isize>>,
+    input_sessions: HashMap<A, UnorderedSession<T, (V, V), isize>>,
     /// The probe keeping track of source progress in this domain.
     domain_probe: ProbeHandle<T>,
     /// Maintaining the number of probed sources allows us to
@@ -66,17 +67,17 @@ where
     /// Configurations for attributes in this domain.
     pub attributes: HashMap<A, AttributeConfig>,
     /// Forward count traces.
-    pub forward_count: HashMap<A, TraceKeyHandle<Value, T, isize>>,
+    pub forward_count: HashMap<A, TraceKeyHandle<V, T, isize>>,
     /// Forward propose traces.
-    pub forward_propose: HashMap<A, TraceValHandle<Value, Value, T, isize>>,
+    pub forward_propose: HashMap<A, TraceValHandle<V, V, T, isize>>,
     /// Forward validate traces.
-    pub forward_validate: HashMap<A, TraceKeyHandle<(Value, Value), T, isize>>,
+    pub forward_validate: HashMap<A, TraceKeyHandle<(V, V), T, isize>>,
     /// Reverse count traces.
-    pub reverse_count: HashMap<A, TraceKeyHandle<Value, T, isize>>,
+    pub reverse_count: HashMap<A, TraceKeyHandle<V, T, isize>>,
     /// Reverse propose traces.
-    pub reverse_propose: HashMap<A, TraceValHandle<Value, Value, T, isize>>,
+    pub reverse_propose: HashMap<A, TraceValHandle<V, V, T, isize>>,
     /// Reverse validate traces.
-    pub reverse_validate: HashMap<A, TraceKeyHandle<(Value, Value), T, isize>>,
+    pub reverse_validate: HashMap<A, TraceKeyHandle<(V, V), T, isize>>,
     /// Representation of named rules.
     pub rules: HashMap<A, Rule<A>>,
     /// Mapping from query names to their shutdown handles.
@@ -84,9 +85,10 @@ where
 }
 
 // We're defining domain composition here.
-impl<A, T> AddAssign for Domain<A, T>
+impl<A, V, T> AddAssign for Domain<A, V, T>
 where
     A: AsAid,
+    V: AsV,
     T: Timestamp + Lattice,
 {
     fn add_assign(&mut self, other: Self) {
@@ -138,9 +140,10 @@ where
     }
 }
 
-impl<A, T> Add for Domain<A, T>
+impl<A, V, T> Add for Domain<A, V, T>
 where
     A: AsAid,
+    V: AsV,
     T: Timestamp + Lattice,
 {
     type Output = Self;
@@ -152,9 +155,10 @@ where
     }
 }
 
-impl<A, T> Domain<A, T>
+impl<A, V, T> Domain<A, V, T>
 where
     A: AsAid,
+    V: AsV,
     T: Timestamp + Lattice + Rewind,
 {
     /// Creates a new domain.
@@ -200,7 +204,7 @@ where
     }
 
     /// Transact data into one or more inputs.
-    pub fn transact(&mut self, tx_data: Vec<Datom<A>>) -> Result<(), Error> {
+    pub fn transact(&mut self, tx_data: Vec<Datom<A, V>>) -> Result<(), Error> {
         for Datom(e, a, v, t, diff) in tx_data {
             match self.input_sessions.get_mut(&a) {
                 None => {
@@ -383,62 +387,52 @@ where
     }
 
     /// Retrieves the forward count trace for the specified aid.
-    pub fn forward_count(&mut self, name: &A) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
+    pub fn forward_count(&mut self, name: &A) -> Option<&mut TraceKeyHandle<V, T, isize>> {
         self.forward_count.get_mut(name)
     }
 
     /// Retrieves the forward propose trace for the specified aid.
-    pub fn forward_propose(
-        &mut self,
-        name: &A,
-    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
+    pub fn forward_propose(&mut self, name: &A) -> Option<&mut TraceValHandle<V, V, T, isize>> {
         self.forward_propose.get_mut(name)
     }
 
     /// Retrieves the forward validate trace for the specified aid.
-    pub fn forward_validate(
-        &mut self,
-        name: &A,
-    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
+    pub fn forward_validate(&mut self, name: &A) -> Option<&mut TraceKeyHandle<(V, V), T, isize>> {
         self.forward_validate.get_mut(name)
     }
 
     /// Retrieves the reverse count trace for the specified aid.
-    pub fn reverse_count(&mut self, name: &A) -> Option<&mut TraceKeyHandle<Value, T, isize>> {
+    pub fn reverse_count(&mut self, name: &A) -> Option<&mut TraceKeyHandle<V, T, isize>> {
         self.reverse_count.get_mut(name)
     }
 
     /// Retrieves the reverse propose trace for the specified aid.
-    pub fn reverse_propose(
-        &mut self,
-        name: &A,
-    ) -> Option<&mut TraceValHandle<Value, Value, T, isize>> {
+    pub fn reverse_propose(&mut self, name: &A) -> Option<&mut TraceValHandle<V, V, T, isize>> {
         self.reverse_propose.get_mut(name)
     }
 
     /// Retrieves the reverse validate trace for the specified aid.
-    pub fn reverse_validate(
-        &mut self,
-        name: &A,
-    ) -> Option<&mut TraceKeyHandle<(Value, Value), T, isize>> {
+    pub fn reverse_validate(&mut self, name: &A) -> Option<&mut TraceKeyHandle<(V, V), T, isize>> {
         self.reverse_validate.get_mut(name)
     }
 }
 
 /// A domain that is still under construction in a specific scope.
-pub struct ScopedDomain<A, S>
+pub struct ScopedDomain<A, V, S>
 where
     A: AsAid,
+    V: AsV,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    raw: HashMap<A, Collection<S, (Value, Value), isize>>,
-    domain: Domain<A, S::Timestamp>,
+    raw: HashMap<A, Collection<S, (V, V), isize>>,
+    domain: Domain<A, V, S::Timestamp>,
 }
 
-impl<A, S> AddAssign for ScopedDomain<A, S>
+impl<A, V, S> AddAssign for ScopedDomain<A, V, S>
 where
     A: AsAid,
+    V: AsV,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
@@ -448,9 +442,10 @@ where
     }
 }
 
-impl<A, S> Add for ScopedDomain<A, S>
+impl<A, V, S> Add for ScopedDomain<A, V, S>
 where
     A: AsAid,
+    V: AsV,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
@@ -463,9 +458,10 @@ where
     }
 }
 
-impl<A, S> ScopedDomain<A, S>
+impl<A, V, S> ScopedDomain<A, V, S>
 where
     A: AsAid,
+    V: AsV + ExchangeData,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
@@ -535,9 +531,10 @@ where
     }
 }
 
-impl<A, S> ScopedDomain<A, S>
+impl<A, V, S> ScopedDomain<A, V, S>
 where
     A: AsAid,
+    V: AsV,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind + std::convert::Into<crate::timestamp::Time>,
 {
@@ -552,37 +549,40 @@ where
     }
 }
 
-impl<A, S> Into<Domain<A, S::Timestamp>> for ScopedDomain<A, S>
+impl<A, V, S> Into<Domain<A, V, S::Timestamp>> for ScopedDomain<A, V, S>
 where
     A: AsAid,
+    V: AsV,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn into(self) -> Domain<A, S::Timestamp> {
+    fn into(self) -> Domain<A, V, S::Timestamp> {
         self.domain
     }
 }
 
 /// Things that can be converted into a domain with a single
 /// attribute.
-pub trait AsSingletonDomain<A, S>
+pub trait AsSingletonDomain<A, V, S>
 where
     A: AsAid,
+    V: AsV,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
     /// Returns a domain containing only a single attribute of the
     /// specified name, with a single forward index installed.
-    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S>;
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, V, S>;
 }
 
-impl<A, S> AsSingletonDomain<A, S> for Stream<S, ((Value, Value), isize)>
+impl<A, V, S> AsSingletonDomain<A, V, S> for Stream<S, ((V, V), isize)>
 where
     A: AsAid,
+    V: AsV + ExchangeData,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, V, S> {
         let name: A = name.into();
 
         let mut domain = Domain::new(Default::default());
@@ -617,13 +617,14 @@ where
     }
 }
 
-impl<A, S> AsSingletonDomain<A, S> for Collection<S, (Value, Value), isize>
+impl<A, V, S> AsSingletonDomain<A, V, S> for Collection<S, (V, V), isize>
 where
     A: AsAid,
+    V: AsV + ExchangeData,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, V, S> {
         let name: A = name.into();
 
         let mut domain = Domain::new(Default::default());
@@ -656,31 +657,33 @@ where
     }
 }
 
-impl<A, S> AsSingletonDomain<A, S> for Stream<S, ((Value, Value), S::Timestamp, isize)>
+impl<A, V, S> AsSingletonDomain<A, V, S> for Stream<S, ((V, V), S::Timestamp, isize)>
 where
     A: AsAid,
+    V: AsV + ExchangeData,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, V, S> {
         self.as_collection().as_singleton_domain(name)
     }
 }
 
-impl<A, S> AsSingletonDomain<A, S>
+impl<A, V, S> AsSingletonDomain<A, V, S>
     for (
         (
-            UnorderedHandle<S::Timestamp, ((Value, Value), S::Timestamp, isize)>,
+            UnorderedHandle<S::Timestamp, ((V, V), S::Timestamp, isize)>,
             ActivateCapability<S::Timestamp>,
         ),
-        Collection<S, (Value, Value), isize>,
+        Collection<S, (V, V), isize>,
     )
 where
     A: AsAid,
+    V: AsV + ExchangeData,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, V, S> {
         let name: A = name.into();
 
         let mut domain = Domain::new(Default::default());
@@ -716,20 +719,21 @@ where
     }
 }
 
-impl<A, S> AsSingletonDomain<A, S>
+impl<A, V, S> AsSingletonDomain<A, V, S>
     for (
         (
-            UnorderedHandle<S::Timestamp, ((Value, Value), S::Timestamp, isize)>,
+            UnorderedHandle<S::Timestamp, ((V, V), S::Timestamp, isize)>,
             ActivateCapability<S::Timestamp>,
         ),
-        Stream<S, ((Value, Value), S::Timestamp, isize)>,
+        Stream<S, ((V, V), S::Timestamp, isize)>,
     )
 where
     A: AsAid,
+    V: AsV + ExchangeData,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
-    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
+    fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, V, S> {
         let ((handle, cap), pairs) = self;
         ((handle, cap), pairs.as_collection()).as_singleton_domain(name)
     }

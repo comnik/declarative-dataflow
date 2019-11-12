@@ -141,7 +141,7 @@ pub trait Implementable {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Self::A, S::Timestamp>,
+        domain: &mut Domain<Self::A, Value, S::Timestamp>,
         local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
@@ -299,7 +299,7 @@ where
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where

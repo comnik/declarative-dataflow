@@ -218,29 +218,33 @@ impl Error {
 
 /// Transaction data.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct Datom<A>(pub Value, pub A, pub Value, pub Option<Time>, pub isize);
+pub struct Datom<A, V>(pub V, pub A, pub V, pub Option<Time>, pub isize);
 
-impl<A: AsAid + ExchangeData> Datom<A> {
+impl<A, V> Datom<A, V>
+where
+    A: AsAid + ExchangeData,
+    V: AsV + ExchangeData,
+{
     /// Creates a datom representing the addition of a single fact.
-    pub fn add<X: Into<A>>(e: Eid, a: X, v: Value) -> Self {
-        Self(Value::Eid(e), a.into(), v, None, 1)
+    pub fn add<AX: Into<A>, VX: Into<V>>(e: VX, a: AX, v: VX) -> Self {
+        Self(e.into(), a.into(), v.into(), None, 1)
     }
 
     /// Creates a datom representing the addition of a single fact at
     /// a specific point in time.
-    pub fn add_at<X: Into<A>>(e: Eid, a: X, v: Value, t: Time) -> Self {
-        Self(Value::Eid(e), a.into(), v, Some(t), 1)
+    pub fn add_at<AX: Into<A>, VX: Into<V>>(e: VX, a: AX, v: VX, t: Time) -> Self {
+        Self(e.into(), a.into(), v.into(), Some(t), 1)
     }
 
     /// Creates a datom representing the retraction of a single fact.
-    pub fn retract<X: Into<A>>(e: Eid, a: X, v: Value) -> Self {
-        Self(Value::Eid(e), a.into(), v, None, -1)
+    pub fn retract<AX: Into<A>, VX: Into<V>>(e: VX, a: AX, v: VX) -> Self {
+        Self(e.into(), a.into(), v.into(), None, -1)
     }
 
     /// Creates a datom representing the retraction of a single fact
     /// at a specific point in time.
-    pub fn retract_at<X: Into<A>>(e: Eid, a: X, v: Value, t: Time) -> Self {
-        Self(Value::Eid(e), a.into(), v, Some(t), -1)
+    pub fn retract_at<AX: Into<A>, VX: Into<V>>(e: VX, a: AX, v: VX, t: Time) -> Self {
+        Self(e.into(), a.into(), v.into(), Some(t), -1)
     }
 }
 
@@ -491,7 +495,7 @@ where
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -502,7 +506,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -518,7 +522,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -563,7 +567,7 @@ where
     fn tuples(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<A, S::Timestamp>,
+        _domain: &mut Domain<A, Value, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -574,7 +578,7 @@ where
     fn projected(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<A, S::Timestamp>,
+        _domain: &mut Domain<A, Value, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -603,7 +607,7 @@ where
     fn tuples_by_variables(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<A, S::Timestamp>,
+        _domain: &mut Domain<A, Value, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -665,7 +669,7 @@ where
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -677,7 +681,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -712,7 +716,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -805,7 +809,7 @@ where
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -819,7 +823,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -838,7 +842,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -881,7 +885,10 @@ pub fn q<A: AsAid + timely::ExchangeData>(
 
 /// Returns a deduplicates list of all rules used in the definition of
 /// the specified names. Includes the specified names.
-pub fn collect_dependencies<A, T>(domain: &Domain<A, T>, names: &[A]) -> Result<Vec<Rule<A>>, Error>
+pub fn collect_dependencies<A, T>(
+    domain: &Domain<A, Value, T>,
+    names: &[A],
+) -> Result<Vec<Rule<A>>, Error>
 where
     A: AsAid + timely::ExchangeData,
     T: Timestamp + Lattice + Rewind,
@@ -937,7 +944,7 @@ where
 /// Takes a query plan and turns it into a differential dataflow.
 pub fn implement<A, S>(
     scope: &mut S,
-    domain: &mut Domain<A, S::Timestamp>,
+    domain: &mut Domain<A, Value, S::Timestamp>,
     name: A,
 ) -> Result<(HashMap<A, Collection<S, Vec<Value>, isize>>, ShutdownHandle), Error>
 where
@@ -1030,7 +1037,7 @@ where
 /// @TODO
 pub fn implement_neu<A, S>(
     scope: &mut S,
-    domain: &mut Domain<A, S::Timestamp>,
+    domain: &mut Domain<A, Value, S::Timestamp>,
     name: A,
 ) -> Result<(HashMap<A, Collection<S, Vec<Value>, isize>>, ShutdownHandle), Error>
 where

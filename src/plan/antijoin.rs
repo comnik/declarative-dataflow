@@ -48,7 +48,7 @@ impl<P1: Implementable, P2: Implementable<A = P1::A>> Implementable for Antijoin
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<Self::A, S::Timestamp>,
+        domain: &mut Domain<Self::A, Value, S::Timestamp>,
         local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where

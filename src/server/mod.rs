@@ -152,7 +152,7 @@ pub struct CreateAttribute {
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 pub enum Request<A: AsAid + From<&'static str>> {
     /// Sends inputs via one or more registered handles.
-    Transact(Vec<Datom<A>>),
+    Transact(Vec<Datom<A, Value>>),
     /// Expresses interest in an entire attribute.
     Subscribe(String),
     /// Derives new attributes under a new namespace.
@@ -204,7 +204,7 @@ where
     /// (copied from worker).
     pub t0: Instant,
     /// Internal domain in server time.
-    pub internal: Domain<A, T>,
+    pub internal: Domain<A, Value, T>,
     /// Mapping from query names to interested client tokens.
     pub interests: HashMap<A, HashSet<Token>>,
     // Mapping from query names to their shutdown handles. This is
@@ -283,7 +283,7 @@ where
     /// Handles a Transact request.
     pub fn transact(
         &mut self,
-        tx_data: Vec<Datom<A>>,
+        tx_data: Vec<Datom<A, Value>>,
         owner: usize,
         worker_index: usize,
     ) -> Result<(), Error> {

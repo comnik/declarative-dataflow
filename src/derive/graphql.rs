@@ -170,7 +170,7 @@ impl<A: AsAid> PullAll<A> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         _local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId<A>, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
@@ -246,7 +246,7 @@ impl<A: AsAid> Pull<A> {
     pub fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (
         HashMap<PathId<A>, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
@@ -501,9 +501,9 @@ impl<A: AsAid> GraphQl<A> {
     pub fn derive<'b, X, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<A, S::Timestamp>,
+        domain: &mut Domain<A, Value, S::Timestamp>,
         namespace: X,
-    ) -> Domain<A, S::Timestamp>
+    ) -> Domain<A, Value, S::Timestamp>
     where
         X: Into<A>,
         S: Scope,
