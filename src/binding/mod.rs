@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::{AsAid, Value, Var};
+use crate::{AsAid, AsV, Var};
 
 /// A thing that can act as a binding of values to variables.
 pub trait AsBinding {
@@ -50,18 +50,18 @@ impl AsBinding for Vec<Var> {
 
 /// Binding types supported by Hector.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum Binding<A: AsAid> {
+pub enum Binding<A: AsAid, V: AsV> {
     /// Two variables bound by (e,v) pairs from an attribute.
     Attribute(AttributeBinding<A>),
     /// Variables that must not be bound by the wrapped binding.
-    Not(AntijoinBinding<A>),
+    Not(AntijoinBinding<A, V>),
     /// A variable bound by a constant value.
-    Constant(ConstantBinding),
+    Constant(ConstantBinding<V>),
     /// Two variables bound by a binary predicate.
     BinaryPredicate(BinaryPredicateBinding),
 }
 
-impl<A: AsAid> Binding<A> {
+impl<A: AsAid, V: AsV> Binding<A, V> {
     /// Creates an AttributeBinding.
     pub fn attribute<X: Into<A>>(e: Var, name: X, v: Var) -> Self {
         Binding::Attribute(AttributeBinding {
@@ -71,8 +71,11 @@ impl<A: AsAid> Binding<A> {
     }
 
     /// Creates a ConstantBinding.
-    pub fn constant(variable: Var, value: Value) -> Self {
-        Binding::Constant(ConstantBinding { variable, value })
+    pub fn constant<X: Into<V>>(variable: Var, value: X) -> Self {
+        Binding::Constant(ConstantBinding {
+            variable,
+            value: value.into(),
+        })
     }
 
     /// Creates a BinaryPredicateBinding.
@@ -91,7 +94,7 @@ impl<A: AsAid> Binding<A> {
     }
 }
 
-impl<A: AsAid> AsBinding for Binding<A> {
+impl<A: AsAid, V: AsV> AsBinding for Binding<A, V> {
     fn variables(&self) -> Vec<Var> {
         match *self {
             Binding::Attribute(ref binding) => binding.variables(),
@@ -203,12 +206,12 @@ impl<A: AsAid> fmt::Debug for AttributeBinding<A> {
 /// Describes variables whose possible values must not be contained in
 /// the specified attribute.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
-pub struct AntijoinBinding<A: AsAid> {
+pub struct AntijoinBinding<A: AsAid, V: AsV> {
     /// The wrapped binding.
-    pub binding: Box<Binding<A>>,
+    pub binding: Box<Binding<A, V>>,
 }
 
-impl<A: AsAid> AsBinding for AntijoinBinding<A> {
+impl<A: AsAid, V: AsV> AsBinding for AntijoinBinding<A, V> {
     fn variables(&self) -> Vec<Var> {
         self.binding.variables()
     }
@@ -226,7 +229,7 @@ impl<A: AsAid> AsBinding for AntijoinBinding<A> {
     }
 }
 
-impl<A: AsAid> fmt::Debug for AntijoinBinding<A> {
+impl<A: AsAid, V: AsV> fmt::Debug for AntijoinBinding<A, V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Not({:?})", self.binding)
     }
@@ -234,14 +237,14 @@ impl<A: AsAid> fmt::Debug for AntijoinBinding<A> {
 
 /// Describes variables whose possible values are given by an attribute.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
-pub struct ConstantBinding {
+pub struct ConstantBinding<V: AsV> {
     /// The variable this binding talks about.
     pub variable: Var,
     /// The value backing this binding.
-    pub value: Value,
+    pub value: V,
 }
 
-impl AsBinding for ConstantBinding {
+impl<V: AsV> AsBinding for ConstantBinding<V> {
     fn variables(&self) -> Vec<Var> {
         vec![self.variable]
     }
@@ -273,7 +276,7 @@ impl AsBinding for ConstantBinding {
     }
 }
 
-impl fmt::Debug for ConstantBinding {
+impl<V: AsV> fmt::Debug for ConstantBinding<V> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Constant({}, {:?})", self.variable, self.value)
     }

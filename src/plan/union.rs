@@ -11,7 +11,7 @@ use crate::binding::Binding;
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 /// A plan stage taking the union over its sources. Frontends are
 /// responsible to ensure that the sources are union-compatible
@@ -31,7 +31,7 @@ impl<P: Implementable> Implementable for Union<P> {
         self.plans.iter().map(|plan| plan.dependencies()).sum()
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         self.plans
             .iter()
             .flat_map(Implementable::into_bindings)

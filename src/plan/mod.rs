@@ -133,7 +133,7 @@ pub trait Implementable {
 
     /// Transforms an implementable into an equivalent set of bindings
     /// that can be unified by Hector.
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         panic!("This plan can't be implemented via Hector.");
     }
 
@@ -260,7 +260,7 @@ where
         }
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         // @TODO provide a general fold for plans
         match *self {
             Plan::Project(ref projection) => projection.into_bindings(),

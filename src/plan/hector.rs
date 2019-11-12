@@ -77,7 +77,7 @@ where
     ) -> Vec<Extender<'a, S, P, V>>;
 }
 
-impl<'a, S> IntoExtender<'a, S, Value> for ConstantBinding
+impl<'a, S> IntoExtender<'a, S, Value> for ConstantBinding<Value>
 where
     S: Scope,
     S::Timestamp: Timestamp + Lattice,
@@ -130,7 +130,7 @@ pub struct Hector<A: AsAid> {
     /// Variables to bind.
     pub variables: Vec<Var>,
     /// Bindings to join.
-    pub bindings: Vec<Binding<A>>,
+    pub bindings: Vec<Binding<A, Value>>,
 }
 
 enum Direction {
@@ -172,8 +172,8 @@ where
 /// size two.
 pub fn source_conflicts<A: AsAid>(
     source_index: usize,
-    bindings: &[Binding<A>],
-) -> Vec<&Binding<A>> {
+    bindings: &[Binding<A, Value>],
+) -> Vec<&Binding<A, Value>> {
     match bindings[source_index] {
         Binding::Attribute(ref source) => {
             let prefix_0 = vec![source.variables.0];
@@ -208,8 +208,8 @@ pub fn source_conflicts<A: AsAid>(
 /// (adapted from github.com/frankmcsherry/dataflow-join/src/motif.rs)
 pub fn plan_order<A: AsAid>(
     source_index: usize,
-    bindings: &[Binding<A>],
-) -> (Vec<Var>, Vec<Binding<A>>) {
+    bindings: &[Binding<A, Value>],
+) -> (Vec<Var>, Vec<Binding<A, Value>>) {
     let mut variables = bindings
         .iter()
         .flat_map(AsBinding::variables)
@@ -233,7 +233,7 @@ pub fn plan_order<A: AsAid>(
         _ => panic!("Source binding must be an attribute."),
     }
 
-    let candidates_for = |bindings: &[Binding<A>], target: Var| {
+    let candidates_for = |bindings: &[Binding<A, Value>], target: Var| {
         bindings
             .iter()
             .enumerate()
@@ -249,11 +249,11 @@ pub fn plan_order<A: AsAid>(
                     None
                 }
             })
-            .collect::<Vec<Binding<A>>>()
+            .collect::<Vec<Binding<A, Value>>>()
     };
 
     let mut ordered_bindings = Vec::new();
-    let mut candidates: Vec<Binding<A>> = prefix
+    let mut candidates: Vec<Binding<A, Value>> = prefix
         .iter()
         .flat_map(|x| candidates_for(&bindings, *x))
         .collect();
@@ -490,7 +490,7 @@ where
         }
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         self.bindings.clone()
     }
 
@@ -646,7 +646,7 @@ where
                                         //
                                         // Therefore we make our own little queue of bindings and process them iteratively.
 
-                                        let mut bindings: VecDeque<(usize, Binding<A>)> = VecDeque::new();
+                                        let mut bindings: VecDeque<(usize, Binding<A, Value>)> = VecDeque::new();
 
                                         for (idx, binding) in self.bindings.iter().cloned().enumerate() {
                                             if let Binding::Not(antijoin_binding) = binding {

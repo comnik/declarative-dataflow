@@ -11,7 +11,7 @@ use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
 use crate::Var;
-use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, VariableMap};
 
 /// A plan stage projecting its source to only the specified sequence
 /// of variables. Throws on unbound variables. Frontends are responsible
@@ -31,7 +31,7 @@ impl<P: Implementable> Implementable for Project<P> {
         self.plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         self.plan.into_bindings()
     }
 

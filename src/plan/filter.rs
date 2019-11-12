@@ -61,7 +61,7 @@ impl<P: Implementable> Implementable for Filter<P> {
         self.plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         // let mut bindings = self.plan.into_bindings();
         // let variables = self.variables.clone();
 

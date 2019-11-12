@@ -11,7 +11,7 @@ use crate::binding::{AsBinding, Binding};
 use crate::domain::Domain;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Var, VariableMap};
+use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, Value, Var, VariableMap};
 
 /// A plan stage anti-joining both its sources on the specified
 /// variables. Throws if the sources are not union-compatible, i.e. bind
@@ -33,7 +33,7 @@ impl<P1: Implementable, P2: Implementable<A = P1::A>> Implementable for Antijoin
         self.left_plan.dependencies() + self.right_plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         unimplemented!();
         // let mut left_bindings = self.left_plan.into_bindings();
         // let mut right_bindings = self.right_plan.into_bindings();

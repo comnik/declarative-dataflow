@@ -265,7 +265,7 @@ impl<P1: Implementable, P2: Implementable<A = P1::A>> Implementable for Join<P1,
         self.left_plan.dependencies() + self.right_plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         let mut left_bindings = self.left_plan.into_bindings();
         let mut right_bindings = self.right_plan.into_bindings();
 

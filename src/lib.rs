@@ -78,6 +78,11 @@ impl AsAid for String {
     }
 }
 
+/// A value.
+pub trait AsV: Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + 'static {}
+
+impl<T: Clone + Eq + Ord + std::hash::Hash + std::fmt::Debug + 'static> AsV for T {}
+
 /// Possible data values.
 ///
 /// This enum captures the currently supported data types, and is the
@@ -866,7 +871,7 @@ where
 /// constraints expressed by the bindings provided.
 pub fn q<A: AsAid + timely::ExchangeData>(
     target_variables: Vec<Var>,
-    bindings: Vec<Binding<A>>,
+    bindings: Vec<Binding<A, Value>>,
 ) -> Plan<A> {
     Plan::Hector(Hector {
         variables: target_variables,

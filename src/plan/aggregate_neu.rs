@@ -64,7 +64,7 @@ impl<P: Implementable> Implementable for Aggregate<P> {
         self.plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         self.plan.into_bindings()
     }
 

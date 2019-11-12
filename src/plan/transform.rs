@@ -48,7 +48,7 @@ impl<P: Implementable> Implementable for Transform<P> {
         self.plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A, Value>> {
         self.plan.into_bindings()
     }
 
