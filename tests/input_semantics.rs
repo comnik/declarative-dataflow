@@ -10,14 +10,14 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::pair::Pair;
 use declarative_dataflow::timestamp::Time;
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData, Value};
+use declarative_dataflow::{Aid, AttributeConfig, Datom, InputSemantics, Plan, Rule, Value};
 use Time::TxId;
 use Value::{Eid, Number};
 
 struct Case<T> {
     description: &'static str,
-    plan: Plan,
-    transactions: Vec<Vec<TxData>>,
+    plan: Plan<Aid>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, T, isize)>>,
 }
 
@@ -29,7 +29,7 @@ impl Run for Vec<Case<u64>> {
     fn run(mut self) {
         for mut case in self.drain(..) {
             timely::execute_directly(move |worker| {
-                let mut server = Server::<u64, u64>::new(Default::default());
+                let mut server = Server::<Aid, u64, u64>::new(Default::default());
                 let (send_results, results) = channel();
 
                 dbg!(case.description);
@@ -37,7 +37,7 @@ impl Run for Vec<Case<u64>> {
                 let mut deps = HashMap::new();
                 for tx in case.transactions.iter() {
                     for datum in tx {
-                        deps.entry(datum.2.clone()).or_insert_with(|| {
+                        deps.entry(datum.1.clone()).or_insert_with(|| {
                             AttributeConfig::tx_time(InputSemantics::LastWriteWins)
                         });
                     }
@@ -47,17 +47,11 @@ impl Run for Vec<Case<u64>> {
 
                 worker.dataflow::<u64, _, _>(|scope| {
                     for (dep, config) in deps.drain() {
-                        server.create_attribute(scope, &dep, config).unwrap();
+                        server.create_attribute(scope, dep.clone(), config).unwrap();
                     }
 
                     server
-                        .test_single(
-                            scope,
-                            Rule {
-                                name: "query".to_string(),
-                                plan,
-                            },
-                        )
+                        .test_single(scope, Rule::named("query", plan))
                         .inner
                         .sink(Pipeline, "Results", move |input| {
                             input.for_each(|_time, data| {
@@ -110,7 +104,7 @@ impl Run for Vec<Case<Pair<Duration, u64>>> {
     fn run(mut self) {
         for mut case in self.drain(..) {
             timely::execute_directly(move |worker| {
-                let mut server = Server::<Pair<Duration, u64>, u64>::new(Default::default());
+                let mut server = Server::<Aid, Pair<Duration, u64>, u64>::new(Default::default());
                 let (send_results, results) = channel();
 
                 dbg!(case.description);
@@ -118,7 +112,7 @@ impl Run for Vec<Case<Pair<Duration, u64>>> {
                 let mut deps = HashMap::new();
                 for tx in case.transactions.iter() {
                     for datum in tx {
-                        deps.entry(datum.2.clone())
+                        deps.entry(datum.1.clone())
                             .or_insert_with(|| AttributeConfig {
                                 input_semantics: InputSemantics::LastWriteWins,
                                 trace_slack: Some(Time::Bi(Duration::from_secs(0), 1)),
@@ -131,17 +125,11 @@ impl Run for Vec<Case<Pair<Duration, u64>>> {
 
                 worker.dataflow::<Pair<Duration, u64>, _, _>(|scope| {
                     for (dep, config) in deps.drain() {
-                        server.create_attribute(scope, &dep, config).unwrap();
+                        server.create_attribute(scope, dep.clone(), config).unwrap();
                     }
 
                     server
-                        .test_single(
-                            scope,
-                            Rule {
-                                name: "query".to_string(),
-                                plan,
-                            },
-                        )
+                        .test_single(scope, Rule::named("query", plan))
                         .inspect(|x| println!("{:?}", x))
                         .inner
                         .sink(Pipeline, "Results", move |input| {
@@ -198,13 +186,13 @@ fn last_write_wins() {
     vec![
         Case {
             description: "happy case",
-            plan: Plan::MatchA(0, ":amount".to_string(), 1),
+            plan: Plan::match_a(0, ":amount", 1),
             transactions: vec![
                 vec![
-                    TxData::add(100, ":amount", Number(5)),
-                    TxData::add(200, ":amount", Number(100)),
+                    Datom::add(100, ":amount", Number(5)),
+                    Datom::add(200, ":amount", Number(100)),
                 ],
-                vec![TxData::add(100, ":amount", Number(10))],
+                vec![Datom::add(100, ":amount", Number(10))],
             ],
             expectations: vec![
                 vec![
@@ -219,13 +207,13 @@ fn last_write_wins() {
         },
         Case {
             description: "happy case reversed",
-            plan: Plan::MatchA(0, ":amount".to_string(), 1),
+            plan: Plan::match_a(0, ":amount", 1),
             transactions: vec![
                 vec![
-                    TxData::add(100, ":amount", Number(10)),
-                    TxData::add(200, ":amount", Number(100)),
+                    Datom::add(100, ":amount", Number(10)),
+                    Datom::add(200, ":amount", Number(100)),
                 ],
-                vec![TxData::add(100, ":amount", Number(5))],
+                vec![Datom::add(100, ":amount", Number(5))],
             ],
             expectations: vec![
                 vec![
@@ -240,13 +228,13 @@ fn last_write_wins() {
         },
         Case {
             description: "retraction",
-            plan: Plan::MatchA(0, ":amount".to_string(), 1),
+            plan: Plan::match_a(0, ":amount", 1),
             transactions: vec![
                 vec![
-                    TxData::add(100, ":amount", Number(5)),
-                    TxData::add(200, ":amount", Number(100)),
+                    Datom::add(100, ":amount", Number(5)),
+                    Datom::add(200, ":amount", Number(100)),
                 ],
-                vec![TxData::retract(200, ":amount", Number(100))],
+                vec![Datom::retract(200, ":amount", Number(100))],
             ],
             expectations: vec![
                 vec![
@@ -258,11 +246,11 @@ fn last_write_wins() {
         },
         Case {
             description: "toggle",
-            plan: Plan::MatchA(0, ":amount".to_string(), 1),
+            plan: Plan::match_a(0, ":amount", 1),
             transactions: vec![
-                vec![TxData::add(100, ":amount", Number(5))],
-                vec![TxData::add(100, ":amount", Number(10))],
-                vec![TxData::add(100, ":amount", Number(5))],
+                vec![Datom::add(100, ":amount", Number(5))],
+                vec![Datom::add(100, ":amount", Number(10))],
+                vec![Datom::add(100, ":amount", Number(5))],
             ],
             expectations: vec![
                 vec![(vec![Eid(100), Number(5)], 0, 1)],
@@ -284,13 +272,13 @@ fn last_write_wins() {
 fn last_write_wins_unordered() {
     vec![Case {
         description: "late arrival",
-        plan: Plan::MatchA(0, ":amount".to_string(), 1),
+        plan: Plan::match_a(0, ":amount", 1),
         transactions: vec![
             vec![
-                TxData::add(100, ":amount", Number(0)),
-                TxData::add_at(100, ":amount", Number(2), TxId(2)),
+                Datom::add(100, ":amount", Number(0)),
+                Datom::add_at(100, ":amount", Number(2), TxId(2)),
             ],
-            vec![TxData::add(100, ":amount", Number(1))],
+            vec![Datom::add(100, ":amount", Number(1))],
         ],
         expectations: vec![
             vec![(vec![Eid(100), Number(0)], 0, 1)],
@@ -307,27 +295,64 @@ fn last_write_wins_unordered() {
     .run();
 }
 
+// #[test]
+// fn compare_and_swap() {
+//     use differential_dataflow::input::Input;
+
+//     use declarative_dataflow::operators::CompareAndSwap;
+
+//     timely::execute_directly(|worker| {
+//         let (mut handle, _domain) = worker.dataflow(|scope| {
+//             let (handle, inputs) = scope.new_collection();
+
+//             let domain = inputs.inspect(|x| println!("{:?}", x)).compare_and_swap();
+
+//             (handle, domain)
+//         });
+
+//         handle.insert((Eid(100), None, Some(Number(1))));
+//         handle.advance_to(1);
+
+//         handle.insert((Eid(100), None, Some(Number(1))));
+//         handle.advance_to(2);
+
+//         handle.insert((Eid(100), None, Some(Number(8))));
+//         handle.advance_to(3);
+
+//         handle.insert((Eid(100), Some(Number(1)), Some(Number(2))));
+//         handle.advance_to(4);
+
+//         handle.insert((Eid(100), Some(Number(1)), Some(Number(3))));
+//         handle.advance_to(5);
+
+//         handle.insert((Eid(100), Some(Number(2)), None));
+//         handle.advance_to(6);
+
+//         handle.close();
+//     });
+// }
+
 #[test]
 #[cfg(feature = "real")]
 fn bitemporal() {
     vec![
         Case {
             description: "bitemporal conflict",
-            plan: Plan::MatchA(0, ":amount".to_string(), 1),
+            plan: Plan::match_a(0, ":amount", 1),
             transactions: vec![vec![
-                TxData::add_at(
+                Datom::add_at(
                     100,
                     ":amount",
                     Number(0),
                     Time::Bi(Duration::from_secs(0), 0),
                 ),
-                TxData::add_at(
+                Datom::add_at(
                     100,
                     ":amount",
                     Number(2),
                     Time::Bi(Duration::from_secs(0), 2),
                 ),
-                TxData::add_at(
+                Datom::add_at(
                     100,
                     ":amount",
                     Number(1),
@@ -354,23 +379,23 @@ fn bitemporal() {
         },
         Case {
             description: "bitemporal correction",
-            plan: Plan::MatchA(0, ":amount".to_string(), 1),
+            plan: Plan::match_a(0, ":amount", 1),
             transactions: vec![
                 vec![
-                    TxData::add_at(
+                    Datom::add_at(
                         100,
                         ":amount",
                         Number(0),
                         Time::Bi(Duration::from_secs(0), 0),
                     ),
-                    TxData::add_at(
+                    Datom::add_at(
                         100,
                         ":amount",
                         Number(2),
                         Time::Bi(Duration::from_secs(0), 2),
                     ),
                 ],
-                vec![TxData::add_at(
+                vec![Datom::add_at(
                     100,
                     ":amount",
                     Number(1),
@@ -411,28 +436,28 @@ fn bitemporal() {
         },
         Case {
             description: "bitemporal toggle",
-            plan: Plan::MatchA(0, ":flow".to_string(), 1),
+            plan: Plan::match_a(0, ":flow", 1),
             transactions: vec![vec![
-                TxData(
-                    1,
+                Datom(
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),
                     Value::from(30.006),
                     Some(Time::Bi(Duration::from_secs(0), 1_554_120_030_000)), // 2019-04-01T12:00:30+00:00
-                ),
-                TxData(
                     1,
+                ),
+                Datom(
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),
                     Value::from(31.006),
                     Some(Time::Bi(Duration::from_secs(0), 1_554_120_061_000)), // 2019-04-01T12:01:01+00:00
-                ),
-                TxData(
                     1,
+                ),
+                Datom(
                     Value::uuid_str("71828aae-4fc8-421b-82ca-68c5f4981d74"),
                     ":flow".to_string(),
                     Value::from(30.006),
                     Some(Time::Bi(Duration::from_secs(0), 1_554_120_150_000)), // 2019-04-01T12:02:30+00:00
+                    1,
                 ),
             ]],
             expectations: vec![vec![

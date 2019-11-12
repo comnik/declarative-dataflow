@@ -12,14 +12,14 @@ use declarative_dataflow::plan::hector::{plan_order, source_conflicts};
 use declarative_dataflow::plan::{Hector, Implementable};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Plan, Rule, TxData, Value};
 use Value::{Bool, Eid, Number, String};
 
 struct Case {
     description: &'static str,
-    plan: Hector,
-    transactions: Vec<Vec<TxData>>,
+    plan: Hector<Aid>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -30,19 +30,19 @@ fn binding_requirements() {
     let (a, b, c, d) = (0, 1, 2, 3);
 
     assert_eq!(
-        Binding::attribute(a, ":edge", b).required_to_extend(&vec![a, c], d),
+        Binding::<Aid>::attribute(a, ":edge", b).required_to_extend(&vec![a, c], d),
         None
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).required_to_extend(&vec![a, c], b),
+        Binding::<Aid>::attribute(a, ":edge", b).required_to_extend(&vec![a, c], b),
         Some(None)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).required_to_extend(&vec![c, d], a),
+        Binding::<Aid>::attribute(a, ":edge", b).required_to_extend(&vec![c, d], a),
         Some(Some(b))
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).required_to_extend(&vec![c, d], b),
+        Binding::<Aid>::attribute(a, ":edge", b).required_to_extend(&vec![c, d], b),
         Some(Some(a))
     );
 }
@@ -54,31 +54,31 @@ fn binding_readiness() {
     let (a, b, c, d) = (0, 1, 2, 3);
 
     assert_eq!(
-        Binding::constant(a, Eid(100)).ready_to_extend(&vec![a, b]),
+        Binding::<Aid>::constant(a, Eid(100)).ready_to_extend(&vec![a, b]),
         None
     );
     assert_eq!(
-        Binding::constant(a, Eid(100)).ready_to_extend(&vec![c, d]),
+        Binding::<Aid>::constant(a, Eid(100)).ready_to_extend(&vec![c, d]),
         Some(a)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, d]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![c, d]),
         None
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![a, c]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![a, c]),
         Some(b)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, a]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![c, a]),
         Some(b)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![c, b]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![c, b]),
         Some(a)
     );
     assert_eq!(
-        Binding::attribute(a, ":edge", b).ready_to_extend(&vec![b, c]),
+        Binding::<Aid>::attribute(a, ":edge", b).ready_to_extend(&vec![b, c]),
         Some(a)
     );
 }
@@ -88,7 +88,7 @@ fn binding_readiness() {
 #[test]
 fn conflicts() {
     let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
-    let bindings = vec![
+    let bindings: Vec<Binding<Aid>> = vec![
         Binding::attribute(e2, ":age", a),
         Binding::attribute(e, ":age", a),
         Binding::attribute(e, ":name", c),
@@ -97,7 +97,7 @@ fn conflicts() {
         Binding::not(Binding::constant(c, String("Petr".to_string()))),
     ];
 
-    assert_eq!(source_conflicts(0, &bindings), Vec::<&Binding>::new());
+    assert_eq!(source_conflicts(0, &bindings), Vec::<&Binding<Aid>>::new());
     assert_eq!(
         source_conflicts(2, &bindings),
         vec![
@@ -112,7 +112,7 @@ fn conflicts() {
 #[test]
 fn ordering() {
     let (e, c, e2, a, n) = (0, 1, 2, 3, 4);
-    let bindings = vec![
+    let bindings: Vec<Binding<Aid>> = vec![
         Binding::attribute(e2, ":age", a),
         Binding::attribute(e, ":age", a),
         Binding::attribute(e, ":name", c),
@@ -174,9 +174,9 @@ fn run_hector_cases() {
                 bindings: vec![Binding::attribute(0, ":name", 1)],
             },
             transactions: vec![vec![
-                TxData::add(1, ":name", String("Dipper".to_string())),
-                TxData::add(2, ":name", String("Mabel".to_string())),
-                TxData::add(3, ":name", String("Soos".to_string())),
+                Datom::add(1, ":name", String("Dipper".to_string())),
+                Datom::add(2, ":name", String("Mabel".to_string())),
+                Datom::add(3, ":name", String("Soos".to_string())),
             ]],
             expectations: vec![vec![
                 (vec![Eid(1), String("Dipper".to_string())], 0, 1),
@@ -194,9 +194,9 @@ fn run_hector_cases() {
                 ],
             },
             transactions: vec![vec![
-                TxData::add(1, ":name", String("Dipper".to_string())),
-                TxData::add(2, ":name", String("Mabel".to_string())),
-                TxData::add(3, ":name", String("Soos".to_string())),
+                Datom::add(1, ":name", String("Dipper".to_string())),
+                Datom::add(2, ":name", String("Mabel".to_string())),
+                Datom::add(3, ":name", String("Soos".to_string())),
             ]],
             expectations: vec![vec![(vec![Eid(1), String("Dipper".to_string())], 0, 1)]],
         },
@@ -212,11 +212,11 @@ fn run_hector_cases() {
                     ],
                 },
                 transactions: vec![vec![
-                    TxData::add(1, ":name", String("Dipper".to_string())),
-                    TxData::add(1, ":age", Number(12)),
-                    TxData::add(2, ":name", String("Mabel".to_string())),
-                    TxData::add(2, ":age", Number(13)),
-                    TxData::add(3, ":name", String("Soos".to_string())),
+                    Datom::add(1, ":name", String("Dipper".to_string())),
+                    Datom::add(1, ":age", Number(12)),
+                    Datom::add(2, ":name", String("Mabel".to_string())),
+                    Datom::add(2, ":age", Number(13)),
+                    Datom::add(3, ":name", String("Soos".to_string())),
                 ]],
                 expectations: vec![vec![
                     (vec![Eid(1), Number(12), String("Dipper".to_string())], 0, 1),
@@ -237,12 +237,12 @@ fn run_hector_cases() {
                     ],
                 },
                 transactions: vec![vec![
-                    TxData::add(100, "edge", Eid(200)),
-                    TxData::add(200, "edge", Eid(300)),
-                    TxData::add(100, "edge", Eid(300)),
-                    TxData::add(100, "edge", Eid(400)),
-                    TxData::add(400, "edge", Eid(500)),
-                    TxData::add(500, "edge", Eid(100)),
+                    Datom::add(100, "edge", Eid(200)),
+                    Datom::add(200, "edge", Eid(300)),
+                    Datom::add(100, "edge", Eid(300)),
+                    Datom::add(100, "edge", Eid(400)),
+                    Datom::add(400, "edge", Eid(500)),
+                    Datom::add(500, "edge", Eid(100)),
                 ]],
                 expectations: vec![vec![(vec![Eid(100), Eid(200), Eid(300)], 0, 1)]],
             }
@@ -261,13 +261,13 @@ fn run_hector_cases() {
                     ],
                 },
                 transactions: vec![vec![
-                    TxData::add(100, ":name", String("Dipper".to_string())),
-                    TxData::add(100, ":age", Number(12)),
-                    TxData::add(100, ":likes", Eid(200)),
-                    TxData::add(100, ":fears", Eid(300)),
-                    TxData::add(200, ":name", String("Mabel".to_string())),
-                    TxData::add(200, ":age", Number(13)),
-                    TxData::add(300, ":name", String("Soos".to_string())),
+                    Datom::add(100, ":name", String("Dipper".to_string())),
+                    Datom::add(100, ":age", Number(12)),
+                    Datom::add(100, ":likes", Eid(200)),
+                    Datom::add(100, ":fears", Eid(300)),
+                    Datom::add(200, ":name", String("Mabel".to_string())),
+                    Datom::add(200, ":age", Number(13)),
+                    Datom::add(300, ":name", String("Soos".to_string())),
                 ]],
                 expectations: vec![vec![(
                     vec![
@@ -293,9 +293,9 @@ fn run_hector_cases() {
                 ],
             },
             transactions: vec![vec![
-                TxData::add(100, ":num", Number(1)),
-                TxData::add(100, ":num", Number(2)),
-                TxData::add(100, ":num", Number(3)),
+                Datom::add(100, ":num", Number(1)),
+                Datom::add(100, ":num", Number(2)),
+                Datom::add(100, ":num", Number(3)),
             ]],
             expectations: vec![vec![
                 (vec![Eid(100), Number(2), Number(1)], 0, 1),
@@ -317,9 +317,9 @@ fn run_hector_cases() {
                 ],
             },
             transactions: vec![vec![
-                TxData::add(100, ":num", Number(1)),
-                TxData::add(100, ":num", Number(10)),
-                TxData::add(100, ":num", Number(20)),
+                Datom::add(100, ":num", Number(1)),
+                Datom::add(100, ":num", Number(10)),
+                Datom::add(100, ":num", Number(20)),
             ]],
             expectations: vec![vec![(
                 vec![Eid(100), Number(10), Number(18), Number(20)],
@@ -342,12 +342,12 @@ fn run_hector_cases() {
                     ],
                 },
                 transactions: vec![vec![
-                    TxData::add(100, ":name", String("Dipper".to_string())),
-                    TxData::add(100, ":age", Number(12)),
-                    TxData::add(100, ":admin?", Bool(true)),
-                    TxData::add(200, ":name", String("Mabel".to_string())),
-                    TxData::add(100, ":age", Number(12)),
-                    TxData::add(100, ":admin?", Bool(false)),
+                    Datom::add(100, ":name", String("Dipper".to_string())),
+                    Datom::add(100, ":age", Number(12)),
+                    Datom::add(100, ":admin?", Bool(true)),
+                    Datom::add(200, ":name", String("Mabel".to_string())),
+                    Datom::add(100, ":age", Number(12)),
+                    Datom::add(100, ":admin?", Bool(false)),
                 ]],
                 expectations: vec![vec![(
                     vec![
@@ -365,7 +365,7 @@ fn run_hector_cases() {
 
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -382,17 +382,11 @@ fn run_hector_cases() {
                         ..Default::default()
                     };
 
-                    server.create_attribute(scope, dep, config).unwrap();
+                    server.create_attribute(scope, dep.clone(), config).unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "hector".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("hector", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {

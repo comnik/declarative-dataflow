@@ -265,13 +265,7 @@ impl GraphQl {
     /// See Implementable::dependencies, as GraphQl v2 can't implement
     /// Implementable directly.
     pub fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
-
-        for path in self.paths.iter() {
-            dependencies = Dependencies::merge(dependencies, path.dependencies());
-        }
-
-        dependencies
+        self.paths.iter().map(|path| path.dependencies()).sum()
     }
 
     /// See Implementable::implement, as GraphQl v2 can't implement
@@ -279,8 +273,8 @@ impl GraphQl {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        domain: &mut Domain<Aid, S::Timestamp>,
+        _local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     ) -> (Stream<S, Output>, ShutdownHandle)
     where
         S: Scope,

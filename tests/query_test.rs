@@ -10,14 +10,14 @@ use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Implementable, Join, Project};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
-use declarative_dataflow::{q, Aid, Plan, Rule, TxData, Value};
+use declarative_dataflow::{q, Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, InputSemantics, QuerySupport};
 use Value::{Eid, Number, String};
 
 struct Case {
     description: &'static str,
-    plan: Plan,
-    transactions: Vec<Vec<TxData>>,
+    plan: Plan<Aid>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -36,7 +36,7 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
 fn run_cases(mut cases: Vec<Case>) {
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -46,7 +46,7 @@ fn run_cases(mut cases: Vec<Case>) {
 
             for tx in case.transactions.iter() {
                 for datum in tx {
-                    deps.insert(datum.2.clone());
+                    deps.insert(datum.1.clone());
                 }
             }
 
@@ -64,13 +64,7 @@ fn run_cases(mut cases: Vec<Case>) {
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "query".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("query", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {
@@ -122,15 +116,15 @@ fn run_cases(mut cases: Vec<Case>) {
 #[test]
 fn base_patterns() {
     let data = vec![
-        TxData::add(100, ":name", String("Dipper".to_string())),
-        TxData::add(100, ":name", String("Alias".to_string())),
-        TxData::add(200, ":name", String("Mabel".to_string())),
+        Datom::add(100, ":name", String("Dipper".to_string())),
+        Datom::add(100, ":name", String("Alias".to_string())),
+        Datom::add(200, ":name", String("Mabel".to_string())),
     ];
 
     run_cases(vec![
         Case {
             description: "[:find ?e ?n :where [?e :name ?n]]",
-            plan: Plan::MatchA(0, ":name".to_string(), 1),
+            plan: Plan::match_a(0, ":name", 1),
             transactions: vec![data.clone()],
             expectations: vec![vec![
                 (vec![Eid(100), String("Dipper".to_string())], 0, 1),
@@ -140,7 +134,7 @@ fn base_patterns() {
         },
         Case {
             description: "[:find ?n :where [100 :name ?n]]",
-            plan: Plan::MatchEA(100, ":name".to_string(), 0),
+            plan: Plan::match_ea(100, ":name", 0),
             transactions: vec![data.clone()],
             expectations: vec![vec![
                 (vec![String("Alias".to_string())], 0, 1),
@@ -149,7 +143,7 @@ fn base_patterns() {
         },
         Case {
             description: "[:find ?e :where [?e :name Mabel]]",
-            plan: Plan::MatchAV(0, ":name".to_string(), String("Mabel".to_string())),
+            plan: Plan::match_av(0, ":name", String("Mabel".to_string())),
             transactions: vec![data.clone()],
             expectations: vec![vec![(vec![Eid(200)], 0, 1)]],
         },
@@ -159,9 +153,9 @@ fn base_patterns() {
 #[test]
 fn base_projections() {
     let data = vec![
-        TxData::add(100, ":name", String("Dipper".to_string())),
-        TxData::add(100, ":name", String("Alias".to_string())),
-        TxData::add(200, ":name", String("Mabel".to_string())),
+        Datom::add(100, ":name", String("Dipper".to_string())),
+        Datom::add(100, ":name", String("Alias".to_string())),
+        Datom::add(200, ":name", String("Mabel".to_string())),
     ];
 
     run_cases(vec![
@@ -169,7 +163,7 @@ fn base_projections() {
             description: "[:find ?e :where [?e :name ?n]]",
             plan: Plan::Project(Project {
                 variables: vec![0],
-                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+                plan: Box::new(Plan::match_a(0, ":name", 1)),
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![(vec![Eid(100)], 0, 2), (vec![Eid(200)], 0, 1)]],
@@ -178,7 +172,7 @@ fn base_projections() {
             description: "[:find ?n :where [?e :name ?n]]",
             plan: Plan::Project(Project {
                 variables: vec![1],
-                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+                plan: Box::new(Plan::match_a(0, ":name", 1)),
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -191,7 +185,7 @@ fn base_projections() {
             description: "[:find ?e ?n :where [?e :name ?n]]",
             plan: Plan::Project(Project {
                 variables: vec![0, 1],
-                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+                plan: Box::new(Plan::match_a(0, ":name", 1)),
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -204,7 +198,7 @@ fn base_projections() {
             description: "[:find ?n ?e :where [?e :name ?n]]",
             plan: Plan::Project(Project {
                 variables: vec![1, 0],
-                plan: Box::new(Plan::MatchA(0, ":name".to_string(), 1)),
+                plan: Box::new(Plan::match_a(0, ":name", 1)),
             }),
             transactions: vec![data.clone()],
             expectations: vec![vec![
@@ -219,9 +213,9 @@ fn base_projections() {
 #[test]
 fn wco_base_patterns() {
     let data = vec![
-        TxData::add(100, ":name", String("Dipper".to_string())),
-        TxData::add(100, ":name", String("Alias".to_string())),
-        TxData::add(200, ":name", String("Mabel".to_string())),
+        Datom::add(100, ":name", String("Dipper".to_string())),
+        Datom::add(100, ":name", String("Alias".to_string())),
+        Datom::add(200, ":name", String("Mabel".to_string())),
     ];
 
     run_cases(vec![
@@ -275,13 +269,13 @@ fn joins() {
                 variables: vec![e, n, a],
                 plan: Box::new(Plan::Join(Join {
                     variables: vec![e],
-                    left_plan: Box::new(Plan::MatchA(e, ":name".to_string(), n)),
-                    right_plan: Box::new(Plan::MatchA(e, ":age".to_string(), a)),
+                    left_plan: Box::new(Plan::match_a(e, ":name", n)),
+                    right_plan: Box::new(Plan::match_a(e, ":age", a)),
                 })),
             }),
             transactions: vec![vec![
-                TxData::add(1, ":name", String("Dipper".to_string())),
-                TxData::add(1, ":age", Number(12)),
+                Datom::add(1, ":name", String("Dipper".to_string())),
+                Datom::add(1, ":age", Number(12)),
             ]],
             expectations: vec![vec![(
                 vec![Eid(1), String("Dipper".to_string()), Number(12)],
@@ -295,13 +289,13 @@ fn joins() {
 #[test]
 fn wco_joins() {
     let data = vec![
-        TxData::add(1, ":name", String("Ivan".to_string())),
-        TxData::add(1, ":age", Number(15)),
-        TxData::add(2, ":name", String("Petr".to_string())),
-        TxData::add(2, ":age", Number(37)),
-        TxData::add(3, ":name", String("Ivan".to_string())),
-        TxData::add(3, ":age", Number(37)),
-        TxData::add(4, ":age", Number(15)),
+        Datom::add(1, ":name", String("Ivan".to_string())),
+        Datom::add(1, ":age", Number(15)),
+        Datom::add(2, ":name", String("Petr".to_string())),
+        Datom::add(2, ":age", Number(37)),
+        Datom::add(3, ":name", String("Ivan".to_string())),
+        Datom::add(3, ":age", Number(37)),
+        Datom::add(4, ":age", Number(15)),
     ];
 
     run_cases(vec![
@@ -374,12 +368,12 @@ fn wco_joins() {
 #[test]
 fn wco_join_many() {
     let data = vec![
-        TxData::add(1, ":name", String("Ivan".to_string())),
-        TxData::add(1, ":aka", String("ivolga".to_string())),
-        TxData::add(1, ":aka", String("pi".to_string())),
-        TxData::add(2, ":name", String("Petr".to_string())),
-        TxData::add(2, ":aka", String("porosenok".to_string())),
-        TxData::add(2, ":aka", String("pi".to_string())),
+        Datom::add(1, ":name", String("Ivan".to_string())),
+        Datom::add(1, ":aka", String("ivolga".to_string())),
+        Datom::add(1, ":aka", String("pi".to_string())),
+        Datom::add(2, ":name", String("Petr".to_string())),
+        Datom::add(2, ":aka", String("porosenok".to_string())),
+        Datom::add(2, ":aka", String("pi".to_string())),
     ];
 
     let (e1, x, e2, n1, n2) = (0, 1, 2, 3, 4);
@@ -435,21 +429,21 @@ fn wco_join_many() {
 //             variables: vec![e, n, a],
 //             plan: Box::new(Plan::Join(Join {
 //                 variables: vec![e],
-//                 left_plan: Box::new(Plan::MatchA(e, ":name".to_string(), n)),
+//                 left_plan: Box::new(Plan::match_a(e, ":name", n)),
 //                 right_plan: Box::new(Plan::Filter(Filter {
 //                     variables: vec![a],
 //                     predicate: Predicate::LTE,
-//                     plan: Box::new(Plan::MatchA(e, ":age".to_string(), a)),
+//                     plan: Box::new(Plan::match_a(e, ":age", a)),
 //                     constants: constants,
 //                 })),
 //             })),
 //         }),
 //         transactions: vec![
 //             vec![
-//                 TxData::add(100, ":name", String("Dipper".to_string())),
-//                 TxData::add(100, ":age", Number(12)),
-//                 TxData::add(100, ":name", String("Soos".to_string())),
-//                 TxData::add(100, ":age", Number(30)),
+//                 Datom::add(100, ":name", String("Dipper".to_string())),
+//                 Datom::add(100, ":age", Number(12)),
+//                 Datom::add(100, ":name", String("Soos".to_string())),
+//                 Datom::add(100, ":age", Number(30)),
 //             ],
 //         ],
 //         expectations: vec![

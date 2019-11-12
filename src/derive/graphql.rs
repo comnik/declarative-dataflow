@@ -19,44 +19,44 @@ use crate::binding::{AsBinding, Binding};
 use crate::plan::{gensym, Dependencies, Implementable};
 use crate::plan::{Hector, Plan};
 use crate::timestamp::Rewind;
-use crate::{Aid, Value, Var};
+use crate::{AsAid, Value, Var};
 use crate::{Relation, ShutdownHandle, VariableMap};
 
 use crate::domain::{AsSingletonDomain, Domain};
 
 /// A sequence of attributes that uniquely identify a nesting level in
 /// a Pull query.
-pub type PathId = Vec<Aid>;
+pub type PathId<A> = Vec<A>;
 
 /// A plan stage for extracting all matching [e a v] tuples for a
 /// given set of attributes and an input relation specifying entities.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct PullLevel<P: Implementable> {
+pub struct PullLevel<A: AsAid, P: Implementable<A = A>> {
     /// Plan for the input relation.
     pub plan: Box<P>,
     /// Eid variable.
     pub pull_variable: Var,
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<Aid>,
+    pub pull_attributes: Vec<A>,
     /// Attribute names to distinguish plans of the same
     /// length. Useful to feed into a nested hash-map directly.
-    pub path_attributes: Vec<Aid>,
+    pub path_attributes: Vec<A>,
     /// @TODO
     pub cardinality_many: bool,
 }
 
-impl<P: Implementable> PullLevel<P> {
+impl<A: AsAid, P: Implementable<A = A>> PullLevel<A, P> {
     /// See Implementable::dependencies, as PullLevel v2 can't
     /// implement Implementable directly.
-    fn dependencies(&self) -> Dependencies {
-        let mut dependencies = self.plan.dependencies();
+    fn dependencies(&self) -> Dependencies<P::A> {
+        let attribute_dependencies = self
+            .pull_attributes
+            .iter()
+            .cloned()
+            .map(Dependencies::attribute)
+            .sum();
 
-        for attribute in &self.pull_attributes {
-            let attribute_dependencies = Dependencies::attribute(&attribute);
-            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
-        }
-
-        dependencies
+        self.plan.dependencies() + attribute_dependencies
     }
 
     /// See Implementable::implement, as PullLevel v2 can't implement
@@ -64,10 +64,10 @@ impl<P: Implementable> PullLevel<P> {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        domain: &mut Domain<P::A, S::Timestamp>,
+        local_arrangements: &VariableMap<P::A, Iterative<'b, S, u64>>,
     ) -> (
-        HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
+        HashMap<PathId<P::A>, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
@@ -108,8 +108,8 @@ impl<P: Implementable> PullLevel<P> {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let frontier: Vec<S::Timestamp> = propose_trace.advance_frontier().to_vec();
-                        let (arranged, shutdown_propose) =
-                            propose_trace.import_core(&nested.parent, a);
+                        let (arranged, shutdown_propose) = propose_trace
+                            .import_frontier(&nested.parent, &format!("Propose({:?})", a));
 
                         let e_v = arranged.enter_at(nested, move |_, _, time| {
                             let mut forwarded = time.clone();
@@ -123,7 +123,7 @@ impl<P: Implementable> PullLevel<P> {
                     }
                 };
 
-                let path_id: Vec<Aid> = {
+                let path_id: Vec<P::A> = {
                     assert_eq!(self.path_attributes.is_empty(), false);
 
                     let mut path_attributes = self.path_attributes.clone();
@@ -149,23 +149,20 @@ impl<P: Implementable> PullLevel<P> {
 /// A plan stage for extracting all tuples for a given set of
 /// attributes.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct PullAll {
+pub struct PullAll<A> {
     /// Attributes to pull for the input entities.
-    pub pull_attributes: Vec<Aid>,
+    pub pull_attributes: Vec<A>,
 }
 
-impl PullAll {
+impl<A: AsAid> PullAll<A> {
     /// See Implementable::dependencies, as PullAll v2 can't implement
     /// Implementable directly.
-    fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
-
-        for attribute in &self.pull_attributes {
-            let attribute_dependencies = Dependencies::attribute(&attribute);
-            dependencies = Dependencies::merge(dependencies, attribute_dependencies);
-        }
-
-        dependencies
+    fn dependencies(&self) -> Dependencies<A> {
+        self.pull_attributes
+            .iter()
+            .cloned()
+            .map(Dependencies::attribute)
+            .sum()
     }
 
     /// See Implementable::implement, as PullAll v2 can't implement
@@ -173,10 +170,10 @@ impl PullAll {
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        domain: &mut Domain<A, S::Timestamp>,
+        _local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (
-        HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
+        HashMap<PathId<A>, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
@@ -197,8 +194,8 @@ impl PullAll {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let frontier: Vec<S::Timestamp> = propose_trace.advance_frontier().to_vec();
-                        let (arranged, shutdown_propose) =
-                            propose_trace.import_core(&nested.parent, a);
+                        let (arranged, shutdown_propose) = propose_trace
+                            .import_frontier(&nested.parent, &format!("Propose({:?})", a));
 
                         let e_v = arranged.enter_at(nested, move |_, _, time| {
                             let mut forwarded = time.clone();
@@ -217,7 +214,7 @@ impl PullAll {
                     .leave()
                     .inner;
 
-                (vec![a.to_string()], path_stream)
+                (vec![a.clone()], path_stream)
             })
             .collect::<HashMap<_, _>>();
 
@@ -227,17 +224,17 @@ impl PullAll {
 
 /// @TODO
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum Pull {
+pub enum Pull<A: AsAid> {
     /// @TODO
-    All(PullAll),
+    All(PullAll<A>),
     /// @TODO
-    Level(PullLevel<Plan>),
+    Level(PullLevel<A, Plan<A>>),
 }
 
-impl Pull {
+impl<A: AsAid> Pull<A> {
     /// See Implementable::dependencies, as Pull v2 can't implement
     /// Implementable directly.
-    pub fn dependencies(&self) -> Dependencies {
+    pub fn dependencies(&self) -> Dependencies<A> {
         match self {
             Pull::All(ref pull) => pull.dependencies(),
             Pull::Level(ref pull) => pull.dependencies(),
@@ -249,10 +246,10 @@ impl Pull {
     pub fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+        domain: &mut Domain<A, S::Timestamp>,
+        local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
     ) -> (
-        HashMap<PathId, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
+        HashMap<PathId<A>, Stream<S, ((Value, Value), S::Timestamp, isize)>>,
         ShutdownHandle,
     )
     where
@@ -269,16 +266,16 @@ impl Pull {
 /// A domain transform expressed as a GraphQL query, e.g. `{ Heroes {
 /// name age weight } }`.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct GraphQl {
+pub struct GraphQl<A: AsAid> {
     /// String representation of GraphQL query
     pub query: String,
     /// Cached paths
-    paths: Vec<Pull>,
+    paths: Vec<Pull<A>>,
     /// Required attributes to filter entities by
-    required_aids: Vec<Aid>,
+    required_aids: Vec<A>,
 }
 
-impl GraphQl {
+impl<A: AsAid + From<String>> GraphQl<A> {
     /// Creates a new GraphQl instance by parsing the AST obtained
     /// from the provided query.
     pub fn new(query: String) -> Self {
@@ -296,7 +293,7 @@ impl GraphQl {
     }
 
     /// Creates a new GraphQl starting from the specified root plan.
-    pub fn with_plan(root_plan: Plan, query: String) -> Self {
+    pub fn with_plan(root_plan: Plan<A>, query: String) -> Self {
         let ast = parse_query(&query).expect("graphQL ast parsing failed");
         let paths = ast.into_paths(Hector {
             variables: root_plan.variables(),
@@ -311,8 +308,8 @@ impl GraphQl {
     }
 
     /// Creates a new GraphQl that filters top-level entities down to
-    /// only those with all of the required Aids present.
-    pub fn with_required_aids(query: String, required_aids: Vec<Aid>) -> Self {
+    /// only those with all of the required aids present.
+    pub fn with_required_aids(query: String, required_aids: Vec<A>) -> Self {
         let mut query = GraphQl::new(query);
         query.required_aids = required_aids;
         query
@@ -320,7 +317,7 @@ impl GraphQl {
 }
 
 trait IntoPaths {
-    fn into_paths(&self, root_plan: Hector) -> Vec<Pull>;
+    fn into_paths<A: AsAid + From<String>>(&self, root_plan: Hector<A>) -> Vec<Pull<A>>;
 }
 
 impl IntoPaths for Document {
@@ -342,7 +339,7 @@ impl IntoPaths for Document {
     ///   ]
     /// }
     /// ```
-    fn into_paths(&self, root_plan: Hector) -> Vec<Pull> {
+    fn into_paths<A: AsAid + From<String>>(&self, root_plan: Hector<A>) -> Vec<Pull<A>> {
         self.definitions
             .iter()
             .flat_map(|definition| definition.into_paths(root_plan.clone()))
@@ -351,7 +348,7 @@ impl IntoPaths for Document {
 }
 
 impl IntoPaths for Definition {
-    fn into_paths(&self, root_plan: Hector) -> Vec<Pull> {
+    fn into_paths<A: AsAid + From<String>>(&self, root_plan: Hector<A>) -> Vec<Pull<A>> {
         match self {
             Definition::Operation(operation) => operation.into_paths(root_plan),
             Definition::Fragment(_) => unimplemented!(),
@@ -360,7 +357,7 @@ impl IntoPaths for Definition {
 }
 
 impl IntoPaths for OperationDefinition {
-    fn into_paths(&self, root_plan: Hector) -> Vec<Pull> {
+    fn into_paths<A: AsAid + From<String>>(&self, root_plan: Hector<A>) -> Vec<Pull<A>> {
         use OperationDefinition::{Query, SelectionSet};
 
         match self {
@@ -375,21 +372,21 @@ impl IntoPaths for OperationDefinition {
 
 /// Gathers the fields that we want to pull at a specific level. These
 /// only include fields that do not refer to nested entities.
-fn pull_attributes(selection_set: &SelectionSet) -> Vec<Aid> {
+fn pull_attributes<A: AsAid + From<String>>(selection_set: &SelectionSet) -> Vec<A> {
     selection_set
         .items
         .iter()
         .flat_map(|item| match item {
             Selection::Field(field) => {
                 if field.selection_set.items.is_empty() {
-                    Some(field.name.to_string())
+                    Some(A::from(field.name.to_string()))
                 } else {
                     None
                 }
             }
             _ => unimplemented!(),
         })
-        .collect::<Vec<Aid>>()
+        .collect::<Vec<A>>()
 }
 
 /// Takes a GraphQL `SelectionSet` and recursively transforms it into
@@ -403,12 +400,12 @@ fn pull_attributes(selection_set: &SelectionSet) -> Vec<Aid> {
 /// describe the attributes pulled at the current nesting level
 /// ("horizontal"); only attributes at the lowest nesting level can be
 /// part of a `PullLevel`'s `pull_attributes`.
-fn selection_set_to_paths(
+fn selection_set_to_paths<A: AsAid + From<String>>(
     selection_set: &SelectionSet,
-    mut plan: Hector,
+    mut plan: Hector<A>,
     arguments: &[(Name, GqValue)],
-    parent_path: &[String],
-) -> Vec<Pull> {
+    parent_path: &[A],
+) -> Vec<Pull<A>> {
     // We must first construct the correct plan for this level,
     // starting from that for the parent level. We do this even if no
     // attributes are actually pulled at this level. In that case we
@@ -424,7 +421,8 @@ fn selection_set_to_paths(
         let aid = parent_path.last().unwrap();
 
         plan.variables.push(this);
-        plan.bindings.push(Binding::attribute(parent, aid, this));
+        plan.bindings
+            .push(Binding::attribute(parent, A::from(aid.to_string()), this));
     }
 
     let this = *plan.variables.last().expect("plan has no variables");
@@ -436,7 +434,8 @@ fn selection_set_to_paths(
         // projection.
         let vsym = gensym();
 
-        plan.bindings.push(Binding::attribute(this, aid, vsym));
+        plan.bindings
+            .push(Binding::attribute(this, A::from(aid.to_string()), vsym));
         plan.bindings
             .push(Binding::constant(vsym, v.clone().into()));
     }
@@ -454,7 +453,7 @@ fn selection_set_to_paths(
             Selection::Field(field) => {
                 if !field.selection_set.items.is_empty() {
                     let mut parent_path = parent_path.to_vec();
-                    parent_path.push(field.name.to_string());
+                    parent_path.push(A::from(field.name.to_string()));
 
                     selection_set_to_paths(
                         &field.selection_set,
@@ -468,7 +467,7 @@ fn selection_set_to_paths(
             }
             _ => unimplemented!(),
         })
-        .collect::<Vec<Pull>>();
+        .collect::<Vec<Pull<A>>>();
 
     let mut levels = nested_levels;
 
@@ -491,30 +490,27 @@ fn selection_set_to_paths(
     levels
 }
 
-impl GraphQl {
+impl<A: AsAid> GraphQl<A> {
     /// See Implementable::dependencies, as GraphQl v2 can't implement
     /// Implementable directly.
-    pub fn dependencies(&self) -> Dependencies {
-        let mut dependencies = Dependencies::none();
-
-        for path in self.paths.iter() {
-            dependencies = Dependencies::merge(dependencies, path.dependencies());
-        }
-
-        dependencies
+    pub fn dependencies(&self) -> Dependencies<A> {
+        self.paths.iter().map(|path| path.dependencies()).sum()
     }
 
     /// @TODO
-    pub fn derive<'b, S>(
+    pub fn derive<'b, X, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        namespace: &str,
-    ) -> Domain<S::Timestamp>
+        domain: &mut Domain<A, S::Timestamp>,
+        namespace: X,
+    ) -> Domain<A, S::Timestamp>
     where
+        X: Into<A>,
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
     {
+        let namespace: A = namespace.into();
+
         let mut out_domain = Domain::new_from("", domain);
         let dummy = HashMap::new();
 
@@ -524,9 +520,10 @@ impl GraphQl {
             std::mem::forget(shutdown);
 
             for (path_id, stream) in streams.into_iter() {
+                let aid = path_id.last().unwrap();
                 let path = stream
                     .exchange(|((e, _v), _t, _diff)| e.clone().hashed())
-                    .as_singleton_domain(&format!("{}/{}", namespace, path_id.last().unwrap()))
+                    .as_singleton_domain(aid.with_namespace(namespace.clone()))
                     .into();
 
                 out_domain += path;

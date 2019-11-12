@@ -12,27 +12,31 @@ use timely::dataflow::{Scope, Stream};
 use timely::logging::{TimelyEvent, WorkerIdentifier};
 
 use crate::sources::{Sourceable, SourcingContext};
-use crate::{Aid, Value};
+use crate::{AsAid, Value};
 use crate::{AttributeConfig, InputSemantics};
 use Value::{Bool, Eid};
 
 /// One or more taps into Timely logging.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct TimelyLogging {
+pub struct TimelyLogging<A: AsAid> {
     /// The log attributes that should be materialized.
-    pub attributes: Vec<Aid>,
+    pub attributes: Vec<A>,
     /// Optionally listen for events from a number of remote workers,
     /// rather than introspectively.
     pub remote_peers: Option<usize>,
 }
 
-impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
+impl<A, S> Sourceable<A, S> for TimelyLogging<A>
+where
+    A: AsAid + From<&'static str>,
+    S: Scope<Timestamp = Duration>,
+{
     fn source(
         &self,
         scope: &mut S,
         context: SourcingContext<S::Timestamp>,
     ) -> Vec<(
-        Aid,
+        A,
         AttributeConfig,
         Stream<S, ((Value, Value), Duration, isize)>,
     )> {
@@ -57,18 +61,31 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
 
         for aid in self.attributes.iter() {
             let (wrapper, stream) = demux.new_output();
-            wrappers.insert(aid.to_string(), wrapper);
-            streams.insert(aid.to_string(), stream);
+            wrappers.insert(aid.clone(), wrapper);
+            streams.insert(aid.clone(), stream);
         }
 
         let mut demux_buffer = Vec::new();
         let num_interests = self.attributes.len();
 
+        let timely__scope = A::from("timely/scope");
+
+        let timely__event__operates__local_id = A::from("timely.event.operates/local-id");
+        let timely__event__operates__name = A::from("timely.event.operates/name");
+        let timely__event__operates__shutdown = A::from("timely.event.operates/shutdown?");
+
+        let timely__event__channels__src_index = A::from("timely.event.channels/src-index");
+        let timely__event__channels__src_port = A::from("timely.event.channels/src-port");
+        let timely__event__channels__target_index = A::from("timely.event.channels/target-index");
+        let timely__event__channels__target_port = A::from("timely.event.channels/target-port");
+
+        let schedule__started = A::from("schedule/started?");
+
         demux.build(move |_capability| {
             move |_frontiers| {
                 let mut handles = HashMap::with_capacity(num_interests);
                 for (aid, wrapper) in wrappers.iter_mut() {
-                    handles.insert(aid.to_string(), wrapper.activate());
+                    handles.insert(aid.clone(), wrapper.activate());
                 }
 
                 input.for_each(|time, data: RefOrMut<Vec<_>>| {
@@ -76,7 +93,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
 
                     let mut sessions = HashMap::with_capacity(num_interests);
                     for (aid, handle) in handles.iter_mut() {
-                        sessions.insert(aid.to_string(), handle.session(&time));
+                        sessions.insert(aid.clone(), handle.session(&time));
                     }
 
                     for (time, _worker, datum) in demux_buffer.drain(..) {
@@ -91,14 +108,14 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
                                 if x.addr.is_empty() {
                                     // This is a top-level subgraph and thus lives in the root.
                                     sessions
-                                        .get_mut("timely/scope")
+                                        .get_mut(&timely__scope)
                                         .map(|s| s.give(((eid.clone(), Eid(0)), time, 1)));
                                 } else {
                                     // The leaf scope that this operator resides in.
                                     let scope = Eid((x.addr.pop().unwrap() as u64).into());
 
                                     sessions
-                                        .get_mut("timely/scope")
+                                        .get_mut(&timely__scope)
                                         .map(|s| s.give(((eid.clone(), scope.clone()), time, 1)));
 
                                     if !x.addr.is_empty() {
@@ -108,22 +125,22 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
                                         // re-introduce edges for higher-level ancestors.
                                         let parent = Eid((x.addr.pop().unwrap() as u64).into());
                                         sessions
-                                            .get_mut("timely/scope")
+                                            .get_mut(&timely__scope)
                                             .map(|s| s.give(((scope, parent), time, 1)));
                                     }
                                 }
 
                                 sessions
-                                    .get_mut("timely.event.operates/local-id")
+                                    .get_mut(&timely__event__operates__local_id)
                                     .map(|s| s.give(((eid.clone(), local_id), time, 1)));
                                 sessions
-                                    .get_mut("timely.event.operates/name")
+                                    .get_mut(&timely__event__operates__name)
                                     .map(|s| s.give(((eid, name), time, 1)));
                             }
                             TimelyEvent::Shutdown(x) => {
                                 let eid = Eid((x.id as u64).into());
                                 sessions
-                                    .get_mut("timely.event.operates/shutdown?")
+                                    .get_mut(&timely__event__operates__shutdown)
                                     .map(|s| s.give(((eid, Bool(true)), time, 1)));
                             }
                             TimelyEvent::Channels(mut x) => {
@@ -137,19 +154,19 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
                                 let scope = Eid((x.scope_addr.pop().unwrap() as u64).into());
 
                                 sessions
-                                    .get_mut("timely/scope")
+                                    .get_mut(&timely__scope)
                                     .map(|s| s.give(((eid.clone(), scope.clone()), time, 1)));
                                 sessions
-                                    .get_mut("timely.event.channels/src-index")
+                                    .get_mut(&timely__event__channels__src_index)
                                     .map(|s| s.give(((eid.clone(), src_index), time, 1)));
                                 sessions
-                                    .get_mut("timely.event.channels/src-port")
+                                    .get_mut(&timely__event__channels__src_port)
                                     .map(|s| s.give(((eid.clone(), src_port), time, 1)));
                                 sessions
-                                    .get_mut("timely.event.channels/target-index")
+                                    .get_mut(&timely__event__channels__target_index)
                                     .map(|s| s.give(((eid.clone(), target_index), time, 1)));
                                 sessions
-                                    .get_mut("timely.event.channels/target-port")
+                                    .get_mut(&timely__event__channels__target_port)
                                     .map(|s| s.give(((eid, target_port), time, 1)));
                             }
                             TimelyEvent::Schedule(x) => {
@@ -158,7 +175,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
                                     Bool(x.start_stop == ::timely::logging::StartStop::Start);
 
                                 sessions
-                                    .get_mut("schedule/started?")
+                                    .get_mut(&schedule__started)
                                     .map(|s| s.give(((eid, is_started), time, 1)));
                             }
                             TimelyEvent::Messages(_x) => {
@@ -176,7 +193,7 @@ impl<S: Scope<Timestamp = Duration>> Sourceable<S> for TimelyLogging {
             .iter()
             .map(|aid| {
                 (
-                    aid.to_string(),
+                    aid.clone(),
                     AttributeConfig::real_time(InputSemantics::Distinct),
                     streams.remove(aid).unwrap(),
                 )

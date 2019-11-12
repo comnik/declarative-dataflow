@@ -3,18 +3,18 @@ use std::sync::mpsc::channel;
 use declarative_dataflow::plan::{Join, Project};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Plan, Rule, TxData, Value};
 use Value::{Eid, String};
 
 #[test]
 fn match_ea_after_input() {
     timely::execute_directly(move |worker| {
-        let mut server = Server::<u64, u64>::new(Default::default());
+        let mut server = Server::<Aid, u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         // [:find ?v :where [1 :name ?n]]
-        let plan = Plan::MatchEA(1, ":name".to_string(), 1);
+        let plan = Plan::match_ea(1, ":name", 1);
 
         worker.dataflow::<u64, _, _>(|scope| {
             let config = AttributeConfig {
@@ -28,9 +28,9 @@ fn match_ea_after_input() {
         });
 
         let tx_data = vec![
-            TxData::add(1, ":name", String("Dipper".to_string())),
-            TxData::add(1, ":name", String("Alias".to_string())),
-            TxData::add(2, ":name", String("Mabel".to_string())),
+            Datom::add(1, ":name", String("Dipper".to_string())),
+            Datom::add(1, ":name", String("Alias".to_string())),
+            Datom::add(2, ":name", String("Mabel".to_string())),
         ];
 
         server.transact(tx_data, 0, 0).unwrap();
@@ -41,13 +41,7 @@ fn match_ea_after_input() {
 
         worker.dataflow::<u64, _, _>(|scope| {
             server
-                .test_single(
-                    scope,
-                    Rule {
-                        name: "match_ea".to_string(),
-                        plan,
-                    },
-                )
+                .test_single(scope, Rule::named("match_ea", plan))
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });
@@ -71,7 +65,7 @@ fn match_ea_after_input() {
 #[test]
 fn join_after_input() {
     timely::execute_directly(move |worker| {
-        let mut server = Server::<u64, u64>::new(Default::default());
+        let mut server = Server::<Aid, u64, u64>::new(Default::default());
         let (send_results, results) = channel();
 
         worker.dataflow::<u64, _, _>(|scope| {
@@ -108,11 +102,7 @@ fn join_after_input() {
         {
             server
                 .transact(
-                    vec![TxData::add(
-                        1,
-                        ":user/id",
-                        String("123-456-789".to_string()),
-                    )],
+                    vec![Datom::add(1, ":user/id", String("123-456-789".to_string()))],
                     0,
                     0,
                 )
@@ -126,7 +116,7 @@ fn join_after_input() {
         {
             server
                 .transact(
-                    vec![TxData::add(
+                    vec![Datom::add(
                         101,
                         ":transfer/from",
                         String("123-456-789".to_string()),
@@ -147,19 +137,13 @@ fn join_after_input() {
                 variables: vec![transfer, sender],
                 plan: Box::new(Plan::Join(Join {
                     variables: vec![uuid],
-                    left_plan: Box::new(Plan::MatchA(transfer, ":transfer/from".to_string(), uuid)),
-                    right_plan: Box::new(Plan::MatchA(sender, ":user/id".to_string(), uuid)),
+                    left_plan: Box::new(Plan::match_a(transfer, ":transfer/from", uuid)),
+                    right_plan: Box::new(Plan::match_a(sender, ":user/id", uuid)),
                 })),
             });
 
             server
-                .test_single(
-                    scope,
-                    Rule {
-                        name: "join".to_string(),
-                        plan,
-                    },
-                )
+                .test_single(scope, Rule::named("join", plan))
                 .inspect(move |x| {
                     send_results.send((x.0.clone(), x.2)).unwrap();
                 });

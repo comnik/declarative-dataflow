@@ -4,11 +4,11 @@ use timely::progress::frontier::AntichainRef;
 use differential_dataflow::trace::TraceReader;
 
 use declarative_dataflow::domain::{AsSingletonDomain, Domain};
-use declarative_dataflow::Value;
+use declarative_dataflow::{Aid, Value};
 
 #[test]
 fn test_advance_epoch() {
-    let mut domain = Domain::<u64>::new(0);
+    let mut domain = Domain::<Aid, u64>::new(0);
     assert_eq!(domain.epoch(), &0);
 
     assert!(domain.advance_epoch(1).is_ok());
@@ -25,7 +25,7 @@ fn test_advance_epoch() {
 fn test_advance_only_epoch() {
     timely::execute_directly(move |worker| {
         let (domain, _handle, _cap) = worker.dataflow::<u64, _, _>(|scope| {
-            let tx_test: Domain<u64> = scope
+            let tx_test: Domain<Aid, u64> = scope
                 .new_unordered_input::<((Value, Value), u64, isize)>()
                 .as_singleton_domain("tx_test")
                 .into();
@@ -33,7 +33,7 @@ fn test_advance_only_epoch() {
             let ((handle, cap), source) =
                 scope.new_unordered_input::<((Value, Value), u64, isize)>();
 
-            let source_test: Domain<u64> = source.as_singleton_domain("source_test").into();
+            let source_test: Domain<Aid, u64> = source.as_singleton_domain("source_test").into();
 
             (tx_test + source_test, handle, cap)
         });
@@ -52,17 +52,17 @@ fn test_advance_only_epoch() {
 #[test]
 fn test_advance_only_source() {
     timely::execute_directly(move |worker| {
-        let (mut domain, _handle, mut cap): (Domain<u64>, _, _) =
-            worker.dataflow::<u64, _, _>(|scope| {
+        let (mut domain, _handle, mut cap): (Domain<Aid, u64>, _, _) = worker
+            .dataflow::<u64, _, _>(|scope| {
                 let ((handle, cap), source) =
                     scope.new_unordered_input::<((Value, Value), u64, isize)>();
 
-                let source_test: Domain<u64> = source
+                let source_test: Domain<Aid, u64> = source
                     .as_singleton_domain("source_test")
                     .with_slack(1)
                     .into();
 
-                let tx_test: Domain<u64> = scope
+                let tx_test: Domain<Aid, u64> = scope
                     .new_unordered_input::<((Value, Value), u64, isize)>()
                     .as_singleton_domain("tx_test")
                     .with_slack(1)

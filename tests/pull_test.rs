@@ -9,21 +9,21 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::plan::{Implementable, PullLevel};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
+use declarative_dataflow::{Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Plan, Rule, TxData, Value};
-use Value::{Aid, Bool, Eid, Number, String};
+use Value::{Bool, Eid, Number, String};
 
 struct Case {
     description: &'static str,
-    plan: Plan,
-    transactions: Vec<Vec<TxData>>,
+    plan: Plan<Aid>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
 fn run_cases(mut cases: Vec<Case>) {
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -35,7 +35,7 @@ fn run_cases(mut cases: Vec<Case>) {
 
             for tx in case.transactions.iter() {
                 for datum in tx {
-                    deps.attributes.insert(datum.2.clone());
+                    deps.attributes.insert(datum.1.clone());
                 }
             }
 
@@ -51,17 +51,11 @@ fn run_cases(mut cases: Vec<Case>) {
                         ..Default::default()
                     };
 
-                    server.create_attribute(scope, dep, config).unwrap();
+                    server.create_attribute(scope, dep.clone(), config).unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "query".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("query", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {
@@ -117,38 +111,30 @@ fn pull_level() {
         plan: Plan::PullLevel(PullLevel {
             variables: vec![],
             pull_variable: 0,
-            plan: Box::new(Plan::MatchAV(0, "admin?".to_string(), Bool(false))),
+            plan: Box::new(Plan::match_av(0, "admin?", Bool(false))),
             pull_attributes: vec!["name".to_string(), "age".to_string()],
             path_attributes: vec![],
             cardinality_many: false,
         }),
         transactions: vec![vec![
-            TxData::add(100, "admin?", Bool(true)),
-            TxData::add(200, "admin?", Bool(false)),
-            TxData::add(300, "admin?", Bool(false)),
-            TxData::add(100, "name", String("Mabel".to_string())),
-            TxData::add(200, "name", String("Dipper".to_string())),
-            TxData::add(300, "name", String("Soos".to_string())),
-            TxData::add(100, "age", Number(12)),
-            TxData::add(200, "age", Number(13)),
+            Datom::add(100, "admin?", Bool(true)),
+            Datom::add(200, "admin?", Bool(false)),
+            Datom::add(300, "admin?", Bool(false)),
+            Datom::add(100, "name", String("Mabel".to_string())),
+            Datom::add(200, "name", String("Dipper".to_string())),
+            Datom::add(300, "name", String("Soos".to_string())),
+            Datom::add(100, "age", Number(12)),
+            Datom::add(200, "age", Number(13)),
         ]],
         expectations: vec![vec![
-            (vec![Eid(200), Aid("age".to_string()), Number(13)], 0, 1),
+            (vec![Eid(200), Value::aid("age"), Number(13)], 0, 1),
             (
-                vec![
-                    Eid(200),
-                    Aid("name".to_string()),
-                    String("Dipper".to_string()),
-                ],
+                vec![Eid(200), Value::aid("name"), String("Dipper".to_string())],
                 0,
                 1,
             ),
             (
-                vec![
-                    Eid(300),
-                    Aid("name".to_string()),
-                    String("Soos".to_string()),
-                ],
+                vec![Eid(300), Value::aid("name"), String("Soos".to_string())],
                 0,
                 1,
             ),
@@ -163,21 +149,21 @@ fn graph_ql() {
     use declarative_dataflow::plan::GraphQl;
     use declarative_dataflow::binding::Binding;
 
-    let transactions = vec![vec![        
-        TxData::add(100, "name", Value::from("Alice")),
-        TxData::add(100, "hero", Bool(true)),
-        TxData::add(200, "name", Value::from("Bob")),
-        TxData::add(200, "hero", Bool(true)),
-        TxData::add(300, "name", Value::from("Mabel")),
-        TxData::add(300, "hero", Bool(true)),
-        TxData::add(400, "name", Value::from("Dipper")),
-        TxData::add(400, "hero", Bool(true)),
+    let transactions = vec![vec![
+        Datom::add(100, "name", Value::from("Alice")),
+        Datom::add(100, "hero", Bool(true)),
+        Datom::add(200, "name", Value::from("Bob")),
+        Datom::add(200, "hero", Bool(true)),
+        Datom::add(300, "name", Value::from("Mabel")),
+        Datom::add(300, "hero", Bool(true)),
+        Datom::add(400, "name", Value::from("Dipper")),
+        Datom::add(400, "hero", Bool(true)),
         
-        TxData::add(300, "bested", Eid(400)),
-        TxData::add(200, "bested", Eid(100)),
+        Datom::add(300, "bested", Eid(400)),
+        Datom::add(200, "bested", Eid(100)),
 
-        TxData::add(300, "age", Number(13)),
-        TxData::add(400, "age", Number(12)),
+        Datom::add(300, "age", Number(13)),
+        Datom::add(400, "age", Number(12)),
     ]];
 
     // We want to pull all entities carrying the `hero` attribute.

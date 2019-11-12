@@ -10,15 +10,14 @@ use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Hector, Implementable, Union};
 use declarative_dataflow::server::Server;
 use declarative_dataflow::timestamp::Time;
-use declarative_dataflow::{Aid, Value};
+use declarative_dataflow::{Aid, Datom, Plan, Rule, Value};
 use declarative_dataflow::{AttributeConfig, IndexDirection, QuerySupport};
-use declarative_dataflow::{Plan, Rule, TxData};
 use Value::{Eid, Number, String};
 
 struct Case {
     description: &'static str,
-    plan: Plan,
-    transactions: Vec<Vec<TxData>>,
+    plan: Plan<Aid>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -37,7 +36,7 @@ fn dependencies(case: &Case) -> HashSet<Aid> {
 fn run_cases(mut cases: Vec<Case>) {
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -47,7 +46,7 @@ fn run_cases(mut cases: Vec<Case>) {
 
             for tx in case.transactions.iter() {
                 for datum in tx {
-                    deps.insert(datum.2.clone());
+                    deps.insert(datum.1.clone());
                 }
             }
 
@@ -60,17 +59,11 @@ fn run_cases(mut cases: Vec<Case>) {
                         ..Default::default()
                     };
 
-                    server.create_attribute(scope, dep, config).unwrap();
+                    server.create_attribute(scope, dep.clone(), config).unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "query".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("query", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {
@@ -122,18 +115,18 @@ fn run_cases(mut cases: Vec<Case>) {
 #[test]
 fn or() {
     let data = vec![
-        TxData::add(1, ":name", String("Ivan".to_string())),
-        TxData::add(1, ":age", Number(10)),
-        TxData::add(2, ":name", String("Ivan".to_string())),
-        TxData::add(2, ":age", Number(20)),
-        TxData::add(3, ":name", String("Oleg".to_string())),
-        TxData::add(3, ":age", Number(10)),
-        TxData::add(4, ":name", String("Oleg".to_string())),
-        TxData::add(4, ":age", Number(20)),
-        TxData::add(5, ":name", String("Ivan".to_string())),
-        TxData::add(5, ":age", Number(10)),
-        TxData::add(6, ":name", String("Ivan".to_string())),
-        TxData::add(6, ":age", Number(20)),
+        Datom::add(1, ":name", String("Ivan".to_string())),
+        Datom::add(1, ":age", Number(10)),
+        Datom::add(2, ":name", String("Ivan".to_string())),
+        Datom::add(2, ":age", Number(20)),
+        Datom::add(3, ":name", String("Oleg".to_string())),
+        Datom::add(3, ":age", Number(10)),
+        Datom::add(4, ":name", String("Oleg".to_string())),
+        Datom::add(4, ":age", Number(20)),
+        Datom::add(5, ":name", String("Ivan".to_string())),
+        Datom::add(5, ":age", Number(10)),
+        Datom::add(6, ":name", String("Ivan".to_string())),
+        Datom::add(6, ":age", Number(20)),
     ];
 
     run_cases(vec![
@@ -291,18 +284,18 @@ fn or() {
 #[test]
 fn or_join() {
     let data = vec![
-        TxData::add(1, ":name", String("Ivan".to_string())),
-        TxData::add(1, ":age", Number(10)),
-        TxData::add(2, ":name", String("Ivan".to_string())),
-        TxData::add(2, ":age", Number(20)),
-        TxData::add(3, ":name", String("Oleg".to_string())),
-        TxData::add(3, ":age", Number(10)),
-        TxData::add(4, ":name", String("Oleg".to_string())),
-        TxData::add(4, ":age", Number(20)),
-        TxData::add(5, ":name", String("Ivan".to_string())),
-        TxData::add(5, ":age", Number(10)),
-        TxData::add(6, ":name", String("Ivan".to_string())),
-        TxData::add(6, ":age", Number(20)),
+        Datom::add(1, ":name", String("Ivan".to_string())),
+        Datom::add(1, ":age", Number(10)),
+        Datom::add(2, ":name", String("Ivan".to_string())),
+        Datom::add(2, ":age", Number(20)),
+        Datom::add(3, ":name", String("Oleg".to_string())),
+        Datom::add(3, ":age", Number(10)),
+        Datom::add(4, ":name", String("Oleg".to_string())),
+        Datom::add(4, ":age", Number(20)),
+        Datom::add(5, ":name", String("Ivan".to_string())),
+        Datom::add(5, ":age", Number(10)),
+        Datom::add(6, ":name", String("Ivan".to_string())),
+        Datom::add(6, ":age", Number(20)),
     ];
 
     run_cases(vec![Case {

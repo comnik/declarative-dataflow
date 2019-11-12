@@ -2,7 +2,7 @@
 
 use std::fmt;
 
-use crate::{Aid, Value, Var};
+use crate::{AsAid, Value, Var};
 
 /// A thing that can act as a binding of values to variables.
 pub trait AsBinding {
@@ -50,33 +50,33 @@ impl AsBinding for Vec<Var> {
 
 /// Binding types supported by Hector.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum Binding {
+pub enum Binding<A: AsAid> {
     /// Two variables bound by (e,v) pairs from an attribute.
-    Attribute(AttributeBinding),
+    Attribute(AttributeBinding<A>),
     /// Variables that must not be bound by the wrapped binding.
-    Not(AntijoinBinding),
+    Not(AntijoinBinding<A>),
     /// A variable bound by a constant value.
     Constant(ConstantBinding),
     /// Two variables bound by a binary predicate.
     BinaryPredicate(BinaryPredicateBinding),
 }
 
-impl Binding {
+impl<A: AsAid> Binding<A> {
     /// Creates an AttributeBinding.
-    pub fn attribute(e: Var, name: &str, v: Var) -> Binding {
+    pub fn attribute<X: Into<A>>(e: Var, name: X, v: Var) -> Self {
         Binding::Attribute(AttributeBinding {
             variables: (e, v),
-            source_attribute: name.to_string(),
+            source_attribute: name.into(),
         })
     }
 
     /// Creates a ConstantBinding.
-    pub fn constant(variable: Var, value: Value) -> Binding {
+    pub fn constant(variable: Var, value: Value) -> Self {
         Binding::Constant(ConstantBinding { variable, value })
     }
 
     /// Creates a BinaryPredicateBinding.
-    pub fn binary_predicate(predicate: BinaryPredicate, x: Var, y: Var) -> Binding {
+    pub fn binary_predicate(predicate: BinaryPredicate, x: Var, y: Var) -> Self {
         Binding::BinaryPredicate(BinaryPredicateBinding {
             variables: (x, y),
             predicate,
@@ -84,14 +84,14 @@ impl Binding {
     }
 
     /// Creates an AntijoinBinding.
-    pub fn not(binding: Binding) -> Binding {
+    pub fn not(binding: Self) -> Self {
         Binding::Not(AntijoinBinding {
             binding: Box::new(binding),
         })
     }
 }
 
-impl AsBinding for Binding {
+impl<A: AsAid> AsBinding for Binding<A> {
     fn variables(&self) -> Vec<Var> {
         match *self {
             Binding::Attribute(ref binding) => binding.variables(),
@@ -131,14 +131,14 @@ impl AsBinding for Binding {
 
 /// Describes variables whose possible values are given by an attribute.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
-pub struct AttributeBinding {
+pub struct AttributeBinding<A: AsAid> {
     /// The variables this binding talks about.
     pub variables: (Var, Var),
     /// The name of a globally known attribute backing this binding.
-    pub source_attribute: Aid,
+    pub source_attribute: A,
 }
 
-impl AsBinding for AttributeBinding {
+impl<A: AsAid> AsBinding for AttributeBinding<A> {
     fn variables(&self) -> Vec<Var> {
         vec![self.variables.0, self.variables.1]
     }
@@ -190,7 +190,7 @@ impl AsBinding for AttributeBinding {
     }
 }
 
-impl fmt::Debug for AttributeBinding {
+impl<A: AsAid> fmt::Debug for AttributeBinding<A> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(
             f,
@@ -203,12 +203,12 @@ impl fmt::Debug for AttributeBinding {
 /// Describes variables whose possible values must not be contained in
 /// the specified attribute.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Serialize, Deserialize)]
-pub struct AntijoinBinding {
+pub struct AntijoinBinding<A: AsAid> {
     /// The wrapped binding.
-    pub binding: Box<Binding>,
+    pub binding: Box<Binding<A>>,
 }
 
-impl AsBinding for AntijoinBinding {
+impl<A: AsAid> AsBinding for AntijoinBinding<A> {
     fn variables(&self) -> Vec<Var> {
         self.binding.variables()
     }
@@ -226,7 +226,7 @@ impl AsBinding for AntijoinBinding {
     }
 }
 
-impl fmt::Debug for AntijoinBinding {
+impl<A: AsAid> fmt::Debug for AntijoinBinding<A> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "Not({:?})", self.binding)
     }

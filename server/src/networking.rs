@@ -14,6 +14,8 @@ use ws::connection::{ConnEvent, Connection};
 use declarative_dataflow::server::Request;
 use declarative_dataflow::{Error, Output};
 
+use crate::Aid;
+
 const SERVER: Token = Token(std::usize::MAX - 1);
 const RESULTS: Token = Token(std::usize::MAX - 2);
 pub const SYSTEM: Token = Token(std::usize::MAX - 3);
@@ -21,7 +23,7 @@ pub const SYSTEM: Token = Token(std::usize::MAX - 3);
 /// A high-level event devoid of I/O details.
 pub enum DomainEvent {
     /// A client sent one or more requests.
-    Requests(Token, Vec<Request>),
+    Requests(Token, Vec<Request<Aid>>),
     /// A client has went away.
     Disconnect(Token),
 }
@@ -245,12 +247,12 @@ impl IO {
                         trace!("read {} connection events", self.conn_events.len());
 
                         for conn_event in self.conn_events.drain(..) {
-                            match conn_event {
+                           match conn_event {
                                 ConnEvent::Message(msg) => {
                                     trace!("[WS] ConnEvent::Message");
                                     match msg {
                                         ws::Message::Text(string) => {
-                                            match serde_json::from_str::<Vec<Request>>(&string) {
+                                            match serde_json::from_str::<Vec<Request<Aid>>>(&string) {
                                                 Err(serde_error) => {
                                                     self.send
                                                         .send(Output::Error(

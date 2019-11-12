@@ -33,7 +33,7 @@ use crate::domain::Domain;
 use crate::logging::DeclarativeEvent;
 use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::{altneu::AltNeu, Rewind};
-use crate::{Aid, Value, Var};
+use crate::{AsAid, Value, Var};
 use crate::{CollectionRelation, Implemented, ShutdownHandle, VariableMap};
 
 type Extender<'a, S, P, V> = Box<(dyn PrefixExtender<S, Prefix = P, Extension = V> + 'a)>;
@@ -126,11 +126,11 @@ where
 /// variables. Throws if any of the join variables isn't bound by both
 /// sources.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct Hector {
+pub struct Hector<A: AsAid> {
     /// Variables to bind.
     pub variables: Vec<Var>,
     /// Bindings to join.
-    pub bindings: Vec<Binding>,
+    pub bindings: Vec<Binding<A>>,
 }
 
 enum Direction {
@@ -170,7 +170,10 @@ where
 /// delta pipeline. We need to identify them and handle them as
 /// special cases, because we always have to start from prefixes of
 /// size two.
-pub fn source_conflicts(source_index: usize, bindings: &[Binding]) -> Vec<&Binding> {
+pub fn source_conflicts<A: AsAid>(
+    source_index: usize,
+    bindings: &[Binding<A>],
+) -> Vec<&Binding<A>> {
     match bindings[source_index] {
         Binding::Attribute(ref source) => {
             let prefix_0 = vec![source.variables.0];
@@ -203,7 +206,10 @@ pub fn source_conflicts(source_index: usize, bindings: &[Binding]) -> Vec<&Bindi
 /// binding order.
 ///
 /// (adapted from github.com/frankmcsherry/dataflow-join/src/motif.rs)
-pub fn plan_order(source_index: usize, bindings: &[Binding]) -> (Vec<Var>, Vec<Binding>) {
+pub fn plan_order<A: AsAid>(
+    source_index: usize,
+    bindings: &[Binding<A>],
+) -> (Vec<Var>, Vec<Binding<A>>) {
     let mut variables = bindings
         .iter()
         .flat_map(AsBinding::variables)
@@ -227,7 +233,7 @@ pub fn plan_order(source_index: usize, bindings: &[Binding]) -> (Vec<Var>, Vec<B
         _ => panic!("Source binding must be an attribute."),
     }
 
-    let candidates_for = |bindings: &[Binding], target: Var| {
+    let candidates_for = |bindings: &[Binding<A>], target: Var| {
         bindings
             .iter()
             .enumerate()
@@ -243,11 +249,11 @@ pub fn plan_order(source_index: usize, bindings: &[Binding]) -> (Vec<Var>, Vec<B
                     None
                 }
             })
-            .collect::<Vec<Binding>>()
+            .collect::<Vec<Binding<A>>>()
     };
 
     let mut ordered_bindings = Vec::new();
-    let mut candidates: Vec<Binding> = prefix
+    let mut candidates: Vec<Binding<A>> = prefix
         .iter()
         .flat_map(|x| candidates_for(&bindings, *x))
         .collect();
@@ -337,16 +343,16 @@ impl IndexNode<Value> for Vec<Value> {
     }
 }
 
-impl Hector {
+impl<A: AsAid> Hector<A> {
     // @TODO pass single binding as argument?
     // @TODO make these static and take variables as well?
 
     fn implement_single_binding<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<A, S::Timestamp>,
+        _local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
@@ -395,11 +401,11 @@ impl Hector {
 
     // fn two_way<'b, S>(
     //     nested: &mut Iterative<'b, S, u64>,
-    //     _local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
+    //     _local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
     //     context: &mut I,
     //     left: Binding,
     //     right: Binding,
-    // ) -> (Implemented<'b, S>, ShutdownHandle)
+    // ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     // where
     //     T: Timestamp + Lattice,
     //     S: Scope<Timestamp = T>,
@@ -459,8 +465,13 @@ impl Hector {
     // }
 }
 
-impl Implementable for Hector {
-    fn dependencies(&self) -> Dependencies {
+impl<A> Implementable for Hector<A>
+where
+    A: AsAid,
+{
+    type A = A;
+
+    fn dependencies(&self) -> Dependencies<A> {
         let attributes = self
             .bindings
             .iter()
@@ -471,7 +482,7 @@ impl Implementable for Hector {
                     None
                 }
             })
-            .collect::<HashSet<Aid>>();
+            .collect::<HashSet<A>>();
 
         Dependencies {
             names: HashSet::new(),
@@ -479,16 +490,16 @@ impl Implementable for Hector {
         }
     }
 
-    fn into_bindings(&self) -> Vec<Binding> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
         self.bindings.clone()
     }
 
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<A, S::Timestamp>,
+        local_arrangements: &VariableMap<A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
@@ -563,7 +574,7 @@ impl Implementable for Hector {
                                     let (arranged, shutdown) = domain
                                         .forward_propose(&delta_binding.source_attribute)
                                         .expect("forward propose trace doesn't exist")
-                                        .import_frontier(&scope.parent.parent, &format!("Counts({})", &delta_binding.source_attribute));
+                                        .import_frontier(&scope.parent.parent, &format!("Counts({:?})", &delta_binding.source_attribute));
 
                                     shutdown_handle.add_button(shutdown);
 
@@ -635,7 +646,7 @@ impl Implementable for Hector {
                                         //
                                         // Therefore we make our own little queue of bindings and process them iteratively.
 
-                                        let mut bindings: VecDeque<(usize, Binding)> = VecDeque::new();
+                                        let mut bindings: VecDeque<(usize, Binding<A>)> = VecDeque::new();
 
                                         for (idx, binding) in self.bindings.iter().cloned().enumerate() {
                                             if let Binding::Not(antijoin_binding) = binding {
@@ -697,7 +708,7 @@ impl Implementable for Hector {
                                                         Ok(direction) => match direction {
                                                             Direction::Forward(offset) => {
                                                                 let count = {
-                                                                    let name = format!("Counts({})", &delta_binding.source_attribute);
+                                                                    let name = format!("Counts({:?})", &delta_binding.source_attribute);
                                                                     let count = forward_counts
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
@@ -722,7 +733,7 @@ impl Implementable for Hector {
                                                                     let propose = forward_proposes
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let name = format!("Propose({})", &delta_binding.source_attribute);
+                                                                            let name = format!("Propose({:?})", &delta_binding.source_attribute);
                                                                             let (arranged, shutdown) = domain
                                                                                 .forward_propose(&other.source_attribute)
                                                                                 .expect("forward propose doesn't exist")
@@ -744,7 +755,7 @@ impl Implementable for Hector {
                                                                     let validate = forward_validates
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let name = format!("Validate({})", &delta_binding.source_attribute);
+                                                                            let name = format!("Validate({:?})", &delta_binding.source_attribute);
                                                                             let (arranged, shutdown) = domain
                                                                                 .forward_validate(&other.source_attribute)
                                                                                 .expect("forward validate doesn't exist")
@@ -777,7 +788,7 @@ impl Implementable for Hector {
                                                                     let count = reverse_counts
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let name = format!("_Counts({})", &delta_binding.source_attribute);
+                                                                            let name = format!("_Counts({:?})", &delta_binding.source_attribute);
                                                                             let (arranged, shutdown) = domain
                                                                                 .reverse_count(&other.source_attribute)
                                                                                 .expect("reverse count doesn't exist")
@@ -799,7 +810,7 @@ impl Implementable for Hector {
                                                                     let propose = reverse_proposes
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let name = format!("_Propose({})", &delta_binding.source_attribute);
+                                                                            let name = format!("_Propose({:?})", &delta_binding.source_attribute);
                                                                             let (arranged, shutdown) = domain
                                                                                 .reverse_propose(&other.source_attribute)
                                                                                 .expect("reverse propose doesn't exist")
@@ -821,7 +832,7 @@ impl Implementable for Hector {
                                                                     let validate = reverse_validates
                                                                         .entry(other.source_attribute.to_string())
                                                                         .or_insert_with(|| {
-                                                                            let name = format!("_Validate({})", &delta_binding.source_attribute);
+                                                                            let name = format!("_Validate({:?})", &delta_binding.source_attribute);
                                                                             let (arranged, shutdown) = domain
                                                                                 .reverse_validate(&other.source_attribute)
                                                                                 .expect("reverse validate doesn't exist")

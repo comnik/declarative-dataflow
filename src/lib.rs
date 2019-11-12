@@ -57,6 +57,27 @@ pub type Eid = u64;
 /// A unique attribute identifier.
 pub type Aid = String; // u32
 
+/// A unique attribute identifier.
+pub trait AsAid:
+    Clone + Eq + Ord + std::hash::Hash + std::fmt::Display + std::fmt::Debug + From<String> + 'static
+{
+    /// Moves self into the specified namespace.
+    fn with_namespace(&self, namespace: Self) -> Self;
+
+    /// Converts the aid into a value for use in a query result.
+    fn into_value(self) -> Value;
+}
+
+impl AsAid for String {
+    fn with_namespace(&self, namespace: Self) -> Self {
+        format!("{}/{}", namespace, self)
+    }
+
+    fn into_value(self) -> Value {
+        Value::Aid(self)
+    }
+}
+
 /// Possible data values.
 ///
 /// This enum captures the currently supported data types, and is the
@@ -192,29 +213,29 @@ impl Error {
 
 /// Transaction data.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct TxData(pub isize, pub Value, pub Aid, pub Value, pub Option<Time>);
+pub struct Datom<A>(pub Value, pub A, pub Value, pub Option<Time>, pub isize);
 
-impl TxData {
-    /// Creates TxData representing the addition of a single fact.
-    pub fn add(e: Eid, a: &str, v: Value) -> Self {
-        TxData(1, Value::Eid(e), a.to_string(), v, None)
+impl<A: AsAid + ExchangeData> Datom<A> {
+    /// Creates a datom representing the addition of a single fact.
+    pub fn add<X: Into<A>>(e: Eid, a: X, v: Value) -> Self {
+        Self(Value::Eid(e), a.into(), v, None, 1)
     }
 
-    /// Creates TxData representing the addition of a single fact at a
-    /// specific point in time.
-    pub fn add_at(e: Eid, a: &str, v: Value, t: Time) -> Self {
-        TxData(1, Value::Eid(e), a.to_string(), v, Some(t))
-    }
-
-    /// Creates TxData representing the retraction of a single fact.
-    pub fn retract(e: Eid, a: &str, v: Value) -> Self {
-        TxData(-1, Value::Eid(e), a.to_string(), v, None)
-    }
-
-    /// Creates TxData representing the retraction of a single fact at
+    /// Creates a datom representing the addition of a single fact at
     /// a specific point in time.
-    pub fn retract_at(e: Eid, a: &str, v: Value, t: Time) -> Self {
-        TxData(-1, Value::Eid(e), a.to_string(), v, Some(t))
+    pub fn add_at<X: Into<A>>(e: Eid, a: X, v: Value, t: Time) -> Self {
+        Self(Value::Eid(e), a.into(), v, Some(t), 1)
+    }
+
+    /// Creates a datom representing the retraction of a single fact.
+    pub fn retract<X: Into<A>>(e: Eid, a: X, v: Value) -> Self {
+        Self(Value::Eid(e), a.into(), v, None, -1)
+    }
+
+    /// Creates a datom representing the retraction of a single fact
+    /// at a specific point in time.
+    pub fn retract_at<X: Into<A>>(e: Eid, a: X, v: Value, t: Time) -> Self {
+        Self(Value::Eid(e), a.into(), v, Some(t), -1)
     }
 }
 
@@ -248,7 +269,7 @@ pub type TraceValHandle<K, V, T, R> = TraceAgent<OrdValSpine<K, V, T, R>>;
 
 // A map for keeping track of collections that are being actively
 // synthesized (i.e. that are not fully defined yet).
-type VariableMap<S> = HashMap<String, Variable<S, Vec<Value>, isize>>;
+type VariableMap<A, S> = HashMap<A, Variable<S, Vec<Value>, isize>>;
 
 trait Shutdownable {
     fn press(&mut self);
@@ -433,11 +454,21 @@ type Var = u32;
 
 /// A named relation.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub struct Rule {
+pub struct Rule<A: AsAid> {
     /// The name identifying the relation.
-    pub name: String,
+    pub name: A,
     /// The plan describing contents of the relation.
-    pub plan: Plan,
+    pub plan: Plan<A>,
+}
+
+impl<A: AsAid> Rule<A> {
+    /// Returns a named rule from a given plan.
+    pub fn named<X: Into<A>>(name: X, plan: Plan<A>) -> Self {
+        Rule {
+            name: name.into(),
+            plan,
+        }
+    }
 }
 
 /// A relation between a set of variables.
@@ -445,8 +476,9 @@ pub struct Rule {
 /// Relations can be backed by a collection of records of type
 /// `Vec<Value>`, each of a common length (with offsets corresponding
 /// to the variable offsets), or by an existing arrangement.
-trait Relation<'a, S>: AsBinding
+trait Relation<'a, A, S>: AsBinding
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Lattice + Rewind + ExchangeData,
 {
@@ -454,7 +486,7 @@ where
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -465,7 +497,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -481,7 +513,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -517,15 +549,16 @@ where
     }
 }
 
-impl<'a, S> Relation<'a, S> for CollectionRelation<'a, S>
+impl<'a, A, S> Relation<'a, A, S> for CollectionRelation<'a, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     fn tuples(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<S::Timestamp>,
+        _domain: &mut Domain<A, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -536,7 +569,7 @@ where
     fn projected(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<S::Timestamp>,
+        _domain: &mut Domain<A, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -565,7 +598,7 @@ where
     fn tuples_by_variables(
         self,
         _nested: &mut Iterative<'a, S, u64>,
-        _domain: &mut Domain<S::Timestamp>,
+        _domain: &mut Domain<A, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -618,15 +651,16 @@ where
     }
 }
 
-impl<'a, S> Relation<'a, S> for AttributeBinding
+impl<'a, A, S> Relation<'a, A, S> for AttributeBinding<A>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -638,7 +672,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -647,8 +681,8 @@ where
         match domain.forward_propose(&self.source_attribute) {
             None => panic!("attribute {:?} does not exist", self.source_attribute),
             Some(propose_trace) => {
-                let (propose, shutdown_propose) =
-                    propose_trace.import_frontier(&nested.parent, &self.source_attribute);
+                let (propose, shutdown_propose) = propose_trace
+                    .import_frontier(&nested.parent, &format!("{:?}", &self.source_attribute));
 
                 let tuples = propose.enter(&nested);
 
@@ -673,7 +707,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -682,8 +716,8 @@ where
         match domain.forward_propose(&self.source_attribute) {
             None => panic!("attribute {:?} does not exist", self.source_attribute),
             Some(propose_trace) => {
-                let (propose, shutdown_propose) =
-                    propose_trace.import_frontier(&nested.parent, &self.source_attribute);
+                let (propose, shutdown_propose) = propose_trace
+                    .import_frontier(&nested.parent, &format!("{:?}", &self.source_attribute));
 
                 let tuples = propose.enter(&nested);
 
@@ -707,20 +741,22 @@ where
 }
 
 /// @TODO
-pub enum Implemented<'a, S>
+pub enum Implemented<'a, A, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     /// A relation backed by an attribute.
-    Attribute(AttributeBinding),
+    Attribute(AttributeBinding<A>),
     /// A relation backed by a Differential collection.
     Collection(CollectionRelation<'a, S>),
     // Arranged(ArrangedRelation<'a, S>)
 }
 
-impl<'a, S> AsBinding for Implemented<'a, S>
+impl<'a, A, S> AsBinding for Implemented<'a, A, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Lattice + Rewind + ExchangeData,
 {
@@ -755,15 +791,16 @@ where
     }
 }
 
-impl<'a, S> Relation<'a, S> for Implemented<'a, S>
+impl<'a, A, S> Relation<'a, A, S> for Implemented<'a, A, S>
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Lattice + Rewind + ExchangeData,
 {
     fn tuples(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
         ShutdownHandle,
@@ -777,7 +814,7 @@ where
     fn projected(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
         target_variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, Vec<Value>, isize>,
@@ -796,7 +833,7 @@ where
     fn tuples_by_variables(
         self,
         nested: &mut Iterative<'a, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
+        domain: &mut Domain<A, S::Timestamp>,
         variables: &[Var],
     ) -> (
         Collection<Iterative<'a, S, u64>, (Vec<Value>, Vec<Value>), isize>,
@@ -827,7 +864,10 @@ where
 /// Helper function to create a query plan. The resulting query will
 /// provide values for the requested target variables, under the
 /// constraints expressed by the bindings provided.
-pub fn q(target_variables: Vec<Var>, bindings: Vec<Binding>) -> Plan {
+pub fn q<A: AsAid + timely::ExchangeData>(
+    target_variables: Vec<Var>,
+    bindings: Vec<Binding<A>>,
+) -> Plan<A> {
     Plan::Hector(Hector {
         variables: target_variables,
         bindings,
@@ -836,8 +876,9 @@ pub fn q(target_variables: Vec<Var>, bindings: Vec<Binding>) -> Plan {
 
 /// Returns a deduplicates list of all rules used in the definition of
 /// the specified names. Includes the specified names.
-pub fn collect_dependencies<T>(domain: &Domain<T>, names: &[&str]) -> Result<Vec<Rule>, Error>
+pub fn collect_dependencies<A, T>(domain: &Domain<A, T>, names: &[A]) -> Result<Vec<Rule<A>>, Error>
 where
+    A: AsAid + timely::ExchangeData,
     T: Timestamp + Lattice + Rewind,
 {
     let mut seen = HashSet::new();
@@ -850,7 +891,7 @@ where
                 return Err(Error::not_found(format!("Unknown rule {}.", name)));
             }
             Some(rule) => {
-                seen.insert(name.to_string());
+                seen.insert(name.clone());
                 queue.push_back(rule.clone());
             }
         }
@@ -858,14 +899,14 @@ where
 
     while let Some(next) = queue.pop_front() {
         let dependencies = next.plan.dependencies();
-        for dep_name in dependencies.names.iter() {
-            if !seen.contains(dep_name) {
-                match domain.rule(dep_name) {
+        for dep_name in dependencies.names.into_iter() {
+            if !seen.contains(&dep_name) {
+                match domain.rule(&dep_name) {
                     None => {
                         return Err(Error::not_found(format!("Unknown rule {}", dep_name)));
                     }
                     Some(rule) => {
-                        seen.insert(dep_name.to_string());
+                        seen.insert(dep_name);
                         queue.push_back(rule.clone());
                     }
                 }
@@ -876,7 +917,7 @@ where
         for aid in dependencies.attributes.iter() {
             if !domain.has_attribute(aid) {
                 return Err(Error::not_found(format!(
-                    "Rule depends on unknown attribute {}",
+                    "Rule {:?} depends on unknown attribute",
                     aid
                 )));
             }
@@ -889,23 +930,18 @@ where
 }
 
 /// Takes a query plan and turns it into a differential dataflow.
-pub fn implement<S>(
+pub fn implement<A, S>(
     scope: &mut S,
-    domain: &mut Domain<S::Timestamp>,
-    name: &str,
-) -> Result<
-    (
-        HashMap<String, Collection<S, Vec<Value>, isize>>,
-        ShutdownHandle,
-    ),
-    Error,
->
+    domain: &mut Domain<A, S::Timestamp>,
+    name: A,
+) -> Result<(HashMap<A, Collection<S, Vec<Value>, isize>>, ShutdownHandle), Error>
 where
+    A: AsAid + timely::ExchangeData,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind + Default,
 {
     scope.iterative::<u64, _, _>(|nested| {
-        let publish = vec![name];
+        let publish = vec![name.clone()];
         let mut rules = collect_dependencies(domain, &publish[..])?;
 
         let mut local_arrangements = VariableMap::new();
@@ -939,8 +975,8 @@ where
 
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
-            if let Some(relation) = local_arrangements.get(name) {
-                result_map.insert(name.to_string(), relation.leave());
+            if let Some(relation) = local_arrangements.get(&name) {
+                result_map.insert(name, relation.leave());
             } else {
                 return Err(Error::not_found(format!(
                     "Attempted to publish undefined name {}.",
@@ -965,7 +1001,7 @@ where
             match local_arrangements.remove(&rule.name) {
                 None => {
                     return Err(Error::not_found(format!(
-                        "Rule {} should be in local arrangements, but isn't.",
+                        "Rule {:?} should be in local arrangements, but isn't.",
                         &rule.name
                     )));
                 }
@@ -987,23 +1023,18 @@ where
 }
 
 /// @TODO
-pub fn implement_neu<S>(
+pub fn implement_neu<A, S>(
     scope: &mut S,
-    domain: &mut Domain<S::Timestamp>,
-    name: &str,
-) -> Result<
-    (
-        HashMap<String, Collection<S, Vec<Value>, isize>>,
-        ShutdownHandle,
-    ),
-    Error,
->
+    domain: &mut Domain<A, S::Timestamp>,
+    name: A,
+) -> Result<(HashMap<A, Collection<S, Vec<Value>, isize>>, ShutdownHandle), Error>
 where
+    A: AsAid + timely::ExchangeData,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind + Default,
 {
     scope.iterative::<u64, _, _>(move |nested| {
-        let publish = vec![name];
+        let publish = vec![name.clone()];
         let mut rules = collect_dependencies(domain, &publish[..])?;
 
         let mut local_arrangements = VariableMap::new();
@@ -1038,15 +1069,15 @@ where
         // Step 1: Create new recursive variables for each rule.
         for name in publish.iter() {
             local_arrangements.insert(
-                name.to_string(),
+                name.clone(),
                 Variable::new(nested, Product::new(Default::default(), 1)),
             );
         }
 
         // Step 2: Create public arrangements for published relations.
         for name in publish.into_iter() {
-            if let Some(relation) = local_arrangements.get(name) {
-                result_map.insert(name.to_string(), relation.leave());
+            if let Some(relation) = local_arrangements.get(&name) {
+                result_map.insert(name, relation.leave());
             } else {
                 return Err(Error::not_found(format!(
                     "Attempted to publish undefined name {}.",
@@ -1074,7 +1105,7 @@ where
             match local_arrangements.remove(&rule.name) {
                 None => {
                     return Err(Error::not_found(format!(
-                        "Rule {} should be in local arrangements, but isn't.",
+                        "Rule {:?} should be in local arrangements, but isn't.",
                         &rule.name
                     )));
                 }

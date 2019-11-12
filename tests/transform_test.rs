@@ -9,14 +9,13 @@ use timely::dataflow::operators::Operator;
 use declarative_dataflow::binding::Binding;
 use declarative_dataflow::plan::{Function, Implementable, Transform};
 use declarative_dataflow::server::Server;
-use declarative_dataflow::{Aid, Value};
-use declarative_dataflow::{AttributeConfig, InputSemantics, Plan, Rule, TxData};
+use declarative_dataflow::{Aid, AttributeConfig, Datom, InputSemantics, Plan, Rule, Value};
 use Value::{Eid, Instant};
 
 struct Case {
     description: &'static str,
-    plan: Plan,
-    transactions: Vec<Vec<TxData>>,
+    plan: Plan<Aid>,
+    transactions: Vec<Vec<Datom<Aid>>>,
     expectations: Vec<Vec<(Vec<Value>, u64, isize)>>,
 }
 
@@ -43,14 +42,14 @@ fn run_transform_cases() {
             Plan::Transform(Transform {
                 variables: vec![t],
                 result_variable: h,
-                plan: Box::new(Plan::MatchA(e, ":timestamp".to_string(), t)),
+                plan: Box::new(Plan::match_a(e, ":timestamp", t)),
                 function: Function::TRUNCATE,
                 constants,
             })
         },
         transactions: vec![vec![
-            TxData::add(1, ":timestamp", Instant(1_540_048_515_500)),
-            TxData::add(2, ":timestamp", Instant(1_540_048_515_616)),
+            Datom::add(1, ":timestamp", Instant(1_540_048_515_500)),
+            Datom::add(2, ":timestamp", Instant(1_540_048_515_616)),
         ]],
         expectations: vec![vec![
             (
@@ -76,7 +75,7 @@ fn run_transform_cases() {
 
     for case in cases.drain(..) {
         timely::execute_directly(move |worker| {
-            let mut server = Server::<u64, u64>::new(Default::default());
+            let mut server = Server::<Aid, u64, u64>::new(Default::default());
             let (send_results, results) = channel();
 
             dbg!(case.description);
@@ -85,20 +84,14 @@ fn run_transform_cases() {
             let plan = case.plan.clone();
 
             worker.dataflow::<u64, _, _>(|scope| {
-                for dep in deps.iter() {
+                for dep in deps.into_iter() {
                     server
                         .create_attribute(scope, dep, AttributeConfig::tx_time(InputSemantics::Raw))
                         .unwrap();
                 }
 
                 server
-                    .test_single(
-                        scope,
-                        Rule {
-                            name: "hector".to_string(),
-                            plan,
-                        },
-                    )
+                    .test_single(scope, Rule::named("hector", plan))
                     .inner
                     .sink(Pipeline, "Results", move |input| {
                         input.for_each(|_time, data| {

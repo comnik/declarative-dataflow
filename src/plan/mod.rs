@@ -13,7 +13,7 @@ use differential_dataflow::lattice::Lattice;
 use crate::binding::{AsBinding, AttributeBinding, Binding};
 use crate::domain::Domain;
 use crate::timestamp::Rewind;
-use crate::{Aid, Eid, Value, Var};
+use crate::{AsAid, Eid, Value, Var};
 use crate::{CollectionRelation, Implemented, Relation, ShutdownHandle, VariableMap};
 
 #[cfg(feature = "set-semantics")]
@@ -24,13 +24,13 @@ pub mod antijoin;
 pub mod filter;
 #[cfg(feature = "graphql")]
 pub mod graphql;
-#[cfg(feature = "graphql")]
-pub mod graphql_v2;
+// #[cfg(feature = "graphql")]
+// pub mod graphql_v2;
 pub mod hector;
 pub mod join;
 pub mod project;
 pub mod pull;
-pub mod pull_v2;
+// pub mod pull_v2;
 pub mod transform;
 pub mod union;
 
@@ -49,13 +49,7 @@ pub use self::pull::{Pull, PullAll, PullLevel};
 pub use self::transform::{Function, Transform};
 pub use self::union::Union;
 
-static ID: AtomicUsize = AtomicUsize::new(0);
 static SYM: AtomicUsize = AtomicUsize::new(std::usize::MAX);
-
-/// @FIXME
-pub fn next_id() -> Eid {
-    ID.fetch_add(1, atomic::Ordering::SeqCst) as Eid
-}
 
 /// @FIXME
 pub fn gensym() -> Var {
@@ -63,16 +57,16 @@ pub fn gensym() -> Var {
 }
 
 /// Description of everything a plan needs prior to synthesis.
-pub struct Dependencies {
+pub struct Dependencies<A: AsAid> {
     /// NameExpr's used by this plan.
-    pub names: HashSet<String>,
+    pub names: HashSet<A>,
     /// Attributes queries in Match* expressions.
-    pub attributes: HashSet<Aid>,
+    pub attributes: HashSet<A>,
 }
 
-impl Dependencies {
+impl<A: AsAid> Dependencies<A> {
     /// A description representing a dependency on nothing.
-    pub fn none() -> Dependencies {
+    pub fn none() -> Self {
         Dependencies {
             names: HashSet::new(),
             attributes: HashSet::new(),
@@ -80,9 +74,9 @@ impl Dependencies {
     }
 
     /// A description representing a dependency on a single name.
-    pub fn name(name: &str) -> Dependencies {
+    pub fn name(name: A) -> Self {
         let mut names = HashSet::new();
-        names.insert(name.to_string());
+        names.insert(name);
 
         Dependencies {
             names,
@@ -91,51 +85,65 @@ impl Dependencies {
     }
 
     /// A description representing a dependency on a single attribute.
-    pub fn attribute(aid: &str) -> Dependencies {
+    pub fn attribute(aid: A) -> Self {
         let mut attributes = HashSet::new();
-        attributes.insert(aid.to_string());
+        attributes.insert(aid);
 
         Dependencies {
             names: HashSet::new(),
             attributes,
         }
     }
+}
 
-    /// Merges two dependency descriptions into one, representing
-    /// their union.
-    pub fn merge(left: Dependencies, right: Dependencies) -> Dependencies {
-        Dependencies {
-            names: left.names.union(&right.names).cloned().collect(),
-            attributes: left.attributes.union(&right.attributes).cloned().collect(),
-        }
+impl<A: AsAid> std::ops::AddAssign for Dependencies<A> {
+    fn add_assign(&mut self, other: Self) {
+        // Merges two dependency descriptions into one, representing
+        // their union.
+        self.names.extend(other.names.into_iter());
+        self.attributes.extend(other.attributes.into_iter());
+    }
+}
+
+impl<A: AsAid> std::ops::Add for Dependencies<A> {
+    type Output = Self;
+
+    fn add(self, other: Self) -> Self {
+        let mut merged = self;
+        merged += other;
+        merged
+    }
+}
+
+impl<A: AsAid> std::iter::Sum<Dependencies<A>> for Dependencies<A> {
+    fn sum<I: Iterator<Item = Self>>(iter: I) -> Self {
+        iter.fold(Self::none(), |sum, x| sum + x)
     }
 }
 
 /// A type that can be implemented as a simple relation.
 pub trait Implementable {
+    /// The type that is used to represent attributes uniquely.
+    type A: AsAid;
+
     /// Returns names of any other implementable things that need to
     /// be available before implementing this one. Attributes are not
     /// mentioned explicitley as dependencies.
-    fn dependencies(&self) -> Dependencies;
+    fn dependencies(&self) -> Dependencies<Self::A>;
 
     /// Transforms an implementable into an equivalent set of bindings
     /// that can be unified by Hector.
-    fn into_bindings(&self) -> Vec<Binding> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
         panic!("This plan can't be implemented via Hector.");
-    }
-
-    /// @TODO
-    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
-        Vec::new()
     }
 
     /// Implements the type as a simple relation.
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<Self::A, S::Timestamp>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind;
@@ -143,45 +151,60 @@ pub trait Implementable {
 
 /// Possible query plan types.
 #[derive(Hash, PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
-pub enum Plan {
+pub enum Plan<A: AsAid> {
     /// Projection
-    Project(Project<Plan>),
+    Project(Project<Plan<A>>),
     /// Aggregation
-    Aggregate(Aggregate<Plan>),
+    Aggregate(Aggregate<Plan<A>>),
     /// Union
-    Union(Union<Plan>),
+    Union(Union<Plan<A>>),
     /// Equijoin
-    Join(Join<Plan, Plan>),
+    Join(Join<Plan<A>, Plan<A>>),
     /// WCO
-    Hector(Hector),
+    Hector(Hector<A>),
     /// Antijoin
-    Antijoin(Antijoin<Plan, Plan>),
+    Antijoin(Antijoin<Plan<A>, Plan<A>>),
     /// Negation
-    Negate(Box<Plan>),
+    Negate(Box<Plan<A>>),
     /// Filters bindings by one of the built-in predicates
-    Filter(Filter<Plan>),
+    Filter(Filter<Plan<A>>),
     /// Transforms a binding by a function expression
-    Transform(Transform<Plan>),
+    Transform(Transform<Plan<A>>),
     /// Data pattern of the form [?e a ?v]
-    MatchA(Var, Aid, Var),
+    MatchA(Var, A, Var),
     /// Data pattern of the form [e a ?v]
-    MatchEA(Eid, Aid, Var),
+    MatchEA(Eid, A, Var),
     /// Data pattern of the form [?e a v]
-    MatchAV(Var, Aid, Value),
+    MatchAV(Var, A, Value),
     /// Sources data from another relation.
-    NameExpr(Vec<Var>, String),
+    NameExpr(Vec<Var>, A),
     /// Pull expression
-    Pull(Pull<Plan>),
+    Pull(Pull<Plan<A>>),
     /// Single-level pull expression
-    PullLevel(PullLevel<Plan>),
+    PullLevel(PullLevel<A, Plan<A>>),
     /// Single-level pull expression
-    PullAll(PullAll),
+    PullAll(PullAll<A>),
     /// GraphQl pull expression
     #[cfg(feature = "graphql")]
-    GraphQl(GraphQl),
+    GraphQl(GraphQl<A>),
 }
 
-impl Plan {
+impl<A: AsAid> Plan<A> {
+    /// Returns a plan expressing a base data pattern.
+    pub fn match_a<X: Into<A>>(e: Var, a: X, v: Var) -> Self {
+        Plan::MatchA(e, a.into(), v)
+    }
+
+    /// Returns a plan expressing a base data pattern.
+    pub fn match_ea<AX: Into<A>>(e: Eid, a: AX, v: Var) -> Self {
+        Plan::MatchEA(e, a.into(), v)
+    }
+
+    /// Returns a plan expressing a base data pattern.
+    pub fn match_av<AX: Into<A>, VX: Into<Value>>(e: Var, a: AX, v: VX) -> Self {
+        Plan::MatchAV(e, a.into(), v.into())
+    }
+
     /// Returns the variables bound by this plan.
     pub fn variables(&self) -> Vec<Var> {
         match *self {
@@ -207,8 +230,13 @@ impl Plan {
     }
 }
 
-impl Implementable for Plan {
-    fn dependencies(&self) -> Dependencies {
+impl<A> Implementable for Plan<A>
+where
+    A: AsAid,
+{
+    type A = A;
+
+    fn dependencies(&self) -> Dependencies<A> {
         // @TODO provide a general fold for plans
         match *self {
             Plan::Project(ref projection) => projection.dependencies(),
@@ -220,10 +248,10 @@ impl Implementable for Plan {
             Plan::Negate(ref plan) => plan.dependencies(),
             Plan::Filter(ref filter) => filter.dependencies(),
             Plan::Transform(ref transform) => transform.dependencies(),
-            Plan::MatchA(_, ref a, _) => Dependencies::attribute(a),
-            Plan::MatchEA(_, ref a, _) => Dependencies::attribute(a),
-            Plan::MatchAV(_, ref a, _) => Dependencies::attribute(a),
-            Plan::NameExpr(_, ref name) => Dependencies::name(name),
+            Plan::MatchA(_, ref a, _) => Dependencies::attribute(a.clone()),
+            Plan::MatchEA(_, ref a, _) => Dependencies::attribute(a.clone()),
+            Plan::MatchAV(_, ref a, _) => Dependencies::attribute(a.clone()),
+            Plan::NameExpr(_, ref name) => Dependencies::name(name.clone()),
             Plan::Pull(ref pull) => pull.dependencies(),
             Plan::PullLevel(ref path) => path.dependencies(),
             Plan::PullAll(ref path) => path.dependencies(),
@@ -232,7 +260,7 @@ impl Implementable for Plan {
         }
     }
 
-    fn into_bindings(&self) -> Vec<Binding> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
         // @TODO provide a general fold for plans
         match *self {
             Plan::Project(ref projection) => projection.into_bindings(),
@@ -244,18 +272,18 @@ impl Implementable for Plan {
             Plan::Negate(ref plan) => plan.into_bindings(),
             Plan::Filter(ref filter) => filter.into_bindings(),
             Plan::Transform(ref transform) => transform.into_bindings(),
-            Plan::MatchA(e, ref a, v) => vec![Binding::attribute(e, a, v)],
+            Plan::MatchA(e, ref a, v) => vec![Binding::attribute(e, a.clone(), v)],
             Plan::MatchEA(match_e, ref a, v) => {
                 let e = gensym();
                 vec![
-                    Binding::attribute(e, a, v),
+                    Binding::attribute(e, a.clone(), v),
                     Binding::constant(e, Value::Eid(match_e)),
                 ]
             }
             Plan::MatchAV(e, ref a, ref match_v) => {
                 let v = gensym();
                 vec![
-                    Binding::attribute(e, a, v),
+                    Binding::attribute(e, a.clone(), v),
                     Binding::constant(v, match_v.clone()),
                 ]
             }
@@ -268,54 +296,12 @@ impl Implementable for Plan {
         }
     }
 
-    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
-        // @TODO provide a general fold for plans
-        match *self {
-            Plan::Project(ref projection) => projection.datafy(),
-            Plan::Aggregate(ref aggregate) => aggregate.datafy(),
-            Plan::Union(ref union) => union.datafy(),
-            Plan::Join(ref join) => join.datafy(),
-            Plan::Hector(ref hector) => hector.datafy(),
-            Plan::Antijoin(ref antijoin) => antijoin.datafy(),
-            Plan::Negate(ref plan) => plan.datafy(),
-            Plan::Filter(ref filter) => filter.datafy(),
-            Plan::Transform(ref transform) => transform.datafy(),
-            Plan::MatchA(_e, ref a, _v) => vec![(
-                next_id(),
-                "df.pattern/a".to_string(),
-                Value::Aid(a.to_string()),
-            )],
-            Plan::MatchEA(e, ref a, _) => vec![
-                (next_id(), "df.pattern/e".to_string(), Value::Eid(e)),
-                (
-                    next_id(),
-                    "df.pattern/a".to_string(),
-                    Value::Aid(a.to_string()),
-                ),
-            ],
-            Plan::MatchAV(_, ref a, ref v) => vec![
-                (
-                    next_id(),
-                    "df.pattern/a".to_string(),
-                    Value::Aid(a.to_string()),
-                ),
-                (next_id(), "df.pattern/v".to_string(), v.clone()),
-            ],
-            Plan::NameExpr(_, ref _name) => Vec::new(),
-            Plan::Pull(ref pull) => pull.datafy(),
-            Plan::PullLevel(ref path) => path.datafy(),
-            Plan::PullAll(ref path) => path.datafy(),
-            #[cfg(feature = "graphql")]
-            Plan::GraphQl(ref q) => q.datafy(),
-        }
-    }
-
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<A, S::Timestamp>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
@@ -355,7 +341,7 @@ impl Implementable for Plan {
             Plan::MatchA(e, ref a, v) => {
                 let binding = AttributeBinding {
                     variables: (e, v),
-                    source_attribute: a.to_string(),
+                    source_attribute: a.clone(),
                 };
 
                 (Implemented::Attribute(binding), ShutdownHandle::empty())
@@ -364,8 +350,8 @@ impl Implementable for Plan {
                 let (tuples, shutdown_propose) = match domain.forward_propose(a) {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
-                        let (propose, shutdown_propose) =
-                            propose_trace.import_frontier(&nested.parent, a);
+                        let (propose, shutdown_propose) = propose_trace
+                            .import_frontier(&nested.parent, &format!("Propose({:?})", a));
 
                         let tuples = propose
                             .enter(nested)
@@ -391,8 +377,8 @@ impl Implementable for Plan {
                     None => panic!("attribute {:?} does not exist", a),
                     Some(propose_trace) => {
                         let match_v = match_v.clone();
-                        let (propose, shutdown_propose) =
-                            propose_trace.import_core(&nested.parent, a);
+                        let (propose, shutdown_propose) = propose_trace
+                            .import_frontier(&nested.parent, &format!("Propose({:?})", a));
 
                         let tuples = propose
                             .enter(nested)

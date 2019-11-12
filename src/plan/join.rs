@@ -11,9 +11,9 @@ use differential_dataflow::operators::JoinCore;
 
 use crate::binding::{AsBinding, Binding};
 use crate::domain::Domain;
-use crate::plan::{next_id, Dependencies, Implementable};
+use crate::plan::{Dependencies, Implementable};
 use crate::timestamp::Rewind;
-use crate::{Aid, Eid, Value, Var};
+use crate::{AsAid, Value, Var};
 use crate::{
     AttributeBinding, CollectionRelation, Implemented, Relation, ShutdownHandle, TraceValHandle,
     VariableMap,
@@ -32,14 +32,15 @@ pub struct Join<P1: Implementable, P2: Implementable> {
     pub right_plan: Box<P2>,
 }
 
-fn attribute_attribute<'b, S>(
+fn attribute_attribute<'b, A, S>(
     nested: &mut Iterative<'b, S, u64>,
-    domain: &mut Domain<S::Timestamp>,
+    domain: &mut Domain<A, S::Timestamp>,
     target: Var,
-    left: AttributeBinding,
-    right: AttributeBinding,
-) -> (Implemented<'b, S>, ShutdownHandle)
+    left: AttributeBinding<A>,
+    right: AttributeBinding<A>,
+) -> (Implemented<'b, A, S>, ShutdownHandle)
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
@@ -52,13 +53,19 @@ where
             domain
                 .forward_propose(&left.source_attribute)
                 .expect("forward propose trace does not exist")
-                .import_frontier(&nested.parent, &left.source_attribute)
+                .import_frontier(
+                    &nested.parent,
+                    &format!("Propose({:?})", left.source_attribute),
+                )
         } else if target == left.variables.1 {
             variables.push(left.variables.0);
             domain
                 .reverse_propose(&left.source_attribute)
                 .expect("reverse propose trace does not exist")
-                .import_frontier(&nested.parent, &left.source_attribute)
+                .import_frontier(
+                    &nested.parent,
+                    &format!("_Propose({:?})", left.source_attribute),
+                )
         } else {
             panic!("Unbound target variable in Attribute<->Attribute join.");
         };
@@ -72,13 +79,19 @@ where
             domain
                 .forward_propose(&right.source_attribute)
                 .expect("forward propose trace does not exist")
-                .import_frontier(&nested.parent, &right.source_attribute)
+                .import_frontier(
+                    &nested.parent,
+                    &format!("Propose({:?})", right.source_attribute),
+                )
         } else if target == right.variables.1 {
             variables.push(right.variables.0);
             domain
                 .reverse_propose(&right.source_attribute)
                 .expect("reverse propose trace does not exist")
-                .import_frontier(&nested.parent, &right.source_attribute)
+                .import_frontier(
+                    &nested.parent,
+                    &format!("_Propose({:?})", right.source_attribute),
+                )
         } else {
             panic!("Unbound target variable in Attribute<->Attribute join.");
         };
@@ -103,14 +116,15 @@ where
     (Implemented::Collection(relation), shutdown_handle)
 }
 
-fn collection_collection<'b, S>(
+fn collection_collection<'b, A, S>(
     nested: &mut Iterative<'b, S, u64>,
-    domain: &mut Domain<S::Timestamp>,
+    domain: &mut Domain<A, S::Timestamp>,
     target_variables: &[Var],
     left: CollectionRelation<'b, S>,
     right: CollectionRelation<'b, S>,
-) -> (Implemented<'b, S>, ShutdownHandle)
+) -> (Implemented<'b, A, S>, ShutdownHandle)
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
@@ -165,14 +179,15 @@ where
     (Implemented::Collection(relation), shutdown_handle)
 }
 
-fn collection_attribute<'b, S>(
+fn collection_attribute<'b, A, S>(
     nested: &mut Iterative<'b, S, u64>,
-    domain: &mut Domain<S::Timestamp>,
+    domain: &mut Domain<A, S::Timestamp>,
     target_variables: &[Var],
     left: CollectionRelation<'b, S>,
-    right: AttributeBinding,
-) -> (Implemented<'b, S>, ShutdownHandle)
+    right: AttributeBinding<A>,
+) -> (Implemented<'b, A, S>, ShutdownHandle)
 where
+    A: AsAid,
     S: Scope,
     S::Timestamp: Timestamp + Lattice + Rewind,
 {
@@ -181,8 +196,10 @@ where
     let (tuples, shutdown_propose) = match domain.forward_propose(&right.source_attribute) {
         None => panic!("attribute {:?} does not exist", &right.source_attribute),
         Some(propose_trace) => {
-            let (propose, shutdown_propose) =
-                propose_trace.import_frontier(&nested.parent, &right.source_attribute);
+            let (propose, shutdown_propose) = propose_trace.import_frontier(
+                &nested.parent,
+                &format!("Propose({:?})", right.source_attribute),
+            );
 
             let tuples = propose
                 .enter(nested)
@@ -241,15 +258,14 @@ where
 //                 (forwarded, ShutdownHandle::from_button(shutdown_button))
 //             }
 
-impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
-    fn dependencies(&self) -> Dependencies {
-        Dependencies::merge(
-            self.left_plan.dependencies(),
-            self.right_plan.dependencies(),
-        )
+impl<P1: Implementable, P2: Implementable<A = P1::A>> Implementable for Join<P1, P2> {
+    type A = P1::A;
+
+    fn dependencies(&self) -> Dependencies<Self::A> {
+        self.left_plan.dependencies() + self.right_plan.dependencies()
     }
 
-    fn into_bindings(&self) -> Vec<Binding> {
+    fn into_bindings(&self) -> Vec<Binding<Self::A>> {
         let mut left_bindings = self.left_plan.into_bindings();
         let mut right_bindings = self.right_plan.into_bindings();
 
@@ -260,39 +276,12 @@ impl<P1: Implementable, P2: Implementable> Implementable for Join<P1, P2> {
         bindings
     }
 
-    fn datafy(&self) -> Vec<(Eid, Aid, Value)> {
-        let eid = next_id();
-
-        let mut left_data = self.left_plan.datafy();
-        let mut right_data = self.right_plan.datafy();
-
-        let mut left_eids: Vec<(Eid, Aid, Value)> = left_data
-            .iter()
-            .map(|(e, _, _)| (eid, "df.join/binding".to_string(), Value::Eid(*e)))
-            .collect();
-
-        let mut right_eids: Vec<(Eid, Aid, Value)> = right_data
-            .iter()
-            .map(|(e, _, _)| (eid, "df.join/binding".to_string(), Value::Eid(*e)))
-            .collect();
-
-        let mut data = Vec::with_capacity(
-            left_data.len() + right_data.len() + left_eids.len() + right_eids.len(),
-        );
-        data.append(&mut left_data);
-        data.append(&mut right_data);
-        data.append(&mut left_eids);
-        data.append(&mut right_eids);
-
-        data
-    }
-
     fn implement<'b, S>(
         &self,
         nested: &mut Iterative<'b, S, u64>,
-        domain: &mut Domain<S::Timestamp>,
-        local_arrangements: &VariableMap<Iterative<'b, S, u64>>,
-    ) -> (Implemented<'b, S>, ShutdownHandle)
+        domain: &mut Domain<Self::A, S::Timestamp>,
+        local_arrangements: &VariableMap<Self::A, Iterative<'b, S, u64>>,
+    ) -> (Implemented<'b, Self::A, S>, ShutdownHandle)
     where
         S: Scope,
         S::Timestamp: Timestamp + Lattice + Rewind,
