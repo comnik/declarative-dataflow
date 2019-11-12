@@ -30,6 +30,9 @@ use declarative_dataflow::{Output, ResultDiff};
 mod networking;
 use crate::networking::{DomainEvent, Token, IO, SYSTEM};
 
+/// Server attribute identifier type.
+type Aid = String;
+
 /// Server timestamp type.
 #[cfg(all(not(feature = "real-time"), not(feature = "bitemporal")))]
 type T = u64;
@@ -216,7 +219,7 @@ struct Command {
     /// owning worker, as no one else has the connection.
     pub client: usize,
     /// Requests issued by the client.
-    pub requests: Vec<Request>,
+    pub requests: Vec<Request<Aid>>,
 }
 
 fn main() {
@@ -228,7 +231,7 @@ fn main() {
 
     timely::execute(timely_config, move |worker| {
         // Initialize server state (no networking).
-        let mut server = Server::<T, Token>::new_at(server_config.clone(), worker.timer());
+        let mut server = Server::<Aid, T, Token>::new_at(server_config.clone(), worker.timer());
 
         if server_config.enable_logging {
             #[cfg(feature = "real-time")]
@@ -239,7 +242,7 @@ fn main() {
         // setting-up built-in arrangements. We serialize those here
         // and pre-load the sequencer with them, such that they will
         // flow through the regular request handling.
-        let builtins = Server::<T, Token>::builtins();
+        let builtins = Server::<Aid, T, Token>::builtins();
         let preload_command = Command {
             owner: worker.index(),
             client: SYSTEM.0,
