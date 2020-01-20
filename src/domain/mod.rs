@@ -4,7 +4,8 @@
 use std::collections::HashMap;
 use std::ops::{Add, AddAssign};
 
-use timely::dataflow::operators::unordered_input::{ActivateCapability, UnorderedHandle};
+use timely::dataflow::operators::unordered_input::UnorderedHandle;
+use timely::dataflow::operators::ActivateCapability;
 use timely::dataflow::operators::Map;
 use timely::dataflow::{ProbeHandle, Scope, Stream};
 use timely::progress::frontier::AntichainRef;
@@ -162,7 +163,7 @@ where
         Domain {
             namespace: Default::default(),
             now_at: start_at,
-            last_advance: vec![<T as Lattice>::minimum()],
+            last_advance: vec![<T as Timestamp>::minimum()],
             input_sessions: HashMap::new(),
             domain_probe: ProbeHandle::new(),
             probed_source_count: 0,
@@ -585,7 +586,7 @@ where
     fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
         let name: A = name.into();
 
-        let mut domain = Domain::new(Default::default());
+        let mut domain = Domain::new(<S::Timestamp as Timestamp>::minimum());
 
         // When given only a stream without timestamps, we must assume
         // that this attribute is externally sourced and timeless,
@@ -593,7 +594,7 @@ where
         // source is not able or not willing to provide timestamps. We
         // do not want to probe them, in order to not stall progress.
         let pairs = self
-            .map(|(data, diff)| (data, Default::default(), diff))
+            .map(|(data, diff)| (data, <S::Timestamp as Timestamp>::minimum(), diff))
             .as_collection();
 
         let mut raw = HashMap::new();
@@ -626,7 +627,7 @@ where
     fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
         let name: A = name.into();
 
-        let mut domain = Domain::new(Default::default());
+        let mut domain = Domain::new(<S::Timestamp as Timestamp>::minimum());
 
         // When given only a collection we must assume that this
         // attribute is externally sourced, meaning we have no control
@@ -683,7 +684,7 @@ where
     fn as_singleton_domain<X: Into<A>>(self, name: X) -> ScopedDomain<A, S> {
         let name: A = name.into();
 
-        let mut domain = Domain::new(Default::default());
+        let mut domain = Domain::new(<S::Timestamp as Timestamp>::minimum());
 
         // When a handle and a capability are available, we can infer
         // that this is an attribute that clients will issue

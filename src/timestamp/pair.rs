@@ -36,7 +36,7 @@ impl<S: PartialOrder, T: PartialOrder> PartialOrder for Pair<S, T> {
 use timely::progress::timestamp::Refines;
 impl<S: Timestamp, T: Timestamp> Refines<()> for Pair<S, T> {
     fn to_inner(_outer: ()) -> Self {
-        Default::default()
+        Self::minimum()
     }
     fn to_outer(self) {}
     fn summarize(_summary: <Self>::Summary) {}
@@ -59,18 +59,18 @@ impl<S: Timestamp, T: Timestamp> PathSummary<Pair<S, T>> for () {
 use timely::progress::Timestamp;
 impl<S: Timestamp, T: Timestamp> Timestamp for Pair<S, T> {
     type Summary = ();
-}
-
-// Implement differential dataflow's `Lattice` trait.
-// This extends the `PartialOrder` implementation with additional structure.
-use differential_dataflow::lattice::Lattice;
-impl<S: Lattice, T: Lattice> Lattice for Pair<S, T> {
     fn minimum() -> Self {
         Pair {
             first: S::minimum(),
             second: T::minimum(),
         }
     }
+}
+
+// Implement differential dataflow's `Lattice` trait.
+// This extends the `PartialOrder` implementation with additional structure.
+use differential_dataflow::lattice::Lattice;
+impl<S: Lattice, T: Lattice> Lattice for Pair<S, T> {
     fn join(&self, other: &Self) -> Self {
         Pair {
             first: self.first.join(&other.first),
