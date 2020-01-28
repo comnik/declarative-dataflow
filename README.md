@@ -60,6 +60,18 @@ crate](https://docs.rs/log).  Logging at a specific level can be
 enabled by setting the `RUST_LOG` environment variable to
 `RUST_LOG=declarative_dataflow=<level>`.
 
+## Run
+
+To start the server. From the root of the project:
+
+```sh
+$ cd server
+$ cargo run
+```
+
+The first time you do this, the server will be compiled and then started.
+Subsequent runs will will start the server instantly.
+
 ## Documentation
 
 Crate documentation available on
